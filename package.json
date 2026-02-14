@@ -7,11 +7,33 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "vitest run tests/integration --config vitest.integration.config.ts",
+    "test:e2e": "nuxt build && start-server-and-test preview 3000 cucumber-js",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e:headed": "cross-env HEADLESS=false npm run test:e2e",
+    "prepare:e2e": "playwright install chromium"
   },
   "dependencies": {
+    "@nuxt/ui": "^4.4.0",
+    "matrix-js-sdk": "^37.5.0",
     "nuxt": "^4.3.1",
     "vue": "^3.5.28",
     "vue-router": "^4.6.4"
-  }
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^11.0.0",
+    "@nuxt/test-utils": "^4.0.0",
+    "@playwright/test": "^1.49.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "@vue/test-utils": "^2.4.6",
+    "chai": "^4.5.0",
+    "cross-env": "^10.1.0",
+    "happy-dom": "^16.0.0",
+    "start-server-and-test": "^2.0.0",
+    "vitest": "^2.1.0"
+  },
+  "version": "0.1.0"
 }
