@@ -45,10 +45,10 @@ function markAvatarAsFailed(spaceId: string) {
   <nav
     class="flex h-full flex-col border-r border-gray-200 bg-gray-50 p-2
            dark:border-gray-800 dark:bg-gray-950"
-    :class="expanded ? 'w-56' : 'w-20'"
+    :class="expanded ? 'w-64' : 'w-[72px]'"
     aria-label="Spaces"
   >
-    <div class="mb-2 flex items-center justify-between gap-1">
+    <div class="mb-3 flex items-center justify-between gap-1">
       <p
         class="px-1 text-xs font-semibold uppercase tracking-wide text-gray-500
                dark:text-gray-400"
@@ -75,23 +75,23 @@ function markAvatarAsFailed(spaceId: string) {
       >
         <button
           type="button"
-          class="flex h-10 min-h-10 w-10 min-w-10 items-center justify-center
-                 rounded-xl border transition hover:border-primary-400"
+          class="group flex h-12 min-h-12 w-12 min-w-12 items-center justify-center
+                 rounded-2xl border transition hover:-translate-y-px"
           :class="selectedSpaceId === space.id
-            ? 'border-primary-500 bg-primary-500/15 text-primary-500'
-            : 'border-gray-200 bg-white text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200'"
+            ? 'border-primary-500 bg-primary-500/20 text-primary-500'
+            : 'border-gray-200 bg-white/90 text-gray-700 hover:border-primary-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-primary-500/60'"
           @click="selectSpace(space.id)"
         >
           <img
             v-if="hasUsableAvatar(space)"
             :src="space.avatarUrl"
             :alt="space.name"
-            class="h-7 w-7 rounded-full object-cover"
+            class="h-8 w-8 rounded-full object-cover"
             @error="markAvatarAsFailed(space.id)"
           >
           <span
             v-else
-            class="flex h-7 w-7 items-center justify-center rounded-full
+            class="flex h-8 w-8 items-center justify-center rounded-full
                    bg-gray-200 text-xs font-semibold text-gray-700 dark:bg-gray-700
                    dark:text-gray-200"
           >
@@ -102,7 +102,7 @@ function markAvatarAsFailed(spaceId: string) {
         <button
           v-if="expanded"
           type="button"
-          class="min-w-0 flex-1 rounded-lg px-2 py-2 text-left text-xs font-medium
+          class="min-w-0 flex-1 rounded-xl px-3 py-2 text-left text-sm font-medium
                  transition hover:bg-gray-100 dark:hover:bg-gray-800"
           :class="selectedSpaceId === space.id
             ? 'bg-primary-500/15 text-primary-500'
@@ -114,15 +114,18 @@ function markAvatarAsFailed(spaceId: string) {
       </div>
     </div>
 
-    <UButton
-      size="sm"
-      color="primary"
-      variant="soft"
-      icon="i-lucide-plus"
-      class="mt-2"
-      @click="emit('createSpace')"
-    >
-      <span v-if="expanded">{{ translateText('layout.createSpace') }}</span>
-    </UButton>
+    <div class="mt-3 border-t border-gray-200 pt-3 dark:border-gray-800">
+      <UButton
+        size="sm"
+        color="primary"
+        variant="soft"
+        icon="i-lucide-plus"
+        class="w-full justify-center"
+        :class="expanded ? 'rounded-xl' : 'h-11 rounded-2xl'"
+        @click="emit('createSpace')"
+      >
+        <span v-if="expanded">{{ translateText('layout.createSpace') }}</span>
+      </UButton>
+    </div>
   </nav>
 </template>

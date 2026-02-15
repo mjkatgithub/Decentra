@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Four-column chat layout with responsive sidebars and mobile overlays
+- Space rail with compact/expanded modes and create-space stub route
+- Account settings page and space settings base page
+- Member list with presence badges (online, away, offline, unknown)
+- Theme preference composable with explicit localStorage persistence
+- App i18n composable with English/German locale persistence
+- SVG favicon and global head registration
+
+### Changed
+
+- Space navigation now separates icon-button interaction from text-click area
+- Room navigation supports home categories for personal/unassigned rooms
+- Chat shell styling refined with distinct visual background accents
+
+### Fixed
+
+- Space-to-room parent mapping now uses Matrix `m.space.parent` state
+- Space avatar resolution now supports Matrix mxc avatar URLs with fallback
+
 ## [0.1.0] - 2025-02-13
 
 ### Added

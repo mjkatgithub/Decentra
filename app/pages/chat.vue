@@ -314,26 +314,61 @@ function isDirectRoom(room: RoomItem): boolean {
 }
 
 function getSpaceAvatarUrl(spaceRoom: Record<string, any>): string | undefined {
+  const matrixClient = client.value
+  const homeserverUrl = matrixClient?.getHomeserverUrl?.()
+  const getAvatarUrl = spaceRoom.getAvatarUrl
+  const accessToken = matrixClient?.getAccessToken?.()
+
+  const withAccessToken = (url: string | null | undefined): string | undefined => {
+    if (!url) {
+      return undefined
+    }
+    if (!accessToken || !url.includes('/_matrix/')) {
+      return url
+    }
+    if (url.includes('access_token=')) {
+      return url
+    }
+    const separator = url.includes('?') ? '&' : '?'
+    return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`
+  }
+
+  if (homeserverUrl && typeof getAvatarUrl === 'function') {
+    const httpAvatarUrl = getAvatarUrl.call(
+      spaceRoom,
+      homeserverUrl,
+      40,
+      40,
+      'crop',
+      false,
+      true
+    ) as string | null
+    if (httpAvatarUrl) {
+      return withAccessToken(httpAvatarUrl)
+    }
+  }
+
+  const avatarMxcFromRoom = spaceRoom.getMxcAvatarUrl?.()
   const avatarStateEvent = spaceRoom.currentState?.getStateEvents?.(
     'm.room.avatar',
     ''
   )
-  const avatarMxcUrl = avatarStateEvent?.getContent?.()?.url
-  const matrixClient = client.value
+  const avatarMxcUrl = avatarMxcFromRoom || avatarStateEvent?.getContent?.()?.url
   if (!avatarMxcUrl || !matrixClient?.mxcUrlToHttp) {
     return undefined
   }
 
   try {
-    return matrixClient.mxcUrlToHttp(
+    const httpUrl = matrixClient.mxcUrlToHttp(
       avatarMxcUrl,
       40,
       40,
       'crop',
-      true,
       false,
+      true,
       true
     ) as string
+    return withAccessToken(httpUrl)
   } catch {
     return undefined
   }
@@ -499,9 +534,13 @@ watch(
       class="z-30 h-full overflow-hidden transition-all duration-200"
       :class="[
         isMobile
-          ? 'absolute left-0 top-0 w-[368px]'
+          ? spaceRailExpanded
+            ? 'absolute left-0 top-0 w-[92vw] max-w-[544px]'
+            : 'absolute left-0 top-0 w-[360px]'
           : leftSidebarOpen
-            ? 'relative w-[368px] shrink-0 border-r border-gray-200 dark:border-gray-800'
+            ? spaceRailExpanded
+              ? 'relative w-[544px] shrink-0 border-r border-gray-200 dark:border-gray-800'
+              : 'relative w-[360px] shrink-0 border-r border-gray-200 dark:border-gray-800'
             : 'relative w-0 shrink-0 border-r-0',
         isMobile
           ? leftSidebarOpen
