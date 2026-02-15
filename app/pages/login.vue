@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAppI18n } from '~/composables/useAppI18n'
+
 const baseUrl = ref('https://matrix.org')
 const username = ref('')
 const password = ref('')
@@ -6,6 +8,7 @@ const error = ref('')
 const loading = ref(false)
 
 const { login, isLoggedIn } = useMatrixClient()
+const { translateText } = useAppI18n()
 
 if (isLoggedIn.value) {
   navigateTo('/chat')
@@ -19,7 +22,9 @@ async function handleLogin() {
     await navigateTo('/chat')
   } catch (thrownError) {
     error.value =
-      thrownError instanceof Error ? thrownError.message : 'Login fehlgeschlagen'
+      thrownError instanceof Error
+        ? thrownError.message
+        : translateText('auth.signInFailed')
   } finally {
     loading.value = false
   }
@@ -30,11 +35,13 @@ async function handleLogin() {
   <div class="flex min-h-screen items-center justify-center p-4">
     <UCard class="w-full max-w-md">
       <template #header>
-        <h1 class="text-xl font-semibold">Decentra – Anmelden</h1>
+        <h1 class="text-xl font-semibold">
+          Decentra - {{ translateText('auth.signIn') }}
+        </h1>
       </template>
 
       <form class="space-y-4" @submit.prevent="handleLogin">
-        <UFormField label="Homeserver">
+        <UFormField :label="translateText('auth.homeserver')">
           <UInput
             v-model="baseUrl"
             placeholder="https://matrix.org"
@@ -43,7 +50,7 @@ async function handleLogin() {
           />
         </UFormField>
 
-        <UFormField label="Benutzername">
+        <UFormField :label="translateText('auth.username')">
           <UInput
             v-model="username"
             placeholder="@user:matrix.org"
@@ -51,7 +58,7 @@ async function handleLogin() {
           />
         </UFormField>
 
-        <UFormField label="Passwort">
+        <UFormField :label="translateText('auth.password')">
           <UInput
             v-model="password"
             type="password"
@@ -72,7 +79,7 @@ async function handleLogin() {
           block
           :loading="loading"
         >
-          Anmelden
+          {{ translateText('auth.signIn') }}
         </UButton>
       </form>
     </UCard>

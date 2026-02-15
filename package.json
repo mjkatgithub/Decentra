@@ -12,7 +12,10 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration --config vitest.integration.config.ts",
     "test:e2e": "nuxt build && start-server-and-test preview 3000 cucumber-js",
+    "test:e2e:smoke": "nuxt build && start-server-and-test preview 3000 \"cucumber-js --tags @smoke\"",
     "test:coverage": "vitest run --coverage",
+    "test:ci:fast": "npm run test:unit && npm run test:integration && npm run test:e2e:smoke",
+    "test:ci:full": "npm run test:unit && npm run test:integration && npm run test:coverage && npm run test:e2e",
     "test:e2e:headed": "cross-env HEADLESS=false npm run test:e2e",
     "prepare:e2e": "playwright install chromium"
   },
@@ -25,7 +28,6 @@
   },
   "devDependencies": {
     "@cucumber/cucumber": "^11.0.0",
-    "@nuxt/test-utils": "^4.0.0",
     "@playwright/test": "^1.49.0",
     "@vitest/coverage-v8": "^2.1.0",
     "@vue/test-utils": "^2.4.6",

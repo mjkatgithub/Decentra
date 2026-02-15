@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - master
+      - feature/**
+  pull_request:
+    branches:
+      - develop
+      - master
+  workflow_dispatch:
+    inputs:
+      run_full:
+        description: Run full pipeline (coverage + full E2E)
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 2 * * *'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Fast lane (unit + integration + e2e smoke)
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push' && github.ref != 'refs/heads/master') ||
+      (github.event_name == 'pull_request' && github.base_ref != 'master') ||
+      (github.event_name == 'workflow_dispatch' && inputs.run_full != true)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser and system deps
+        run: npx playwright install --with-deps chromium
+
+      - name: Run fast CI lane
+        run: npm run test:ci:fast
+
+  full:
+    name: Full lane (coverage + full e2e)
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      (github.event_name == 'pull_request' && github.base_ref == 'master') ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+      inputs.run_full == true)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser and system deps
+        run: npx playwright install --with-deps chromium
+
+      - name: Create E2E env file from secrets
+        env:
+          E2E_MATRIX_HOMESERVER: ${{ secrets.E2E_MATRIX_HOMESERVER }}
+          E2E_MATRIX_USERNAME: ${{ secrets.E2E_MATRIX_USERNAME }}
+          E2E_MATRIX_PASSWORD: ${{ secrets.E2E_MATRIX_PASSWORD }}
+          BASE_URL: http://localhost:3000
+        run: |
+          if [ -z "$E2E_MATRIX_USERNAME" ] || [ -z "$E2E_MATRIX_PASSWORD" ]; then
+            echo "Missing E2E matrix credentials in repository secrets."
+            exit 1
+          fi
+          mkdir -p tests/e2e
+          {
+            echo "BASE_URL=$BASE_URL"
+            echo "E2E_MATRIX_HOMESERVER=${E2E_MATRIX_HOMESERVER:-https://matrix.org}"
+            echo "E2E_MATRIX_USERNAME=$E2E_MATRIX_USERNAME"
+            echo "E2E_MATRIX_PASSWORD=$E2E_MATRIX_PASSWORD"
+          } > tests/e2e/.env.e2e.local
+
+      - name: Run full CI lane
+        run: npm run test:ci:full
