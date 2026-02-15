@@ -26,3 +26,4 @@ tests/e2e/reports/
 .env
 .env.*
 !.env.example
+!tests/e2e/.env.e2e.example
