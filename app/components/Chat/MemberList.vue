@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { useAppI18n } from '~/composables/useAppI18n'
 
-type MemberStatus = 'online' | 'away' | 'offline' | 'unknown'
+type MemberStatus = 'online' | 'away' | 'busy' | 'offline' | 'unknown'
 
 interface MemberItem {
   userId: string
   displayName: string
+  avatarUrl?: string
   status: MemberStatus
 }
 
@@ -19,6 +20,7 @@ function getStatusClass(status: MemberStatus): string {
   const statusClasses: Record<MemberStatus, string> = {
     online: 'bg-green-500',
     away: 'bg-amber-500',
+    busy: 'bg-red-500',
     offline: 'bg-gray-500',
     unknown: 'bg-gray-400'
   }
@@ -29,6 +31,7 @@ function getStatusLabel(status: MemberStatus): string {
   const statusLabels: Record<MemberStatus, string> = {
     online: translateText('layout.online'),
     away: translateText('layout.away'),
+    busy: translateText('layout.busy'),
     offline: translateText('layout.offline'),
     unknown: translateText('layout.unknown')
   }
@@ -59,10 +62,27 @@ function getStatusLabel(status: MemberStatus): string {
           :key="member.userId"
           class="flex items-center gap-2 rounded-lg px-2 py-2"
         >
-          <span
-            class="inline-block h-2.5 w-2.5 rounded-full"
-            :class="getStatusClass(member.status)"
-          />
+          <div class="relative h-8 w-8 shrink-0">
+            <img
+              v-if="member.avatarUrl"
+              :src="member.avatarUrl"
+              :alt="member.displayName"
+              class="h-8 w-8 rounded-full object-cover"
+            >
+            <span
+              v-else
+              class="flex h-8 w-8 items-center justify-center rounded-full
+                     bg-gray-200 text-xs font-semibold text-gray-700 dark:bg-gray-700
+                     dark:text-gray-200"
+            >
+              {{ member.displayName.trim().charAt(0).toUpperCase() || '?' }}
+            </span>
+            <span
+              class="absolute -bottom-0.5 -right-0.5 inline-block h-3 w-3 rounded-full
+                     border-2 border-gray-50 dark:border-gray-950"
+              :class="getStatusClass(member.status)"
+            />
+          </div>
           <span class="min-w-0 flex-1 truncate text-sm">
             {{ member.displayName }}
           </span>

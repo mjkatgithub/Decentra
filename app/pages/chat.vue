@@ -2,12 +2,20 @@
 import { ClientEvent, RoomEvent } from 'matrix-js-sdk'
 import { useAppI18n } from '~/composables/useAppI18n'
 
-type PresenceStatus = 'online' | 'away' | 'offline' | 'unknown'
+type PresenceStatus = 'online' | 'away' | 'busy' | 'offline' | 'unknown'
 
 interface ChatMessage {
   id: string
-  sender: string
+  kind: 'message' | 'notice'
+  senderId: string
+  senderName: string
+  avatarUrl?: string
   body: string
+  readBy: Array<{
+    userId: string
+    displayName: string
+    avatarUrl?: string
+  }>
 }
 
 interface SpaceItem {
@@ -37,6 +45,7 @@ interface RoomCategoryGroup {
 interface MemberItem {
   userId: string
   displayName: string
+  avatarUrl?: string
   status: PresenceStatus
 }
 
@@ -229,9 +238,10 @@ const memberItems = computed<MemberItem[]>(() => {
     .sort((memberA, memberB) => {
       const rank = {
         online: 0,
-        away: 1,
-        offline: 2,
-        unknown: 3
+        busy: 1,
+        away: 2,
+        offline: 3,
+        unknown: 4
       } as const
       const statusRankDiff = rank[memberA.status] - rank[memberB.status]
       if (statusRankDiff !== 0) {
@@ -283,6 +293,7 @@ function toMemberItem(member: Record<string, any>): MemberItem {
   return {
     userId: String(member.userId || ''),
     displayName: String(member.name || member.userId || ''),
+    avatarUrl: getMemberAvatarUrl(member),
     status: normalizePresence(
       typeof member.presence === 'string' ? member.presence : undefined
     )
@@ -294,6 +305,12 @@ function normalizePresence(
 ): PresenceStatus {
   if (rawPresence === 'online') {
     return 'online'
+  }
+  if (rawPresence === 'org.matrix.msc3026.busy' || rawPresence === 'busy') {
+    return 'busy'
+  }
+  if (rawPresence === 'dnd') {
+    return 'busy'
   }
   if (rawPresence === 'unavailable') {
     return 'away'
@@ -374,6 +391,60 @@ function getSpaceAvatarUrl(spaceRoom: Record<string, any>): string | undefined {
   }
 }
 
+function getMemberAvatarUrl(member: Record<string, any>): string | undefined {
+  const matrixClient = client.value
+  const homeserverUrl = matrixClient?.getHomeserverUrl?.()
+  const getAvatarUrl = member.getAvatarUrl
+  if (homeserverUrl && typeof getAvatarUrl === 'function') {
+    const avatarUrl = getAvatarUrl.call(
+      member,
+      homeserverUrl,
+      40,
+      40,
+      'crop',
+      false,
+      false,
+      true
+    ) as string | null
+    if (avatarUrl) {
+      return appendAccessTokenToMediaUrl(avatarUrl)
+    }
+  }
+
+  const avatarMxcUrl = member.events?.member?.getContent?.()?.avatar_url
+  if (!avatarMxcUrl || !matrixClient?.mxcUrlToHttp) {
+    return undefined
+  }
+  const avatarUrl = matrixClient.mxcUrlToHttp(
+    avatarMxcUrl,
+    40,
+    40,
+    'crop',
+    false,
+    true,
+    true
+  )
+  return appendAccessTokenToMediaUrl(avatarUrl)
+}
+
+function appendAccessTokenToMediaUrl(
+  avatarUrl: string | null | undefined
+): string | undefined {
+  if (!avatarUrl) {
+    return undefined
+  }
+  const matrixClient = client.value
+  const accessToken = matrixClient?.getAccessToken?.()
+  if (!accessToken || !avatarUrl.includes('/_matrix/')) {
+    return avatarUrl
+  }
+  if (avatarUrl.includes('access_token=')) {
+    return avatarUrl
+  }
+  const separator = avatarUrl.includes('?') ? '&' : '?'
+  return `${avatarUrl}${separator}access_token=${encodeURIComponent(accessToken)}`
+}
+
 function loadMessages(roomId: string) {
   const room = client.value?.getRoom(roomId)
   if (!room) {
@@ -381,15 +452,128 @@ function loadMessages(roomId: string) {
     return
   }
 
-  messages.value = room
+  const timelineEvents = room
     .getLiveTimeline()
     .getEvents()
-    .filter((event) => event.getType() === 'm.room.message')
-    .map((event) => ({
-      id: event.getId() ?? '',
-      sender: event.getSender() ?? '',
-      body: event.getContent().body ?? ''
-    }))
+    .filter((event) => {
+      const eventType = event.getType()
+      return (
+        eventType === 'm.room.message' ||
+        eventType === 'm.room.member' ||
+        eventType === 'm.room.name' ||
+        eventType === 'm.room.avatar' ||
+        eventType === 'm.room.topic'
+      )
+    })
+  const messageEvents = timelineEvents.filter((timelineEvent) => {
+    return timelineEvent.getType() === 'm.room.message'
+  })
+  const roomMembers = room.getMembers()
+  const ownUserId = client.value?.getUserId()
+  const latestReadEventIdByUser = new Map<string, string>()
+
+  for (const member of roomMembers) {
+    if (member.userId === ownUserId) {
+      continue
+    }
+    for (let messageIndex = messageEvents.length - 1; messageIndex >= 0; messageIndex--) {
+      const messageEvent = messageEvents[messageIndex]
+      if (!messageEvent) {
+        continue
+      }
+      const messageEventId = messageEvent.getId()
+      if (!messageEventId) {
+        continue
+      }
+      if (room.hasUserReadEvent(member.userId, messageEventId)) {
+        latestReadEventIdByUser.set(member.userId, messageEventId)
+        break
+      }
+    }
+  }
+
+  messages.value = timelineEvents.map((timelineEvent) => {
+    const eventType = timelineEvent.getType()
+    const senderUserId = timelineEvent.getSender() ?? ''
+    const senderMember = room.getMember(senderUserId)
+    const senderName = senderMember?.name || senderUserId
+    const body = eventType === 'm.room.message'
+      ? timelineEvent.getContent().body ?? ''
+      : buildNoticeText(timelineEvent, room)
+    const currentEventId = timelineEvent.getId() ?? ''
+
+    const readBy = eventType === 'm.room.message' && currentEventId
+      ? roomMembers
+        .filter((member) => member.userId !== senderUserId)
+        .filter((member) => member.userId !== ownUserId)
+        .filter((member) => {
+          return latestReadEventIdByUser.get(member.userId) === currentEventId
+        })
+        .filter((member) => room.hasUserReadEvent(member.userId, currentEventId))
+        .map((member) => ({
+          userId: member.userId,
+          displayName: member.name || member.userId,
+          avatarUrl: getMemberAvatarUrl(member as unknown as Record<string, any>)
+        }))
+      : []
+
+    return {
+      id: currentEventId,
+      kind: eventType === 'm.room.message' ? 'message' : 'notice',
+      senderId: senderUserId,
+      senderName,
+      avatarUrl: senderMember
+        ? getMemberAvatarUrl(senderMember as unknown as Record<string, any>)
+        : undefined,
+      body,
+      readBy
+    }
+  })
+}
+
+function buildNoticeText(
+  timelineEvent: Record<string, any>,
+  room: Record<string, any>
+): string {
+  const eventType = timelineEvent.getType?.() ?? ''
+  const senderUserId = timelineEvent.getSender?.() ?? ''
+  const senderName = room.getMember?.(senderUserId)?.name || senderUserId
+  const content = timelineEvent.getContent?.() ?? {}
+
+  if (eventType === 'm.room.member') {
+    const membership = content.membership
+    const targetUserId = timelineEvent.getStateKey?.() ?? ''
+    const targetName = room.getMember?.(targetUserId)?.name || targetUserId
+    const previousContent = timelineEvent.getPrevContent?.() ?? {}
+
+    if (membership === 'join' && previousContent.membership === 'join') {
+      if (content.avatar_url !== previousContent.avatar_url) {
+        return `${targetName} changed avatar`
+      }
+      if (content.displayname !== previousContent.displayname) {
+        return `${targetName} changed display name`
+      }
+      return `${targetName} profile updated`
+    }
+
+    if (membership === 'join') return `${targetName} joined the channel`
+    if (membership === 'leave') return `${targetName} left the channel`
+    if (membership === 'invite') return `${senderName} invited ${targetName}`
+    if (membership === 'ban') return `${targetName} was banned`
+    return `${targetName} membership changed`
+  }
+
+  if (eventType === 'm.room.avatar') {
+    return `${senderName} changed the room avatar`
+  }
+  if (eventType === 'm.room.name') {
+    const nextName = content.name || 'Unnamed room'
+    return `${senderName} changed the room name to ${nextName}`
+  }
+  if (eventType === 'm.room.topic') {
+    return `${senderName} updated the room topic`
+  }
+  return `${senderName} updated room settings`
 }
 
 async function onLoadOlder() {

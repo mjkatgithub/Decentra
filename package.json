@@ -12,6 +12,7 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "vitest run tests/integration --config vitest.integration.config.ts",
     "test:e2e": "nuxt build && start-server-and-test preview 3000 cucumber-js",
+    "test:e2e:smoke": "nuxt build && start-server-and-test preview 3000 \"cucumber-js --tags @smoke\"",
     "test:coverage": "vitest run --coverage",
     "test:e2e:headed": "cross-env HEADLESS=false npm run test:e2e",
     "prepare:e2e": "playwright install chromium"
