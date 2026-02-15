@@ -103,6 +103,14 @@ Set these in GitHub under **Settings > Secrets and variables > Actions**:
 4. Click **Run workflow**.
 5. Set `run_full` to `true` if you want the full lane.
 
+### Note on Nuxt test-utils
+
+`@nuxt/test-utils` is intentionally not part of the current test runtime.
+In our current dependency set, it caused peer dependency conflicts in CI while
+its Nuxt runtime helpers were not actively used by our tests.
+We can reintroduce it later when we add dedicated Nuxt runtime integration
+tests (`setupTest()`, plugin/runtime integration, Nitro route tests).
+
 ## Project Structure
 
 ```
