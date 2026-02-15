@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAppI18n } from '~/composables/useAppI18n'
+
 interface MessageItem {
   id: string
   sender: string
@@ -14,6 +16,8 @@ defineProps<{
 const emit = defineEmits<{
   loadOlder: []
 }>()
+
+const { translateText } = useAppI18n()
 </script>
 
 <template>
@@ -28,12 +32,12 @@ const emit = defineEmits<{
         :loading="loadingOlder"
         @click="emit('loadOlder')"
       >
-        Ältere Nachrichten laden
+        {{ translateText('chat.loadOlder') }}
       </UButton>
     </div>
     <template v-if="messages.length === 0">
       <p class="py-8 text-center text-gray-500 dark:text-gray-400">
-        Keine Nachrichten. Starte die Unterhaltung!
+        {{ translateText('chat.noMessages') }}
       </p>
     </template>
     <template v-else>

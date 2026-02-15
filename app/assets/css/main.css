@@ -1,2 +1,9 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
+
+.decentra-shell {
+  background-image:
+    radial-gradient(circle at 12% 8%, rgb(56 189 248 / 12%), transparent 40%),
+    radial-gradient(circle at 88% 16%, rgb(244 114 182 / 10%), transparent 35%),
+    linear-gradient(180deg, rgb(15 23 42 / 14%), transparent 28%);
+}

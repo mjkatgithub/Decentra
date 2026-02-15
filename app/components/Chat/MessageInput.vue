@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useAppI18n } from '~/composables/useAppI18n'
+
 const message = ref('')
 const loading = ref(false)
 
@@ -12,6 +14,7 @@ const emit = defineEmits<{
 }>()
 
 const { sendMessage } = useMatrixClient()
+const { translateText } = useAppI18n()
 
 async function handleSend() {
   const body = message.value.trim()
@@ -33,7 +36,7 @@ async function handleSend() {
     <form class="flex gap-2" @submit.prevent="handleSend">
       <UInput
         v-model="message"
-        placeholder="Nachricht eingeben..."
+        :placeholder="translateText('chat.messagePlaceholder')"
         class="flex-1"
         :disabled="disabled || !roomId"
         @keydown.enter.exact.prevent="handleSend"
@@ -43,7 +46,7 @@ async function handleSend() {
         :loading="loading"
         :disabled="!message.trim() || !roomId || disabled"
       >
-        Senden
+        {{ translateText('chat.sendMessage') }}
       </UButton>
     </form>
   </div>

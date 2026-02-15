@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useAppI18n } from '~/composables/useAppI18n'
+
+const { translateText } = useAppI18n()
 const { isLoggedIn } = useMatrixClient()
 
 onMounted(() => {
@@ -12,6 +15,6 @@ onMounted(() => {
 
 <template>
   <div class="flex min-h-screen items-center justify-center">
-    <span class="text-gray-500">Lade...</span>
+    <span class="text-gray-500">{{ translateText('common.loading') }}</span>
   </div>
 </template>
