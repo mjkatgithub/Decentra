@@ -42,8 +42,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright browser
-        run: npm run prepare:e2e
+      - name: Install Playwright browser and system deps
+        run: npx playwright install --with-deps chromium
 
       - name: Run fast CI lane
         run: npm run test:ci:fast
@@ -69,8 +69,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright browser
-        run: npm run prepare:e2e
+      - name: Install Playwright browser and system deps
+        run: npx playwright install --with-deps chromium
 
       - name: Create E2E env file from secrets
         env:
