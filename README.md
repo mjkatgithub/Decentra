@@ -2,7 +2,7 @@
 
 Matrix-based chat client with Spaces, Categories, and Rooms.
 
-**Status:** Alpha (v0.1.0) – MVP Phase 1. Full four-column layout follows in Phase 2.
+**Status:** Alpha (v0.1.0) – Phase 2 completed, Phase 3 in planning.
 
 ## Tech Stack
 
@@ -128,9 +128,11 @@ app/
 
 ## Roadmap
 
-- **Phase 1 (current):** Login, Rooms, Chat, Messages
+- **Phase 1:** Login, Rooms, Chat, Messages
 - **Phase 2:** Four-column layout (Spaces | Categories/Rooms | Chat | Members)
-- **Phase 3+:** Voice, E2E encryption, Design system, Native clients
+- **Phase 3 (current):** Voice, E2E encryption, favorites, and space grouping
+- **Phase 4:** Design system and selectable themes
+- **Phase 5:** Native clients (Windows, Linux, Android)
 
 ## License
 
