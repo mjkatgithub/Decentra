@@ -12,6 +12,11 @@ export default defineNuxtConfig({
       ]
     }
   },
+  vite: {
+    optimizeDeps: {
+      exclude: ['@matrix-org/matrix-sdk-crypto-wasm']
+    }
+  },
   colorMode: {
     preference: 'dark',
     fallback: 'dark'

@@ -10,7 +10,7 @@ type PresenceMode =
   | 'offline'
   | 'org.matrix.msc3026.busy'
 
-const { client, isLoggedIn, userId, logout } = useMatrixClient()
+const { client, isLoggedIn, userId, logout, ensureCryptoReady } = useMatrixClient()
 const { locale, setLocale, translateText } = useAppI18n()
 const { getThemePreference, setThemePreference } = useThemePreference()
 
@@ -50,6 +50,56 @@ const localeOptions: Array<{ label: string; value: AppLocale }> = [
 const presenceValue = ref<PresenceMode>('online')
 const busyPresenceSupported = ref(false)
 const presenceFeedback = ref('')
+const verificationBusy = ref(false)
+const verificationStatusText = ref('')
+const verificationErrorText = ref('')
+const ownDeviceId = ref('')
+const ownCrossSigningReady = ref(false)
+const sasEmoji = ref<Array<{ symbol: string; name: string }>>([])
+const sasDecimal = ref<[number, number, number] | null>(null)
+const showSasActions = ref(false)
+const pendingVerificationRequest = ref(false)
+let activeSasCallbacks: {
+  confirm: () => Promise<void>
+  mismatch: () => void
+  cancel: () => void
+} | null = null
+let activeVerifier: {
+  verify?: () => Promise<void>
+  cancel?: (error: Error) => void
+  getShowSasCallbacks?: () => {
+    sas?: {
+      emoji?: Array<[string, string]>
+      decimal?: [number, number, number]
+    }
+    confirm: () => Promise<void>
+    mismatch: () => void
+    cancel: () => void
+  } | null
+  on?: (event: string, handler: (...args: any[]) => void) => void
+} | null = null
+let activeVerificationPromise: Promise<void> | null = null
+
+function withTimeout<T>(
+  task: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(timeoutMessage))
+    }, timeoutMs)
+    task
+      .then((value) => {
+        window.clearTimeout(timeoutId)
+        resolve(value)
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId)
+        reject(error)
+      })
+  })
+}
 
 const presenceOptions = computed(() => {
   const options: Array<{ label: string; value: PresenceMode }> = [
@@ -69,6 +119,7 @@ const presenceOptions = computed(() => {
 onMounted(async () => {
   await detectBusyPresenceSupport()
   syncPresenceFromCurrentUser()
+  await refreshVerificationState()
 })
 
 function handleLogout() {
@@ -132,6 +183,226 @@ async function applyPresence() {
   } catch {
     presenceFeedback.value = translateText('auth.signInFailed')
   }
+}
+
+function applySasPayload(showSas: {
+  sas?: {
+    emoji?: Array<[string, string]>
+    decimal?: [number, number, number]
+  }
+  confirm: () => Promise<void>
+  mismatch: () => void
+  cancel: () => void
+}) {
+  const emoji = showSas.sas?.emoji ?? []
+  const decimal = showSas.sas?.decimal ?? null
+  sasEmoji.value = emoji.map(([symbol, name]) => ({ symbol, name }))
+  sasDecimal.value = decimal
+  activeSasCallbacks = {
+    confirm: showSas.confirm,
+    mismatch: showSas.mismatch,
+    cancel: showSas.cancel
+  }
+  showSasActions.value = true
+  verificationStatusText.value = translateText('settings.verificationCompare')
+}
+
+function clearVerificationUi() {
+  sasEmoji.value = []
+  sasDecimal.value = null
+  showSasActions.value = false
+  activeSasCallbacks = null
+}
+
+async function refreshVerificationState() {
+  const matrixClient = client.value
+  const matrixUserId = matrixClient?.getUserId?.()
+  const matrixDeviceId = matrixClient?.getDeviceId?.()
+  ownDeviceId.value = matrixDeviceId ?? ''
+  if (!matrixClient || !matrixUserId || !matrixDeviceId) {
+    ownCrossSigningReady.value = false
+    verificationStatusText.value = translateText('settings.verificationUnavailable')
+    pendingVerificationRequest.value = false
+    return
+  }
+  const cryptoApi = matrixClient.getCrypto?.()
+  if (!cryptoApi) {
+    const initialized = await withTimeout(
+      ensureCryptoReady(),
+      10000,
+      'Crypto initialization timeout'
+    )
+    if (!initialized) {
+      ownCrossSigningReady.value = false
+      verificationStatusText.value = translateText('settings.verificationUnavailable')
+      pendingVerificationRequest.value = false
+      return
+    }
+  }
+  const activeCryptoApi = matrixClient.getCrypto?.()
+  if (!activeCryptoApi) {
+    ownCrossSigningReady.value = false
+    verificationStatusText.value = translateText('settings.verificationUnavailable')
+    pendingVerificationRequest.value = false
+    return
+  }
+
+  try {
+    ownCrossSigningReady.value = await withTimeout(
+      activeCryptoApi.isCrossSigningReady(),
+      10000,
+      'Cross-signing status timeout'
+    )
+    const verificationStatus = await withTimeout(
+      activeCryptoApi.getDeviceVerificationStatus(matrixUserId, matrixDeviceId),
+      10000,
+      'Device verification status timeout'
+    )
+    const ownDeviceVerified = verificationStatus?.isVerified() ?? false
+    const openRequests = activeCryptoApi.getVerificationRequestsToDeviceInProgress(
+      matrixUserId
+    )
+    pendingVerificationRequest.value = openRequests.some((request: any) => {
+      return request.isSelfVerification && request.pending
+    })
+    verificationStatusText.value = ownDeviceVerified
+      ? translateText('settings.verificationVerified')
+      : translateText('settings.verificationNotVerified')
+  } catch {
+    verificationStatusText.value = translateText('settings.verificationFailed')
+  }
+}
+
+function getSelfVerificationRequest(cryptoApi: any, matrixUserId: string): any {
+  const openRequests = cryptoApi.getVerificationRequestsToDeviceInProgress?.(
+    matrixUserId
+  ) ?? []
+  return openRequests.find((request: any) => {
+    return request.isSelfVerification && request.pending
+  })
+}
+
+async function startDeviceVerification() {
+  verificationBusy.value = true
+  verificationErrorText.value = ''
+  clearVerificationUi()
+  try {
+    const matrixClient = client.value
+    const matrixUserId = matrixClient?.getUserId?.()
+    if (!matrixClient || !matrixUserId) {
+      verificationStatusText.value = translateText('settings.verificationUnavailable')
+      return
+    }
+    const cryptoReady = await withTimeout(
+      ensureCryptoReady(),
+      10000,
+      'Crypto initialization timeout'
+    )
+    if (!cryptoReady) {
+      verificationStatusText.value = translateText('settings.verificationUnavailable')
+      verificationErrorText.value = translateText('settings.verificationFailed')
+      return
+    }
+    const cryptoApi = matrixClient.getCrypto?.()
+    if (!cryptoApi) {
+      verificationStatusText.value = translateText('settings.verificationUnavailable')
+      return
+    }
+
+    const verificationRequest = getSelfVerificationRequest(cryptoApi, matrixUserId) ??
+      await withTimeout(
+        cryptoApi.requestOwnUserVerification(),
+        10000,
+        'Verification request timeout'
+      )
+    pendingVerificationRequest.value = true
+    verificationStatusText.value = translateText('settings.verificationRequestSent')
+
+    if (verificationRequest.phase <= 2 && !verificationRequest.accepting) {
+      await verificationRequest.accept()
+    }
+
+    const verifier = await withTimeout<any>(
+      verificationRequest.startVerification('m.sas.v1'),
+      10000,
+      'Verification start timeout'
+    )
+    activeVerifier = verifier
+    verifier.on?.('show_sas', (showSas: any) => {
+      applySasPayload(showSas)
+    })
+    verifier.on?.('cancel', () => {
+      verificationErrorText.value = translateText('settings.verificationCancelled')
+      pendingVerificationRequest.value = false
+      clearVerificationUi()
+    })
+
+    const currentSasPayload = verifier.getShowSasCallbacks?.()
+    if (currentSasPayload) {
+      applySasPayload(currentSasPayload)
+    }
+
+    verificationStatusText.value = translateText('settings.verificationRequestSent')
+    activeVerificationPromise = verifier.verify?.()
+      .then(async () => {
+        verificationStatusText.value = translateText('settings.verificationCompleted')
+        pendingVerificationRequest.value = false
+        clearVerificationUi()
+        await refreshVerificationState()
+      })
+      .catch(() => {
+        verificationErrorText.value = translateText('settings.verificationFailed')
+        pendingVerificationRequest.value = false
+        clearVerificationUi()
+      })
+      .finally(() => {
+        verificationBusy.value = false
+        activeVerificationPromise = null
+      }) ?? null
+    verificationBusy.value = false
+  } catch {
+    verificationErrorText.value = translateText('settings.verificationFailed')
+    pendingVerificationRequest.value = false
+    clearVerificationUi()
+    verificationBusy.value = false
+  }
+}
+
+async function confirmSasMatch() {
+  if (!activeSasCallbacks) {
+    return
+  }
+  verificationBusy.value = true
+  verificationErrorText.value = ''
+  try {
+    await activeSasCallbacks.confirm()
+    verificationStatusText.value = translateText('settings.verificationWaiting')
+  } catch {
+    verificationErrorText.value = translateText('settings.verificationFailed')
+  } finally {
+    verificationBusy.value = false
+  }
+}
+
+function markSasMismatch() {
+  if (!activeSasCallbacks) {
+    return
+  }
+  activeSasCallbacks.mismatch()
+  verificationErrorText.value = translateText('settings.verificationMismatch')
+  clearVerificationUi()
+}
+
+function cancelVerification() {
+  if (activeVerificationPromise) {
+    // Mark as user-cancelled; verifier cancellation closes the promise.
+    verificationBusy.value = false
+  }
+  activeSasCallbacks?.cancel()
+  activeVerifier?.cancel?.(new Error('Cancelled by user'))
+  verificationErrorText.value = translateText('settings.verificationCancelled')
+  pendingVerificationRequest.value = false
+  clearVerificationUi()
 }
 </script>
 
@@ -227,6 +498,105 @@ async function applyPresence() {
         >
           {{ translateText('settings.busyUnsupported') }}
         </p>
+
+        <div class="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+          <p class="text-sm font-medium">
+            {{ translateText('settings.verificationTitle') }}
+          </p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ translateText('settings.verificationDescription') }}
+          </p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ translateText('settings.verificationDeviceId') }}:
+            <span class="font-mono">{{ ownDeviceId || '-' }}</span>
+          </p>
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ verificationStatusText }}
+          </p>
+          <p
+            v-if="verificationErrorText"
+            class="text-xs text-red-600 dark:text-red-400"
+          >
+            {{ verificationErrorText }}
+          </p>
+          <p
+            v-if="pendingVerificationRequest"
+            class="text-xs text-amber-600 dark:text-amber-300"
+          >
+            {{ translateText('settings.verificationPending') }}
+          </p>
+          <p
+            v-if="!ownCrossSigningReady"
+            class="text-xs text-gray-500 dark:text-gray-400"
+          >
+            {{ translateText('settings.verificationCrossSigningHint') }}
+          </p>
+
+          <div
+            v-if="sasEmoji.length > 0"
+            class="grid grid-cols-2 gap-2 rounded-md bg-gray-50 p-2
+                   dark:bg-gray-800/50"
+          >
+            <div
+              v-for="emoji in sasEmoji"
+              :key="`${emoji.symbol}-${emoji.name}`"
+              class="flex items-center gap-2 text-sm"
+            >
+              <span class="text-lg">{{ emoji.symbol }}</span>
+              <span>{{ emoji.name }}</span>
+            </div>
+          </div>
+          <p v-if="sasDecimal" class="text-xs text-gray-500 dark:text-gray-400">
+            {{ sasDecimal[0] }} - {{ sasDecimal[1] }} - {{ sasDecimal[2] }}
+          </p>
+
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              size="sm"
+              color="primary"
+              :loading="verificationBusy"
+              @click="startDeviceVerification"
+            >
+              {{ translateText('settings.verificationStart') }}
+            </UButton>
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="soft"
+              :loading="verificationBusy"
+              @click="refreshVerificationState"
+            >
+              {{ translateText('settings.verificationRefresh') }}
+            </UButton>
+            <UButton
+              v-if="showSasActions"
+              size="sm"
+              color="success"
+              :loading="verificationBusy"
+              @click="confirmSasMatch"
+            >
+              {{ translateText('settings.verificationConfirm') }}
+            </UButton>
+            <UButton
+              v-if="showSasActions"
+              size="sm"
+              color="warning"
+              variant="soft"
+              @click="markSasMismatch"
+            >
+              {{ translateText('settings.verificationMismatchAction') }}
+            </UButton>
+            <UButton
+              v-if="pendingVerificationRequest || showSasActions"
+              size="sm"
+              color="error"
+              variant="soft"
+              @click="cancelVerification"
+            >
+              {{ translateText('settings.verificationCancel') }}
+            </UButton>
+          </div>
+        </div>
       </div>
 
       <template #footer>
