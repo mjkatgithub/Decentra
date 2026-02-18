@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ClientEvent, RoomEvent } from 'matrix-js-sdk'
+import { ClientEvent, MatrixEventEvent, RoomEvent } from 'matrix-js-sdk'
 import { useAppI18n } from '~/composables/useAppI18n'
+import { mapTimelineEventsToMessages } from '~/utils/chatTimeline'
 
 type PresenceStatus = 'online' | 'away' | 'busy' | 'offline' | 'unknown'
 
 interface ChatMessage {
   id: string
   kind: 'message' | 'notice'
+  isDecryptionError?: boolean
   senderId: string
   senderName: string
   avatarUrl?: string
@@ -68,6 +70,7 @@ const messages = ref<ChatMessage[]>([])
 const matrixRooms = ref<Array<Record<string, any>>>([])
 const loadingOlder = ref(false)
 const canLoadOlder = ref(true)
+const loadMessagesTimerId = ref<number | null>(null)
 const leftSidebarOpen = ref(true)
 const rightSidebarOpen = ref(true)
 const isMobile = ref(false)
@@ -451,84 +454,28 @@ function loadMessages(roomId: string) {
     messages.value = []
     return
   }
-
-  const timelineEvents = room
-    .getLiveTimeline()
-    .getEvents()
-    .filter((event) => {
-      const eventType = event.getType()
-      return (
-        eventType === 'm.room.message' ||
-        eventType === 'm.room.member' ||
-        eventType === 'm.room.name' ||
-        eventType === 'm.room.avatar' ||
-        eventType === 'm.room.topic'
-      )
-    })
-  const messageEvents = timelineEvents.filter((timelineEvent) => {
-    return timelineEvent.getType() === 'm.room.message'
+  messages.value = mapTimelineEventsToMessages({
+    room,
+    ownUserId: client.value?.getUserId() ?? undefined,
+    getMemberAvatarUrl: (member) => {
+      return getMemberAvatarUrl(member as unknown as Record<string, any>)
+    },
+    buildNoticeText
   })
-  const roomMembers = room.getMembers()
-  const ownUserId = client.value?.getUserId()
-  const latestReadEventIdByUser = new Map<string, string>()
+}
 
-  for (const member of roomMembers) {
-    if (member.userId === ownUserId) {
-      continue
-    }
-    for (let messageIndex = messageEvents.length - 1; messageIndex >= 0; messageIndex--) {
-      const messageEvent = messageEvents[messageIndex]
-      if (!messageEvent) {
-        continue
-      }
-      const messageEventId = messageEvent.getId()
-      if (!messageEventId) {
-        continue
-      }
-      if (room.hasUserReadEvent(member.userId, messageEventId)) {
-        latestReadEventIdByUser.set(member.userId, messageEventId)
-        break
-      }
-    }
+function scheduleLoadMessages(roomId: string) {
+  if (!import.meta.client) {
+    loadMessages(roomId)
+    return
   }
-
-  messages.value = timelineEvents.map((timelineEvent) => {
-    const eventType = timelineEvent.getType()
-    const senderUserId = timelineEvent.getSender() ?? ''
-    const senderMember = room.getMember(senderUserId)
-    const senderName = senderMember?.name || senderUserId
-    const body = eventType === 'm.room.message'
-      ? timelineEvent.getContent().body ?? ''
-      : buildNoticeText(timelineEvent, room)
-    const currentEventId = timelineEvent.getId() ?? ''
-
-    const readBy = eventType === 'm.room.message' && currentEventId
-      ? roomMembers
-        .filter((member) => member.userId !== senderUserId)
-        .filter((member) => member.userId !== ownUserId)
-        .filter((member) => {
-          return latestReadEventIdByUser.get(member.userId) === currentEventId
-        })
-        .filter((member) => room.hasUserReadEvent(member.userId, currentEventId))
-        .map((member) => ({
-          userId: member.userId,
-          displayName: member.name || member.userId,
-          avatarUrl: getMemberAvatarUrl(member as unknown as Record<string, any>)
-        }))
-      : []
-
-    return {
-      id: currentEventId,
-      kind: eventType === 'm.room.message' ? 'message' : 'notice',
-      senderId: senderUserId,
-      senderName,
-      avatarUrl: senderMember
-        ? getMemberAvatarUrl(senderMember as unknown as Record<string, any>)
-        : undefined,
-      body,
-      readBy
-    }
-  })
+  if (loadMessagesTimerId.value !== null) {
+    window.clearTimeout(loadMessagesTimerId.value)
+  }
+  loadMessagesTimerId.value = window.setTimeout(() => {
+    loadMessagesTimerId.value = null
+    loadMessages(roomId)
+  }, 120)
 }
 
 function buildNoticeText(
@@ -675,12 +622,16 @@ onBeforeUnmount(() => {
   if (!import.meta.client) {
     return
   }
+  if (loadMessagesTimerId.value !== null) {
+    window.clearTimeout(loadMessagesTimerId.value)
+    loadMessagesTimerId.value = null
+  }
   window.removeEventListener('resize', resizeHandler)
 })
 
 watch(
   () => client.value,
-  (matrixClient) => {
+  (matrixClient, _previousClient, onCleanup) => {
     if (!matrixClient) {
       return
     }
@@ -690,13 +641,29 @@ watch(
         refreshRooms()
       }
     })
-    matrixClient.on(RoomEvent.Timeline, (_event, room) => {
+    const timelineHandler = (
+      _event: unknown,
+      room: Record<string, any> | undefined
+    ) => {
       if (room?.roomId === selectedRoomId.value) {
-        loadMessages(room.roomId)
+        scheduleLoadMessages(room.roomId)
       }
-    })
-    matrixClient.on(RoomEvent.MyMembership, () => {
+    }
+    const membershipHandler = () => {
       refreshRooms()
+    }
+    const decryptedHandler = (event: Record<string, any>) => {
+      if (event?.getRoomId?.() === selectedRoomId.value && selectedRoomId.value) {
+        scheduleLoadMessages(selectedRoomId.value)
+      }
+    }
+    matrixClient.on(RoomEvent.Timeline, timelineHandler)
+    matrixClient.on(RoomEvent.MyMembership, membershipHandler)
+    matrixClient.on(MatrixEventEvent.Decrypted, decryptedHandler)
+    onCleanup(() => {
+      matrixClient.off(RoomEvent.Timeline, timelineHandler)
+      matrixClient.off(RoomEvent.MyMembership, membershipHandler)
+      matrixClient.off(MatrixEventEvent.Decrypted, decryptedHandler)
     })
   },
   { immediate: true }

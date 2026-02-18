@@ -4,6 +4,7 @@ import { useAppI18n } from '~/composables/useAppI18n'
 interface MessageItem {
   id: string
   kind: 'message' | 'notice'
+  isDecryptionError?: boolean
   senderId: string
   senderName: string
   avatarUrl?: string
@@ -59,6 +60,9 @@ const { translateText } = useAppI18n()
             class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs
                    text-gray-600 dark:border-gray-800 dark:bg-gray-900
                    dark:text-gray-300"
+            :class="msg.isDecryptionError
+              ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-200'
+              : ''"
           >
             {{ msg.body }}
           </p>

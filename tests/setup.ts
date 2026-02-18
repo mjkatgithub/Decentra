@@ -10,7 +10,9 @@ const englishMessages: Record<string, string> = {
   'layout.offline': 'Offline',
   'layout.unknown': 'Unknown',
   'chat.noRooms': 'No rooms',
-  'layout.channels': 'Channels'
+  'layout.channels': 'Channels',
+  'chat.noMessages': 'No messages yet',
+  'chat.loadOlder': 'Load older'
 }
 
 ;(globalThis as Record<string, unknown>).useAppI18n = () => ({
