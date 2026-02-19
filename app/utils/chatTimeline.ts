@@ -1,3 +1,13 @@
+export interface ChatTimelineMedia {
+  url: string
+  mimetype?: string
+  info?: {
+    w?: number
+    h?: number
+    size?: number
+  }
+}
+
 export interface ChatTimelineMessage {
   id: string
   kind: 'message' | 'notice'
@@ -6,6 +16,7 @@ export interface ChatTimelineMessage {
   senderName: string
   avatarUrl?: string
   body: string
+  media?: ChatTimelineMedia
   readBy: Array<{
     userId: string
     displayName: string
@@ -17,6 +28,7 @@ interface MapTimelineArgs {
   room: Record<string, any>
   ownUserId: string | undefined
   getMemberAvatarUrl: (member: Record<string, any>) => string | undefined
+  getMediaUrl: (mxcUrl: string, mimetype?: string, body?: string, isEncrypted?: boolean) => string | undefined
   buildNoticeText: (
     timelineEvent: Record<string, any>,
     room: Record<string, any>
@@ -27,6 +39,7 @@ export function mapTimelineEventsToMessages({
   room,
   ownUserId,
   getMemberAvatarUrl,
+  getMediaUrl,
   buildNoticeText
 }: MapTimelineArgs): ChatTimelineMessage[] {
   const timelineEvents = room
@@ -58,9 +71,7 @@ export function mapTimelineEventsToMessages({
     if (member.userId === ownUserId) {
       continue
     }
-    for (let messageIndex = messageEvents.length - 1;
-      messageIndex >= 0;
-      messageIndex--) {
+    for (let messageIndex = messageEvents.length - 1; messageIndex >= 0; messageIndex--) {
       const messageEvent = messageEvents[messageIndex]
       if (!messageEvent) {
         continue
@@ -108,6 +119,17 @@ export function mapTimelineEventsToMessages({
           }))
         : []
 
+      const content = timelineEvent.getContent() ?? {}
+      const mxcUrl = content.url || content.file?.url
+      const isEncryptedMedia = Boolean(content.file?.url)
+      const media = (eventType === 'm.room.message' && content.msgtype === 'm.image' && mxcUrl)
+        ? {
+            url: getMediaUrl(mxcUrl, content.info?.mimetype, body, isEncryptedMedia) || mxcUrl,
+            mimetype: content.info?.mimetype,
+            info: content.info
+          }
+        : undefined
+
       return {
         id: currentEventId,
         kind: eventType === 'm.room.message' && !undecryptableMessage
@@ -118,6 +140,7 @@ export function mapTimelineEventsToMessages({
         senderName,
         avatarUrl: senderMember ? getMemberAvatarUrl(senderMember) : undefined,
         body,
+        media,
         readBy
       }
     } catch {

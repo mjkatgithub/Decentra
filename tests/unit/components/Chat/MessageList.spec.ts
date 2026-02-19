@@ -34,4 +34,28 @@ describe('MessageList', () => {
     notice.text().should.include('could not be decrypted')
     notice.classes().should.include('border-amber-300')
   })
+
+  it('renders image message when media is present', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        messages: [
+          {
+            id: 'evt2',
+            kind: 'message',
+            senderId: '@alice:example.org',
+            senderName: 'Alice',
+            body: 'photo.jpg',
+            media: {
+              url: 'http://example.org/thumb.jpg'
+            }
+          }
+        ]
+      }
+    })
+
+    const img = wrapper.find('img')
+    img.exists().should.equal(true)
+    img.attributes('src').should.equal('http://example.org/thumb.jpg')
+    img.attributes('alt').should.equal('photo.jpg')
+  })
 })
