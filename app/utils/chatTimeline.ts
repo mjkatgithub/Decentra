@@ -1,6 +1,9 @@
 export interface ChatTimelineMedia {
   url: string
+  mxcUrl: string
   mimetype?: string
+  isEncrypted?: boolean
+  encryptionInfo?: Record<string, any>
   info?: {
     w?: number
     h?: number
@@ -28,7 +31,7 @@ interface MapTimelineArgs {
   room: Record<string, any>
   ownUserId: string | undefined
   getMemberAvatarUrl: (member: Record<string, any>) => string | undefined
-  getMediaUrl: (mxcUrl: string, mimetype?: string, body?: string, isEncrypted?: boolean) => string | undefined
+  getMediaUrl: (mxcUrl: string, mimetype?: string, body?: string) => string | undefined
   buildNoticeText: (
     timelineEvent: Record<string, any>,
     room: Record<string, any>
@@ -122,13 +125,25 @@ export function mapTimelineEventsToMessages({
       const content = timelineEvent.getContent() ?? {}
       const mxcUrl = content.url || content.file?.url
       const isEncryptedMedia = Boolean(content.file?.url)
-      const media = (eventType === 'm.room.message' && content.msgtype === 'm.image' && mxcUrl)
-        ? {
-            url: getMediaUrl(mxcUrl, content.info?.mimetype, body, isEncryptedMedia) || mxcUrl,
-            mimetype: content.info?.mimetype,
-            info: content.info
-          }
-        : undefined
+      const mimetype = content.info?.mimetype
+      let media: ChatTimelineMedia | undefined
+
+      if (eventType === 'm.room.message' && content.msgtype === 'm.image' && mxcUrl) {
+        const needsBlobFetch = isEncryptedMedia ||
+          mimetype === 'image/svg+xml' ||
+          mimetype === 'image/gif' ||
+          body?.toLowerCase().endsWith('.svg') ||
+          body?.toLowerCase().endsWith('.gif')
+
+        media = {
+          url: needsBlobFetch ? '' : (getMediaUrl(mxcUrl, mimetype, body) || mxcUrl),
+          mxcUrl,
+          mimetype,
+          isEncrypted: isEncryptedMedia,
+          encryptionInfo: isEncryptedMedia ? content.file : undefined,
+          info: content.info
+        }
+      }
 
       return {
         id: currentEventId,

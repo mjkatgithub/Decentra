@@ -41,7 +41,7 @@ describe('chatTimeline helpers', () => {
     body.should.equal('hello world')
   })
 
-  it('maps m.image messages to media objects', () => {
+  it('maps m.image messages with mxcUrl and isEncrypted', () => {
     const mockRoom = {
       getLiveTimeline: () => ({
         getEvents: () => [
@@ -68,12 +68,14 @@ describe('chatTimeline helpers', () => {
       room: mockRoom as any,
       ownUserId: '@bob:example.org',
       getMemberAvatarUrl: () => undefined,
-      getMediaUrl: (mxc: string) => `http://server/${mxc.split('//')[1]}`,
+      getMediaUrl: (mxc: string) => `http://server/thumb/${mxc.split('//')[1]}`,
       buildNoticeText: () => ''
     })
 
     messages.length.should.equal(1)
-    messages[0].media?.url.should.equal('http://server/example.org/123')
-    messages[0].media?.mimetype.should.equal('image/png')
+    const media = messages[0]!.media!
+    media.url.should.equal('http://server/thumb/example.org/123')
+    media.mxcUrl.should.equal('mxc://example.org/123')
+    media.mimetype!.should.equal('image/png')
   })
 })

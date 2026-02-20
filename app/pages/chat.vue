@@ -2,6 +2,7 @@
 import { ClientEvent, MatrixEventEvent, RoomEvent } from "matrix-js-sdk";
 import { useAppI18n } from "~/composables/useAppI18n";
 import { mapTimelineEventsToMessages } from "~/utils/chatTimeline";
+import { fetchMediaBlob, decryptMediaBlob } from "~/utils/mediaUtils";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
 
@@ -443,24 +444,60 @@ function getMediaUrl(
   mxcUrl: string | null | undefined,
   mimetype?: string,
   body?: string,
-  isEncrypted?: boolean,
 ): string | undefined {
   if (!mxcUrl || !client.value?.mxcUrlToHttp) {
     return undefined;
   }
-
-  const isSvg =
-    mimetype === "image/svg+xml" || body?.toLowerCase().endsWith(".svg");
-  const shouldSkipThumbnail = isSvg || isEncrypted;
-
   try {
-    const httpUrl = shouldSkipThumbnail
-      ? client.value.mxcUrlToHttp(mxcUrl)
-      : client.value.mxcUrlToHttp(mxcUrl, 800, 800, "scale", false, true, true);
+    const httpUrl = client.value.mxcUrlToHttp(
+      mxcUrl,
+      800,
+      800,
+      "scale",
+      false,
+      true,
+      true,
+    );
     return appendAccessTokenToMediaUrl(httpUrl);
   } catch {
     return undefined;
   }
+}
+
+async function resolveMediaBlobUrl(media: {
+  mxcUrl: string;
+  mimetype?: string;
+  isEncrypted?: boolean;
+  encryptionInfo?: Record<string, any>;
+}): Promise<string> {
+  const matrixClient = client.value;
+  if (!matrixClient) {
+    throw new Error("No client available");
+  }
+
+  const accessToken = matrixClient.getAccessToken?.() ?? "";
+  const httpUrl = matrixClient.mxcUrlToHttp(
+    media.mxcUrl,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    true,
+    true,
+  );
+  if (!httpUrl) {
+    throw new Error("Could not resolve MXC URL");
+  }
+
+  if (media.isEncrypted && media.encryptionInfo) {
+    return decryptMediaBlob(
+      httpUrl,
+      accessToken,
+      media.encryptionInfo as any,
+      media.mimetype,
+    );
+  }
+  return fetchMediaBlob(httpUrl, accessToken);
 }
 
 function appendAccessTokenToMediaUrl(
@@ -812,6 +849,7 @@ watch(
           :messages="messages"
           :can-load-older="canLoadOlder"
           :loading-older="loadingOlder"
+          :resolve-media-blob-url="resolveMediaBlobUrl"
           @load-older="onLoadOlder"
         />
         <ChatMessageInput :room-id="selectedRoomId" :disabled="!client" />

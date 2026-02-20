@@ -35,7 +35,7 @@ describe('MessageList', () => {
     notice.classes().should.include('border-amber-300')
   })
 
-  it('renders image message when media is present', () => {
+  it('renders image with clickable link to full url', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         messages: [
@@ -46,7 +46,8 @@ describe('MessageList', () => {
             senderName: 'Alice',
             body: 'photo.jpg',
             media: {
-              url: 'http://example.org/thumb.jpg'
+              url: 'http://example.org/thumb.jpg',
+              fullUrl: 'http://example.org/full.jpg'
             }
           }
         ]
@@ -57,5 +58,10 @@ describe('MessageList', () => {
     img.exists().should.equal(true)
     img.attributes('src').should.equal('http://example.org/thumb.jpg')
     img.attributes('alt').should.equal('photo.jpg')
+
+    const link = wrapper.find('a')
+    link.exists().should.equal(true)
+    link.attributes('href').should.equal('http://example.org/full.jpg')
+    link.attributes('target').should.equal('_blank')
   })
 })
