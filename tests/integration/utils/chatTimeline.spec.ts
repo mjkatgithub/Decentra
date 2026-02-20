@@ -60,6 +60,7 @@ describe('chatTimeline integration', () => {
       room,
       ownUserId: '@me:example.org',
       getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
       buildNoticeText: () => 'Room updated'
     })
 
@@ -71,5 +72,85 @@ describe('chatTimeline integration', () => {
     mapped[1]?.isDecryptionError.should.equal(true)
     mapped[1]?.body.should.include('could not be decrypted')
     mapped[2]?.body.should.equal('Room updated')
+  })
+
+  it('maps mixed timeline with text and image messages', () => {
+    const textMessage = createTimelineEvent(
+      'evt10',
+      'm.room.message',
+      '@alice:example.org',
+      'Hello image feed'
+    )
+    const imageMessage = {
+      ...createTimelineEvent(
+        'evt11',
+        'm.room.message',
+        '@alice:example.org',
+        'landscape.png'
+      ),
+      getContent: () => ({
+        body: 'landscape.png',
+        msgtype: 'm.image',
+        url: 'mxc://example.org/landscape',
+        info: { mimetype: 'image/png' }
+      })
+    }
+    const room = {
+      getLiveTimeline: () => ({
+        getEvents: () => [textMessage, imageMessage]
+      }),
+      getMembers: () => [{ userId: '@alice:example.org', name: 'Alice' }],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false
+    }
+
+    const mapped = mapTimelineEventsToMessages({
+      room,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: (mxc: string) => `http://cdn/${mxc.split('//')[1]}`,
+      buildNoticeText: () => 'ignored'
+    })
+
+    mapped.length.should.equal(2)
+    mapped[0]?.body.should.equal('Hello image feed')
+    ;(mapped[0]?.media === undefined).should.equal(true)
+    mapped[1]?.body.should.equal('landscape.png')
+    mapped[1]?.media?.url.should.equal('http://cdn/example.org/landscape')
+  })
+
+  it('keeps fallback body for image message with invalid media url', () => {
+    const invalidImageMessage = {
+      ...createTimelineEvent(
+        'evt12',
+        'm.room.message',
+        '@alice:example.org',
+        'broken-image.jpg'
+      ),
+      getContent: () => ({
+        body: 'broken-image.jpg',
+        msgtype: 'm.image'
+      })
+    }
+    const room = {
+      getLiveTimeline: () => ({
+        getEvents: () => [invalidImageMessage]
+      }),
+      getMembers: () => [{ userId: '@alice:example.org', name: 'Alice' }],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false
+    }
+
+    const mapped = mapTimelineEventsToMessages({
+      room,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => 'ignored'
+    })
+
+    mapped.length.should.equal(1)
+    mapped[0]?.body.should.equal('broken-image.jpg')
+    ;(mapped[0]?.media === undefined).should.equal(true)
   })
 })

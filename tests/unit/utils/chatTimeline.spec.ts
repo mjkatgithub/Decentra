@@ -78,4 +78,90 @@ describe('chatTimeline helpers', () => {
     media.mxcUrl.should.equal('mxc://example.org/123')
     media.mimetype!.should.equal('image/png')
   })
+
+  it('keeps image url empty for gif media to force blob fetch', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_img_gif',
+            getContent: () => ({
+              body: 'animated.gif',
+              msgtype: 'm.image',
+              url: 'mxc://example.org/gif123',
+              info: { mimetype: 'image/gif' }
+            }),
+            isDecryptionFailure: () => false
+          }
+        ]
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@bob:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => 'http://server/thumb/gif123',
+      buildNoticeText: () => ''
+    })
+
+    messages.length.should.equal(1)
+    messages[0]!.media!.url.should.equal('')
+    messages[0]!.media!.mxcUrl.should.equal('mxc://example.org/gif123')
+  })
+
+  it('maps encrypted image with encryption metadata', () => {
+    const fileInfo = {
+      key: {
+        k: 'secret',
+        kty: 'oct',
+        alg: 'A256CTR',
+        key_ops: ['encrypt', 'decrypt'],
+        ext: true
+      },
+      iv: 'Zm9vYmFy',
+      hashes: { sha256: 'abc' },
+      v: 'v2',
+      url: 'mxc://example.org/encrypted-image'
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_img_enc',
+            getContent: () => ({
+              body: 'secret.png',
+              msgtype: 'm.image',
+              file: fileInfo,
+              info: { mimetype: 'image/png' }
+            }),
+            isDecryptionFailure: () => false
+          }
+        ]
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@bob:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => 'http://server/thumb/enc',
+      buildNoticeText: () => ''
+    })
+
+    const media = messages[0]!.media!
+    media.url.should.equal('')
+    media.isEncrypted.should.equal(true)
+    media.encryptionInfo!.url.should.equal('mxc://example.org/encrypted-image')
+  })
 })

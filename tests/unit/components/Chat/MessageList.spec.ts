@@ -35,7 +35,7 @@ describe('MessageList', () => {
     notice.classes().should.include('border-amber-300')
   })
 
-  it('renders image with clickable link to full url', () => {
+  it('renders image media with preview url', () => {
     const wrapper = mount(ChatMessageList, {
       props: {
         messages: [
@@ -47,7 +47,7 @@ describe('MessageList', () => {
             body: 'photo.jpg',
             media: {
               url: 'http://example.org/thumb.jpg',
-              fullUrl: 'http://example.org/full.jpg'
+              mxcUrl: 'mxc://example.org/123'
             }
           }
         ]
@@ -58,10 +58,53 @@ describe('MessageList', () => {
     img.exists().should.equal(true)
     img.attributes('src').should.equal('http://example.org/thumb.jpg')
     img.attributes('alt').should.equal('photo.jpg')
+  })
 
-    const link = wrapper.find('a')
-    link.exists().should.equal(true)
-    link.attributes('href').should.equal('http://example.org/full.jpg')
-    link.attributes('target').should.equal('_blank')
+  it('shows fallback text when media has no display url', () => {
+    const wrapper = mount(ChatMessageList, {
+      props: {
+        messages: [
+          {
+            id: 'evt3',
+            kind: 'message',
+            senderId: '@alice:example.org',
+            senderName: 'Alice',
+            body: 'missing-image.jpg',
+            media: {
+              url: '',
+              mxcUrl: 'mxc://example.org/missing',
+              mimetype: 'image/jpeg'
+            }
+          }
+        ]
+      }
+    })
+
+    wrapper.text().should.include('missing-image.jpg')
+  })
+
+  it('opens lightbox when clicking image preview', async () => {
+    const wrapper = mount(ChatMessageList, {
+      attachTo: document.body,
+      props: {
+        messages: [
+          {
+            id: 'evt4',
+            kind: 'message',
+            senderId: '@alice:example.org',
+            senderName: 'Alice',
+            body: 'photo.jpg',
+            media: {
+              url: 'http://example.org/thumb.jpg',
+              mxcUrl: 'mxc://example.org/123'
+            }
+          }
+        ]
+      }
+    })
+
+    await wrapper.find('img').trigger('click')
+    document.body.innerHTML.should.include('Full size')
+    wrapper.unmount()
   })
 })

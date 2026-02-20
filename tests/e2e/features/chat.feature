@@ -20,3 +20,14 @@ Feature: Chat
   # 2) Trigger an undecryptable event and confirm a user-facing fallback is
   #    rendered ("...could not be decrypted") without UI crash.
   # 3) Verify timeline keeps updating after decryption callbacks.
+  #
+  # Manual validation scenarios for Issue #7 (image rendering):
+  # 1) Send an `m.image` message from client A and open chat in client B.
+  #    Confirm image preview is rendered in timeline and body text is used
+  #    as alt/fallback label.
+  # 2) Click image preview in timeline and confirm the lightbox opens.
+  #    Confirm close button and backdrop click both close the lightbox.
+  # 3) Send invalid image media content (missing/invalid URL) and confirm
+  #    timeline still renders message with clear fallback text and no crash.
+  # 4) Send a very large image and confirm timeline layout stays intact
+  #    (no overflow outside message container, scrolling still works).

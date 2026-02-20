@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from "vue";
 import { useAppI18n } from "~/composables/useAppI18n";
 
 interface MediaInfo {
