@@ -29,6 +29,7 @@
   "devDependencies": {
     "@cucumber/cucumber": "^11.0.0",
     "@playwright/test": "^1.49.0",
+    "@types/chai": "^5.2.3",
     "@vitest/coverage-v8": "^2.1.0",
     "@vue/test-utils": "^2.4.6",
     "chai": "^4.5.0",

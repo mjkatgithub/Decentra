@@ -12,7 +12,8 @@ const englishMessages: Record<string, string> = {
   'chat.noRooms': 'No rooms',
   'layout.channels': 'Channels',
   'chat.noMessages': 'No messages yet',
-  'chat.loadOlder': 'Load older'
+  'chat.loadOlder': 'Load older',
+  'chat.sendImage': 'Send image'
 }
 
 ;(globalThis as Record<string, unknown>).useAppI18n = () => ({
