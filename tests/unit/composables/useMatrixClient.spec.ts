@@ -301,11 +301,13 @@ describe('useMatrixClient', () => {
     await sendImageMessage('!room:example.org', imageBlob, 'secure.png')
 
     expect(matrixClient.uploadContent).toHaveBeenCalledTimes(1)
-    const sendEventPayload = matrixClient.sendEvent.mock.calls[0]?.[2]
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
     expect(sendEventPayload.msgtype).toBe('m.image')
     expect(sendEventPayload.body).toBe('secure.png')
     expect(sendEventPayload.file.url).toBe('mxc://example.org/encrypted-image')
     expect(sendEventPayload.file.key.alg).toBe('A256CTR')
+    expect(sendEventPayload.file.iv.includes('=')).toBe(false)
+    expect(sendEventPayload.file.hashes.sha256.includes('=')).toBe(false)
     ;(globalThis as Record<string, unknown>).Image = originalImage
   })
 
@@ -345,6 +347,45 @@ describe('useMatrixClient', () => {
       sendImageMessage('!room:example.org', imageBlob, 'secure.png')
     ).rejects.toThrow('Encryption is not ready for media upload')
     expect(matrixClient.uploadContent).not.toHaveBeenCalled()
+    ;(globalThis as Record<string, unknown>).Image = originalImage
+  })
+
+  it('treats room as unencrypted when encryption state events are empty', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => [])
+        }
+      })),
+      uploadContent: vi.fn(async () => ({
+        content_uri: 'mxc://example.org/plain-image'
+      })),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+    const originalImage = (globalThis as Record<string, unknown>).Image
+    ;(globalThis as Record<string, unknown>).Image = undefined
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendImageMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const imageBlob = new Blob(['img-data'], { type: 'image/png' })
+    await sendImageMessage('!room:example.org', imageBlob, 'plain.png')
+
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload.url).toBe('mxc://example.org/plain-image')
+    expect(sendEventPayload.file).toBeUndefined()
     ;(globalThis as Record<string, unknown>).Image = originalImage
   })
 })

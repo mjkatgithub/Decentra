@@ -103,7 +103,11 @@ function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binaryString = atob(base64)
+  const padded = base64.padEnd(
+    base64.length + (4 - (base64.length % 4)) % 4,
+    '='
+  )
+  const binaryString = atob(padded)
   const bytes = new Uint8Array(binaryString.length)
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i)

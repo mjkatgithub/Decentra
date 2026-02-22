@@ -131,6 +131,10 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary)
 }
 
+function toUnpaddedBase64(bytes: Uint8Array): string {
+  return bytesToBase64(bytes).replace(/=+$/g, '')
+}
+
 async function encryptAttachmentData(
   data: ArrayBuffer
 ): Promise<{ encryptedData: ArrayBuffer; encryptedFile: Omit<MatrixEncryptedFile, 'url'> }> {
@@ -157,7 +161,7 @@ async function encryptAttachmentData(
     data
   )
   const hashBuffer = await crypto.subtle.digest('SHA-256', encryptedData)
-  const hashBase64 = bytesToBase64(new Uint8Array(hashBuffer))
+  const hashBase64 = toUnpaddedBase64(new Uint8Array(hashBuffer))
 
   return {
     encryptedData,
@@ -169,7 +173,7 @@ async function encryptAttachmentData(
         key_ops: ['encrypt', 'decrypt'],
         ext: true
       },
-      iv: bytesToBase64(ivBytes),
+      iv: toUnpaddedBase64(ivBytes),
       hashes: { sha256: hashBase64 },
       v: 'v2'
     }
@@ -217,6 +221,21 @@ function getImageInfo(imageFile: Blob, dimensions: { w?: number; h?: number }): 
     size: imageFile.size,
     ...dimensions
   }
+}
+
+function isRoomEncrypted(room: sdk.Room): boolean {
+  const hasEncryptionStateEvent = (room as sdk.Room & {
+    hasEncryptionStateEvent?: () => boolean
+  }).hasEncryptionStateEvent
+  if (typeof hasEncryptionStateEvent === 'function') {
+    return hasEncryptionStateEvent.call(room)
+  }
+  const encryptionStateEvent = room.currentState
+    ?.getStateEvents?.('m.room.encryption', '')
+  if (Array.isArray(encryptionStateEvent)) {
+    return encryptionStateEvent.length > 0
+  }
+  return Boolean(encryptionStateEvent)
 }
 
 export function useMatrixClient() {
@@ -441,11 +460,9 @@ export function useMatrixClient() {
     }
     const dimensions = await readImageDimensions(imageFile)
     const imageInfo = getImageInfo(imageFile, dimensions)
-    const roomEncryptionState = room.currentState
-      ?.getStateEvents?.('m.room.encryption')
-    const isEncryptedRoom = Boolean(roomEncryptionState)
+    const encryptedRoom = isRoomEncrypted(room)
 
-    if (isEncryptedRoom) {
+    if (encryptedRoom) {
       const cryptoReady = await ensureCryptoReady()
       if (!cryptoReady) {
         throw new Error('Encryption is not ready for media upload')
@@ -466,7 +483,7 @@ export function useMatrixClient() {
         url: mxcUrl
       }
       await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-        msgtype: 'm.image',
+        msgtype: MsgType.Image,
         body: fileName,
         info: imageInfo,
         file: encryptedFile
@@ -480,7 +497,7 @@ export function useMatrixClient() {
     )
     const mxcUrl = extractMxcUrl(uploadResponse)
     await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-      msgtype: 'm.image',
+      msgtype: MsgType.Image,
       body: fileName,
       info: imageInfo,
       url: mxcUrl
