@@ -8,7 +8,7 @@ vi.mock('matrix-js-sdk', () => {
   return {
     createClient,
     EventType: { RoomMessage: 'm.room.message' },
-    MsgType: { Text: 'm.text' },
+    MsgType: { Text: 'm.text', Image: 'm.image' },
     ClientEvent: {}
   }
 })
