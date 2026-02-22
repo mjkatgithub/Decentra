@@ -1,0 +1,88 @@
+name: Changelog Check
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - master
+
+jobs:
+  changelog:
+    name: Changelog policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce changelog policy by target branch
+        run: |
+          set -euo pipefail
+
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          BASE_REF="${{ github.base_ref }}"
+          HEAD_REF="${{ github.head_ref }}"
+
+          if ! git diff --name-only "$BASE_SHA" "$HEAD_SHA" | \
+            grep -q '^CHANGELOG.md$'; then
+            echo "ERROR: CHANGELOG.md was not updated."
+            exit 1
+          fi
+
+          extract_unreleased() {
+            awk '
+              /^## \[Unreleased\]/ { in_section=1; next }
+              /^## \[/ { if (in_section) exit }
+              in_section { print }
+            '
+          }
+
+          count_entries() {
+            grep -E -c '^[[:space:]]*-[[:space:]]+' || true
+          }
+
+          BASE_UNRELEASED="$(git show "$BASE_SHA:CHANGELOG.md" | \
+            extract_unreleased)"
+          HEAD_UNRELEASED="$(git show "$HEAD_SHA:CHANGELOG.md" | \
+            extract_unreleased)"
+
+          BASE_COUNT="$(printf '%s\n' "$BASE_UNRELEASED" | count_entries)"
+          HEAD_COUNT="$(printf '%s\n' "$HEAD_UNRELEASED" | count_entries)"
+
+          if [ "$BASE_REF" = "develop" ]; then
+            # Feature/Bug/etc -> develop:
+            # PR must add at least one Unreleased entry.
+            if [ "$HEAD_COUNT" -le "$BASE_COUNT" ]; then
+              echo "ERROR: PR into develop must add an Unreleased entry."
+              echo "Base Unreleased entries: $BASE_COUNT"
+              echo "Head Unreleased entries: $HEAD_COUNT"
+              exit 1
+            fi
+
+            echo "OK: Unreleased entries increased ($BASE_COUNT -> $HEAD_COUNT)."
+            exit 0
+          fi
+
+          if [ "$BASE_REF" = "master" ] && [ "$HEAD_REF" = "develop" ]; then
+            # develop -> master:
+            # Unreleased must be empty and a new version section must be added.
+            if [ "$HEAD_COUNT" -ne 0 ]; then
+              echo "ERROR: develop -> master requires empty Unreleased section."
+              echo "Current Unreleased entries: $HEAD_COUNT"
+              exit 1
+            fi
+
+            if ! git diff "$BASE_SHA" "$HEAD_SHA" -- CHANGELOG.md | \
+              grep -E '^\+\#\# \[[0-9]+\.[0-9]+\.[0-9]+\] - '; then
+              echo "ERROR: No new version section found in CHANGELOG.md."
+              exit 1
+            fi
+
+            echo "OK: Release changelog structure is valid."
+            exit 0
+          fi
+
+          # For other PR routes, require changelog file change only.
+          echo "OK: CHANGELOG.md updated for this PR route."
