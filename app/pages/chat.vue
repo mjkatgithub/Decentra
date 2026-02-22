@@ -1,238 +1,235 @@
 <script setup lang="ts">
-import { ClientEvent, MatrixEventEvent, RoomEvent } from 'matrix-js-sdk'
-import { useAppI18n } from '~/composables/useAppI18n'
-import { mapTimelineEventsToMessages } from '~/utils/chatTimeline'
+import { ClientEvent, MatrixEventEvent, RoomEvent } from "matrix-js-sdk";
+import { useAppI18n } from "~/composables/useAppI18n";
+import { mapTimelineEventsToMessages } from "~/utils/chatTimeline";
+import { fetchMediaBlob, decryptMediaBlob } from "~/utils/mediaUtils";
 
-type PresenceStatus = 'online' | 'away' | 'busy' | 'offline' | 'unknown'
+type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
 
 interface ChatMessage {
-  id: string
-  kind: 'message' | 'notice'
-  isDecryptionError?: boolean
-  senderId: string
-  senderName: string
-  avatarUrl?: string
-  body: string
+  id: string;
+  kind: "message" | "notice";
+  isDecryptionError?: boolean;
+  senderId: string;
+  senderName: string;
+  avatarUrl?: string;
+  body: string;
   readBy: Array<{
-    userId: string
-    displayName: string
-    avatarUrl?: string
-  }>
+    userId: string;
+    displayName: string;
+    avatarUrl?: string;
+  }>;
 }
 
 interface SpaceItem {
-  id: string
-  name: string
-  avatarUrl?: string
+  id: string;
+  name: string;
+  avatarUrl?: string;
 }
 
 interface RoomItem {
-  roomId: string
-  name: string
-  parentSpaceIds: string[]
+  roomId: string;
+  name: string;
+  parentSpaceIds: string[];
 }
 
 interface RoomCategory {
-  id: string
-  name: string
-  rooms: Array<{ roomId: string; name: string }>
+  id: string;
+  name: string;
+  rooms: Array<{ roomId: string; name: string }>;
 }
 
 interface RoomCategoryGroup {
-  id: string
-  name: string
-  rooms: Array<{ roomId: string; name: string }>
+  id: string;
+  name: string;
+  rooms: Array<{ roomId: string; name: string }>;
 }
 
 interface MemberItem {
-  userId: string
-  displayName: string
-  avatarUrl?: string
-  status: PresenceStatus
+  userId: string;
+  displayName: string;
+  avatarUrl?: string;
+  status: PresenceStatus;
 }
 
-const MOBILE_BREAKPOINT = 1024
-const HOME_SPACE_ID = '__home__'
+const MOBILE_BREAKPOINT = 1024;
+const HOME_SPACE_ID = "__home__";
 
-const {
-  client,
-  isLoggedIn,
-  userId,
-  getRooms,
-  logout,
-  loadOlderMessages
-} = useMatrixClient()
-const { translateText } = useAppI18n()
+const { client, isLoggedIn, userId, getRooms, logout, loadOlderMessages } =
+  useMatrixClient();
+const { translateText } = useAppI18n();
 
-const selectedRoomId = ref<string | null>(null)
-const selectedSpaceId = ref<string | null>(null)
-const messages = ref<ChatMessage[]>([])
-const matrixRooms = ref<Array<Record<string, any>>>([])
-const loadingOlder = ref(false)
-const canLoadOlder = ref(true)
-const loadMessagesTimerId = ref<number | null>(null)
-const leftSidebarOpen = ref(true)
-const rightSidebarOpen = ref(true)
-const isMobile = ref(false)
-const viewportInitialized = ref(false)
-const spaceRailExpanded = ref(false)
+const selectedRoomId = ref<string | null>(null);
+const selectedSpaceId = ref<string | null>(null);
+const messages = ref<ChatMessage[]>([]);
+const matrixRooms = ref<Array<Record<string, any>>>([]);
+const loadingOlder = ref(false);
+const canLoadOlder = ref(true);
+const loadMessagesTimerId = ref<number | null>(null);
+const leftSidebarOpen = ref(true);
+const rightSidebarOpen = ref(true);
+const isMobile = ref(false);
+const viewportInitialized = ref(false);
+const spaceRailExpanded = ref(false);
 
 if (!isLoggedIn.value) {
-  navigateTo('/login')
+  navigateTo("/login");
 }
 
 function getRoomType(room: Record<string, any>): string | undefined {
-  return (room as { getType?: () => string }).getType?.()
+  return (room as { getType?: () => string }).getType?.();
 }
 
 function getParentSpaceIds(room: Record<string, any>): string[] {
-  const currentState = room.currentState
-  const stateEvents = currentState?.getStateEvents?.('m.space.parent')
+  const currentState = room.currentState;
+  const stateEvents = currentState?.getStateEvents?.("m.space.parent");
 
   if (!stateEvents) {
-    return []
+    return [];
   }
 
   const normalizedEvents = Array.isArray(stateEvents)
     ? stateEvents
-    : [stateEvents]
+    : [stateEvents];
 
   return normalizedEvents
     .map((stateEvent) => stateEvent?.getStateKey?.())
-    .filter((spaceId): spaceId is string => Boolean(spaceId))
+    .filter((spaceId): spaceId is string => Boolean(spaceId));
 }
 
 function refreshRooms() {
-  matrixRooms.value = getRooms()
+  matrixRooms.value = getRooms();
 }
 
 const spaceItems = computed<SpaceItem[]>(() => {
   const spaces = matrixRooms.value
-    .filter((room) => getRoomType(room) === 'm.space')
+    .filter((room) => getRoomType(room) === "m.space")
     .map((spaceRoom) => ({
       id: spaceRoom.roomId,
-      name: spaceRoom.name || translateText('layout.spaceFallback'),
-      avatarUrl: getSpaceAvatarUrl(spaceRoom)
-    }))
+      name: spaceRoom.name || translateText("layout.spaceFallback"),
+      avatarUrl: getSpaceAvatarUrl(spaceRoom),
+    }));
 
-  return [{ id: HOME_SPACE_ID, name: translateText('layout.homeSpace') }, ...spaces]
-})
+  return [
+    { id: HOME_SPACE_ID, name: translateText("layout.homeSpace") },
+    ...spaces,
+  ];
+});
 
 const roomItems = computed<RoomItem[]>(() => {
   return matrixRooms.value
-    .filter((room) => getRoomType(room) !== 'm.space')
+    .filter((room) => getRoomType(room) !== "m.space")
     .map((room) => ({
       roomId: room.roomId,
-      name: room.name || translateText('layout.roomFallback'),
-      parentSpaceIds: getParentSpaceIds(room)
-    }))
-})
+      name: room.name || translateText("layout.roomFallback"),
+      parentSpaceIds: getParentSpaceIds(room),
+    }));
+});
 
 const selectedSpaceName = computed(() => {
   return (
-    spaceItems.value.find((space) => space.id === selectedSpaceId.value)?.name ??
-    translateText('layout.homeSpace')
-  )
-})
+    spaceItems.value.find((space) => space.id === selectedSpaceId.value)
+      ?.name ?? translateText("layout.homeSpace")
+  );
+});
 
 const visibleRooms = computed(() => {
   if (selectedSpaceId.value === HOME_SPACE_ID) {
-    return roomItems.value
+    return roomItems.value;
   }
   if (!selectedSpaceId.value) {
-    return []
+    return [];
   }
-  const activeSpaceId = selectedSpaceId.value
+  const activeSpaceId = selectedSpaceId.value;
   return roomItems.value.filter((room) => {
     if (room.parentSpaceIds.length === 0) {
-      return activeSpaceId === HOME_SPACE_ID
+      return activeSpaceId === HOME_SPACE_ID;
     }
-    return activeSpaceId ? room.parentSpaceIds.includes(activeSpaceId) : false
-  })
-})
+    return activeSpaceId ? room.parentSpaceIds.includes(activeSpaceId) : false;
+  });
+});
 
 const roomCategories = computed<RoomCategoryGroup[]>(() => {
   if (selectedSpaceId.value === HOME_SPACE_ID) {
-    return buildHomeSections()
+    return buildHomeSections();
   }
-  return buildSpaceSections()
-})
+  return buildSpaceSections();
+});
 
 function buildHomeSections(): RoomCategoryGroup[] {
-  const directRooms = visibleRooms.value.filter((room) => isDirectRoom(room))
+  const directRooms = visibleRooms.value.filter((room) => isDirectRoom(room));
   const unassignedRooms = visibleRooms.value.filter((room) => {
-    return room.parentSpaceIds.length === 0 && !isDirectRoom(room)
-  })
+    return room.parentSpaceIds.length === 0 && !isDirectRoom(room);
+  });
 
-  const categories: RoomCategoryGroup[] = []
+  const categories: RoomCategoryGroup[] = [];
   if (directRooms.length > 0) {
     categories.push({
-      id: 'personal-chats',
-      name: translateText('layout.personalChats'),
+      id: "personal-chats",
+      name: translateText("layout.personalChats"),
       rooms: directRooms.map((room) => ({
         roomId: room.roomId,
-        name: room.name
-      }))
-    })
+        name: room.name,
+      })),
+    });
   }
   if (unassignedRooms.length > 0) {
     categories.push({
-      id: 'unassigned-rooms',
-      name: translateText('layout.unassignedRooms'),
+      id: "unassigned-rooms",
+      name: translateText("layout.unassignedRooms"),
       rooms: unassignedRooms.map((room) => ({
         roomId: room.roomId,
-        name: room.name
-      }))
-    })
+        name: room.name,
+      })),
+    });
   }
 
-  return categories
+  return categories;
 }
 
 function buildSpaceSections(): RoomCategoryGroup[] {
-  const roomsInSpace = visibleRooms.value.filter((room) => !isDirectRoom(room))
-  const categories = new Map<string, RoomCategory>()
+  const roomsInSpace = visibleRooms.value.filter((room) => !isDirectRoom(room));
+  const categories = new Map<string, RoomCategory>();
 
   for (const room of roomsInSpace) {
-    const segments = room.name.split('/')
-    const rawCategory = segments.length > 1 ? (segments[0] || '').trim() : ''
-    const categoryName = rawCategory || translateText('layout.generalCategory')
-    const roomName = segments.length > 1
-      ? segments.slice(1).join('/').trim()
-      : room.name
-    const categoryId = categoryName.toLowerCase().replace(/\s+/g, '-')
+    const segments = room.name.split("/");
+    const rawCategory = segments.length > 1 ? (segments[0] || "").trim() : "";
+    const categoryName = rawCategory || translateText("layout.generalCategory");
+    const roomName =
+      segments.length > 1 ? segments.slice(1).join("/").trim() : room.name;
+    const categoryId = categoryName.toLowerCase().replace(/\s+/g, "-");
     if (!categories.has(categoryId)) {
       categories.set(categoryId, {
         id: categoryId,
         name: categoryName,
-        rooms: []
-      })
+        rooms: [],
+      });
     }
 
-    const category = categories.get(categoryId)
+    const category = categories.get(categoryId);
     if (!category) {
-      continue
+      continue;
     }
     category.rooms.push({
       roomId: room.roomId,
-      name: roomName || room.name
-    })
+      name: roomName || room.name,
+    });
   }
 
-  return Array.from(categories.values())
+  return Array.from(categories.values());
 }
 
 const selectedRoom = computed(() => {
   if (!selectedRoomId.value) {
-    return null
+    return null;
   }
-  return client.value?.getRoom(selectedRoomId.value) ?? null
-})
+  return client.value?.getRoom(selectedRoomId.value) ?? null;
+});
 
 const memberItems = computed<MemberItem[]>(() => {
-  const room = selectedRoom.value
+  const room = selectedRoom.value;
   if (!room) {
-    return []
+    return [];
   }
 
   return room
@@ -244,138 +241,151 @@ const memberItems = computed<MemberItem[]>(() => {
         busy: 1,
         away: 2,
         offline: 3,
-        unknown: 4
-      } as const
-      const statusRankDiff = rank[memberA.status] - rank[memberB.status]
+        unknown: 4,
+      } as const;
+      const statusRankDiff = rank[memberA.status] - rank[memberB.status];
       if (statusRankDiff !== 0) {
-        return statusRankDiff
+        return statusRankDiff;
       }
-      return memberA.displayName.localeCompare(memberB.displayName)
-    })
-})
+      return memberA.displayName.localeCompare(memberB.displayName);
+    });
+});
 
-watch(spaceItems, (spaces) => {
-  if (spaces.length === 0) {
-    selectedSpaceId.value = null
-    return
-  }
-  const selectedExists = spaces.some(
-    (space) => space.id === selectedSpaceId.value
-  )
-  if (!selectedExists) {
-    const firstSpace = spaces[0]
-    if (firstSpace) {
-      selectedSpaceId.value = firstSpace.id
+watch(
+  spaceItems,
+  (spaces) => {
+    if (spaces.length === 0) {
+      selectedSpaceId.value = null;
+      return;
     }
-  }
-}, { immediate: true })
+    const selectedExists = spaces.some(
+      (space) => space.id === selectedSpaceId.value,
+    );
+    if (!selectedExists) {
+      const firstSpace = spaces[0];
+      if (firstSpace) {
+        selectedSpaceId.value = firstSpace.id;
+      }
+    }
+  },
+  { immediate: true },
+);
 
-watch(visibleRooms, (rooms) => {
-  if (rooms.length === 0) {
-    selectedRoomId.value = null
-    messages.value = []
-    return
-  }
-  const selectedExists = rooms.some((room) => room.roomId === selectedRoomId.value)
-  if (!selectedExists) {
-    const firstRoom = rooms[0]
-    if (firstRoom) {
-      selectedRoomId.value = firstRoom.roomId
+watch(
+  visibleRooms,
+  (rooms) => {
+    if (rooms.length === 0) {
+      selectedRoomId.value = null;
+      messages.value = [];
+      return;
     }
-  }
-}, { immediate: true })
+    const selectedExists = rooms.some(
+      (room) => room.roomId === selectedRoomId.value,
+    );
+    if (!selectedExists) {
+      const firstRoom = rooms[0];
+      if (firstRoom) {
+        selectedRoomId.value = firstRoom.roomId;
+      }
+    }
+  },
+  { immediate: true },
+);
 
 watch(selectedRoomId, (roomId) => {
-  canLoadOlder.value = true
+  canLoadOlder.value = true;
   if (roomId) {
-    loadMessages(roomId)
+    loadMessages(roomId);
   }
-})
+});
 
 function toMemberItem(member: Record<string, any>): MemberItem {
   return {
-    userId: String(member.userId || ''),
-    displayName: String(member.name || member.userId || ''),
+    userId: String(member.userId || ""),
+    displayName: String(member.name || member.userId || ""),
     avatarUrl: getMemberAvatarUrl(member),
     status: normalizePresence(
-      typeof member.presence === 'string' ? member.presence : undefined
-    )
-  }
+      typeof member.presence === "string" ? member.presence : undefined,
+    ),
+  };
 }
 
-function normalizePresence(
-  rawPresence: string | undefined
-): PresenceStatus {
-  if (rawPresence === 'online') {
-    return 'online'
+function normalizePresence(rawPresence: string | undefined): PresenceStatus {
+  if (rawPresence === "online") {
+    return "online";
   }
-  if (rawPresence === 'org.matrix.msc3026.busy' || rawPresence === 'busy') {
-    return 'busy'
+  if (rawPresence === "org.matrix.msc3026.busy" || rawPresence === "busy") {
+    return "busy";
   }
-  if (rawPresence === 'dnd') {
-    return 'busy'
+  if (rawPresence === "dnd") {
+    return "busy";
   }
-  if (rawPresence === 'unavailable') {
-    return 'away'
+  if (rawPresence === "unavailable") {
+    return "away";
   }
-  if (rawPresence === 'offline') {
-    return 'offline'
+  if (rawPresence === "offline") {
+    return "offline";
   }
-  return 'unknown'
+  return "unknown";
 }
 
 function isDirectRoom(room: RoomItem): boolean {
-  const matrixRoom = matrixRooms.value.find((entry) => entry.roomId === room.roomId)
+  const matrixRoom = matrixRooms.value.find(
+    (entry) => entry.roomId === room.roomId,
+  );
   if (!matrixRoom) {
-    return false
+    return false;
   }
-  const joinedMemberCount = Number(matrixRoom.getJoinedMemberCount?.() ?? 0)
-  return room.parentSpaceIds.length === 0 && joinedMemberCount === 2
+  const joinedMemberCount = Number(matrixRoom.getJoinedMemberCount?.() ?? 0);
+  return room.parentSpaceIds.length === 0 && joinedMemberCount === 2;
 }
 
 function getSpaceAvatarUrl(spaceRoom: Record<string, any>): string | undefined {
-  const matrixClient = client.value
-  const homeserverUrl = matrixClient?.getHomeserverUrl?.()
-  const getAvatarUrl = spaceRoom.getAvatarUrl
-  const accessToken = matrixClient?.getAccessToken?.()
+  const matrixClient = client.value;
+  const homeserverUrl = matrixClient?.getHomeserverUrl?.();
+  const getAvatarUrl = spaceRoom.getAvatarUrl;
+  const accessToken = matrixClient?.getAccessToken?.();
 
-  const withAccessToken = (url: string | null | undefined): string | undefined => {
+  const withAccessToken = (
+    url: string | null | undefined,
+  ): string | undefined => {
     if (!url) {
-      return undefined
+      return undefined;
     }
-    if (!accessToken || !url.includes('/_matrix/')) {
-      return url
+    if (!accessToken || !url.includes("/_matrix/")) {
+      return url;
     }
-    if (url.includes('access_token=')) {
-      return url
+    if (url.includes("access_token=")) {
+      return url;
     }
-    const separator = url.includes('?') ? '&' : '?'
-    return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`
-  }
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`;
+  };
 
-  if (homeserverUrl && typeof getAvatarUrl === 'function') {
+  if (homeserverUrl && typeof getAvatarUrl === "function") {
     const httpAvatarUrl = getAvatarUrl.call(
       spaceRoom,
       homeserverUrl,
       40,
       40,
-      'crop',
+      "crop",
       false,
-      true
-    ) as string | null
+      true,
+    ) as string | null;
     if (httpAvatarUrl) {
-      return withAccessToken(httpAvatarUrl)
+      return withAccessToken(httpAvatarUrl);
     }
   }
 
-  const avatarMxcFromRoom = spaceRoom.getMxcAvatarUrl?.()
+  const avatarMxcFromRoom = spaceRoom.getMxcAvatarUrl?.();
   const avatarStateEvent = spaceRoom.currentState?.getStateEvents?.(
-    'm.room.avatar',
-    ''
-  )
-  const avatarMxcUrl = avatarMxcFromRoom || avatarStateEvent?.getContent?.()?.url
+    "m.room.avatar",
+    "",
+  );
+  const avatarMxcUrl =
+    avatarMxcFromRoom || avatarStateEvent?.getContent?.()?.url;
   if (!avatarMxcUrl || !matrixClient?.mxcUrlToHttp) {
-    return undefined
+    return undefined;
   }
 
   try {
@@ -383,297 +393,358 @@ function getSpaceAvatarUrl(spaceRoom: Record<string, any>): string | undefined {
       avatarMxcUrl,
       40,
       40,
-      'crop',
+      "crop",
       false,
       true,
-      true
-    ) as string
-    return withAccessToken(httpUrl)
+      true,
+    ) as string;
+    return withAccessToken(httpUrl);
   } catch {
-    return undefined
+    return undefined;
   }
 }
 
 function getMemberAvatarUrl(member: Record<string, any>): string | undefined {
-  const matrixClient = client.value
-  const homeserverUrl = matrixClient?.getHomeserverUrl?.()
-  const getAvatarUrl = member.getAvatarUrl
-  if (homeserverUrl && typeof getAvatarUrl === 'function') {
+  const matrixClient = client.value;
+  const homeserverUrl = matrixClient?.getHomeserverUrl?.();
+  const getAvatarUrl = member.getAvatarUrl;
+  if (homeserverUrl && typeof getAvatarUrl === "function") {
     const avatarUrl = getAvatarUrl.call(
       member,
       homeserverUrl,
       40,
       40,
-      'crop',
+      "crop",
       false,
       false,
-      true
-    ) as string | null
+      true,
+    ) as string | null;
     if (avatarUrl) {
-      return appendAccessTokenToMediaUrl(avatarUrl)
+      return appendAccessTokenToMediaUrl(avatarUrl);
     }
   }
 
-  const avatarMxcUrl = member.events?.member?.getContent?.()?.avatar_url
+  const avatarMxcUrl = member.events?.member?.getContent?.()?.avatar_url;
   if (!avatarMxcUrl || !matrixClient?.mxcUrlToHttp) {
-    return undefined
+    return undefined;
   }
   const avatarUrl = matrixClient.mxcUrlToHttp(
     avatarMxcUrl,
     40,
     40,
-    'crop',
+    "crop",
     false,
     true,
-    true
-  )
-  return appendAccessTokenToMediaUrl(avatarUrl)
+    true,
+  );
+  return appendAccessTokenToMediaUrl(avatarUrl);
+}
+
+function getMediaUrl(
+  mxcUrl: string | null | undefined,
+  mimetype?: string,
+  body?: string,
+): string | undefined {
+  if (!mxcUrl || !client.value?.mxcUrlToHttp) {
+    return undefined;
+  }
+  try {
+    const httpUrl = client.value.mxcUrlToHttp(
+      mxcUrl,
+      800,
+      800,
+      "scale",
+      false,
+      true,
+      true,
+    );
+    return appendAccessTokenToMediaUrl(httpUrl);
+  } catch {
+    return undefined;
+  }
+}
+
+async function resolveMediaBlobUrl(media: {
+  mxcUrl: string;
+  mimetype?: string;
+  isEncrypted?: boolean;
+  encryptionInfo?: Record<string, any>;
+}): Promise<string> {
+  const matrixClient = client.value;
+  if (!matrixClient) {
+    throw new Error("No client available");
+  }
+
+  const accessToken = matrixClient.getAccessToken?.() ?? "";
+  const httpUrl = matrixClient.mxcUrlToHttp(
+    media.mxcUrl,
+    undefined,
+    undefined,
+    undefined,
+    false,
+    true,
+    true,
+  );
+  if (!httpUrl) {
+    throw new Error("Could not resolve MXC URL");
+  }
+
+  if (media.isEncrypted && media.encryptionInfo) {
+    return decryptMediaBlob(
+      httpUrl,
+      accessToken,
+      media.encryptionInfo as any,
+      media.mimetype,
+    );
+  }
+  return fetchMediaBlob(httpUrl, accessToken);
 }
 
 function appendAccessTokenToMediaUrl(
-  avatarUrl: string | null | undefined
+  avatarUrl: string | null | undefined,
 ): string | undefined {
   if (!avatarUrl) {
-    return undefined
+    return undefined;
   }
-  const matrixClient = client.value
-  const accessToken = matrixClient?.getAccessToken?.()
-  if (!accessToken || !avatarUrl.includes('/_matrix/')) {
-    return avatarUrl
+  const matrixClient = client.value;
+  const accessToken = matrixClient?.getAccessToken?.();
+  if (!accessToken || !avatarUrl.includes("/_matrix/")) {
+    return avatarUrl;
   }
-  if (avatarUrl.includes('access_token=')) {
-    return avatarUrl
+  if (avatarUrl.includes("access_token=")) {
+    return avatarUrl;
   }
-  const separator = avatarUrl.includes('?') ? '&' : '?'
-  return `${avatarUrl}${separator}access_token=${encodeURIComponent(accessToken)}`
+  const separator = avatarUrl.includes("?") ? "&" : "?";
+  return `${avatarUrl}${separator}access_token=${encodeURIComponent(accessToken)}`;
 }
 
 function loadMessages(roomId: string) {
-  const room = client.value?.getRoom(roomId)
+  const room = client.value?.getRoom(roomId);
   if (!room) {
-    messages.value = []
-    return
+    messages.value = [];
+    return;
   }
   messages.value = mapTimelineEventsToMessages({
     room,
     ownUserId: client.value?.getUserId() ?? undefined,
     getMemberAvatarUrl: (member) => {
-      return getMemberAvatarUrl(member as unknown as Record<string, any>)
+      return getMemberAvatarUrl(member as unknown as Record<string, any>);
     },
-    buildNoticeText
-  })
+    getMediaUrl,
+    buildNoticeText,
+  });
 }
 
 function scheduleLoadMessages(roomId: string) {
   if (!import.meta.client) {
-    loadMessages(roomId)
-    return
+    loadMessages(roomId);
+    return;
   }
   if (loadMessagesTimerId.value !== null) {
-    window.clearTimeout(loadMessagesTimerId.value)
+    window.clearTimeout(loadMessagesTimerId.value);
   }
   loadMessagesTimerId.value = window.setTimeout(() => {
-    loadMessagesTimerId.value = null
-    loadMessages(roomId)
-  }, 120)
+    loadMessagesTimerId.value = null;
+    loadMessages(roomId);
+  }, 120);
 }
 
 function buildNoticeText(
   timelineEvent: Record<string, any>,
-  room: Record<string, any>
+  room: Record<string, any>,
 ): string {
-  const eventType = timelineEvent.getType?.() ?? ''
-  const senderUserId = timelineEvent.getSender?.() ?? ''
-  const senderName = room.getMember?.(senderUserId)?.name || senderUserId
-  const content = timelineEvent.getContent?.() ?? {}
+  const eventType = timelineEvent.getType?.() ?? "";
+  const senderUserId = timelineEvent.getSender?.() ?? "";
+  const senderName = room.getMember?.(senderUserId)?.name || senderUserId;
+  const content = timelineEvent.getContent?.() ?? {};
 
-  if (eventType === 'm.room.member') {
-    const membership = content.membership
-    const targetUserId = timelineEvent.getStateKey?.() ?? ''
-    const targetName = room.getMember?.(targetUserId)?.name || targetUserId
-    const previousContent = timelineEvent.getPrevContent?.() ?? {}
+  if (eventType === "m.room.member") {
+    const membership = content.membership;
+    const targetUserId = timelineEvent.getStateKey?.() ?? "";
+    const targetName = room.getMember?.(targetUserId)?.name || targetUserId;
+    const previousContent = timelineEvent.getPrevContent?.() ?? {};
 
-    if (membership === 'join' && previousContent.membership === 'join') {
+    if (membership === "join" && previousContent.membership === "join") {
       if (content.avatar_url !== previousContent.avatar_url) {
-        return `${targetName} changed avatar`
+        return `${targetName} changed avatar`;
       }
       if (content.displayname !== previousContent.displayname) {
-        return `${targetName} changed display name`
+        return `${targetName} changed display name`;
       }
-      return `${targetName} profile updated`
+      return `${targetName} profile updated`;
     }
 
-    if (membership === 'join') return `${targetName} joined the channel`
-    if (membership === 'leave') return `${targetName} left the channel`
-    if (membership === 'invite') return `${senderName} invited ${targetName}`
-    if (membership === 'ban') return `${targetName} was banned`
-    return `${targetName} membership changed`
+    if (membership === "join") return `${targetName} joined the channel`;
+    if (membership === "leave") return `${targetName} left the channel`;
+    if (membership === "invite") return `${senderName} invited ${targetName}`;
+    if (membership === "ban") return `${targetName} was banned`;
+    return `${targetName} membership changed`;
   }
 
-  if (eventType === 'm.room.avatar') {
-    return `${senderName} changed the room avatar`
+  if (eventType === "m.room.avatar") {
+    return `${senderName} changed the room avatar`;
   }
-  if (eventType === 'm.room.name') {
-    const nextName = content.name || 'Unnamed room'
-    return `${senderName} changed the room name to ${nextName}`
+  if (eventType === "m.room.name") {
+    const nextName = content.name || "Unnamed room";
+    return `${senderName} changed the room name to ${nextName}`;
   }
-  if (eventType === 'm.room.topic') {
-    return `${senderName} updated the room topic`
+  if (eventType === "m.room.topic") {
+    return `${senderName} updated the room topic`;
   }
-  return `${senderName} updated room settings`
+  return `${senderName} updated room settings`;
 }
 
 async function onLoadOlder() {
   if (!selectedRoomId.value || loadingOlder.value) {
-    return
+    return;
   }
-  loadingOlder.value = true
+  loadingOlder.value = true;
   try {
-    const hasMoreMessages = await loadOlderMessages(selectedRoomId.value)
-    canLoadOlder.value = hasMoreMessages
-    loadMessages(selectedRoomId.value)
+    const hasMoreMessages = await loadOlderMessages(selectedRoomId.value);
+    canLoadOlder.value = hasMoreMessages;
+    loadMessages(selectedRoomId.value);
   } finally {
-    loadingOlder.value = false
+    loadingOlder.value = false;
   }
 }
 
 function handleLogout() {
-  logout()
-  navigateTo('/login')
+  logout();
+  navigateTo("/login");
 }
 
 function selectSpace(spaceId: string) {
-  selectedSpaceId.value = spaceId
+  selectedSpaceId.value = spaceId;
   if (isMobile.value) {
-    leftSidebarOpen.value = false
+    leftSidebarOpen.value = false;
   }
 }
 
 function selectRoom(roomId: string) {
-  selectedRoomId.value = roomId
+  selectedRoomId.value = roomId;
   if (isMobile.value) {
-    leftSidebarOpen.value = false
+    leftSidebarOpen.value = false;
   }
 }
 
 function openSpaceSettings() {
   if (!selectedSpaceId.value) {
-    return
+    return;
   }
   if (selectedSpaceId.value === HOME_SPACE_ID) {
-    return
+    return;
   }
-  navigateTo(`/settings/space/${selectedSpaceId.value}`)
+  navigateTo(`/settings/space/${selectedSpaceId.value}`);
 }
 
 function toggleLeftSidebar() {
-  leftSidebarOpen.value = !leftSidebarOpen.value
+  leftSidebarOpen.value = !leftSidebarOpen.value;
 }
 
 function toggleRightSidebar() {
-  rightSidebarOpen.value = !rightSidebarOpen.value
+  rightSidebarOpen.value = !rightSidebarOpen.value;
 }
 
 function toggleSpaceRail() {
-  spaceRailExpanded.value = !spaceRailExpanded.value
+  spaceRailExpanded.value = !spaceRailExpanded.value;
 }
 
 function openCreateSpaceStub() {
-  navigateTo('/spaces/new')
+  navigateTo("/spaces/new");
 }
 
 function closeMobileOverlays() {
   if (!isMobile.value) {
-    return
+    return;
   }
-  leftSidebarOpen.value = false
-  rightSidebarOpen.value = false
+  leftSidebarOpen.value = false;
+  rightSidebarOpen.value = false;
 }
 
 function syncViewport(force = false) {
   if (!import.meta.client) {
-    return
+    return;
   }
-  const wasMobile = isMobile.value
-  isMobile.value = window.innerWidth < MOBILE_BREAKPOINT
+  const wasMobile = isMobile.value;
+  isMobile.value = window.innerWidth < MOBILE_BREAKPOINT;
 
   const shouldReset =
-    force ||
-    !viewportInitialized.value ||
-    wasMobile !== isMobile.value
+    force || !viewportInitialized.value || wasMobile !== isMobile.value;
 
   if (shouldReset) {
-    leftSidebarOpen.value = !isMobile.value
-    rightSidebarOpen.value = !isMobile.value
-    spaceRailExpanded.value = false
+    leftSidebarOpen.value = !isMobile.value;
+    rightSidebarOpen.value = !isMobile.value;
+    spaceRailExpanded.value = false;
   }
 
-  viewportInitialized.value = true
+  viewportInitialized.value = true;
 }
 
 onMounted(() => {
-  syncViewport(true)
-  window.addEventListener('resize', resizeHandler)
-})
+  syncViewport(true);
+  window.addEventListener("resize", resizeHandler);
+});
 
-const resizeHandler = () => syncViewport()
+const resizeHandler = () => syncViewport();
 
 onBeforeUnmount(() => {
   if (!import.meta.client) {
-    return
+    return;
   }
   if (loadMessagesTimerId.value !== null) {
-    window.clearTimeout(loadMessagesTimerId.value)
-    loadMessagesTimerId.value = null
+    window.clearTimeout(loadMessagesTimerId.value);
+    loadMessagesTimerId.value = null;
   }
-  window.removeEventListener('resize', resizeHandler)
-})
+  window.removeEventListener("resize", resizeHandler);
+});
 
 watch(
   () => client.value,
   (matrixClient, _previousClient, onCleanup) => {
     if (!matrixClient) {
-      return
+      return;
     }
-    refreshRooms()
+    refreshRooms();
     matrixClient.once(ClientEvent.Sync, (state) => {
-      if (state === 'PREPARED') {
-        refreshRooms()
+      if (state === "PREPARED") {
+        refreshRooms();
       }
-    })
+    });
     const timelineHandler = (
       _event: unknown,
-      room: Record<string, any> | undefined
+      room: Record<string, any> | undefined,
     ) => {
       if (room?.roomId === selectedRoomId.value) {
-        scheduleLoadMessages(room.roomId)
+        scheduleLoadMessages(room.roomId);
       }
-    }
+    };
     const membershipHandler = () => {
-      refreshRooms()
-    }
+      refreshRooms();
+    };
     const decryptedHandler = (event: Record<string, any>) => {
-      if (event?.getRoomId?.() === selectedRoomId.value && selectedRoomId.value) {
-        scheduleLoadMessages(selectedRoomId.value)
+      if (
+        event?.getRoomId?.() === selectedRoomId.value &&
+        selectedRoomId.value
+      ) {
+        scheduleLoadMessages(selectedRoomId.value);
       }
-    }
-    matrixClient.on(RoomEvent.Timeline, timelineHandler)
-    matrixClient.on(RoomEvent.MyMembership, membershipHandler)
-    matrixClient.on(MatrixEventEvent.Decrypted, decryptedHandler)
+    };
+    matrixClient.on(RoomEvent.Timeline, timelineHandler);
+    matrixClient.on(RoomEvent.MyMembership, membershipHandler);
+    matrixClient.on(MatrixEventEvent.Decrypted, decryptedHandler);
     onCleanup(() => {
-      matrixClient.off(RoomEvent.Timeline, timelineHandler)
-      matrixClient.off(RoomEvent.MyMembership, membershipHandler)
-      matrixClient.off(MatrixEventEvent.Decrypted, decryptedHandler)
-    })
+      matrixClient.off(RoomEvent.Timeline, timelineHandler);
+      matrixClient.off(RoomEvent.MyMembership, membershipHandler);
+      matrixClient.off(MatrixEventEvent.Decrypted, decryptedHandler);
+    });
   },
-  { immediate: true }
-)
+  { immediate: true },
+);
 </script>
 
 <template>
   <div
-    class="decentra-shell relative flex h-dvh overflow-hidden bg-gray-100
-           dark:bg-gray-950"
+    class="decentra-shell relative flex h-dvh overflow-hidden bg-gray-100 dark:bg-gray-950"
   >
     <div
       v-if="isMobile && (leftSidebarOpen || rightSidebarOpen)"
@@ -697,7 +768,7 @@ watch(
           ? leftSidebarOpen
             ? 'translate-x-0'
             : '-translate-x-full'
-          : 'translate-x-0'
+          : 'translate-x-0',
       ]"
     >
       <div class="flex h-full">
@@ -721,8 +792,7 @@ watch(
 
     <main class="flex min-w-0 flex-1 flex-col">
       <header
-        class="flex items-center gap-2 border-b border-gray-200 bg-white px-3 py-2
-               dark:border-gray-800 dark:bg-gray-900"
+        class="flex items-center gap-2 border-b border-gray-200 bg-white px-3 py-2 dark:border-gray-800 dark:bg-gray-900"
       >
         <UButton
           size="sm"
@@ -733,14 +803,16 @@ watch(
           @click="toggleLeftSidebar"
         />
         <div class="min-w-0 flex-1">
-          <p class="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
-            {{ selectedRoom?.name || translateText('chat.selectRoom') }}
+          <p
+            class="truncate text-sm font-semibold text-gray-800 dark:text-gray-100"
+          >
+            {{ selectedRoom?.name || translateText("chat.selectRoom") }}
           </p>
           <p
             v-if="userId"
             class="truncate text-xs text-gray-500 dark:text-gray-400"
           >
-            {{ translateText('chat.loggedInAs') }} {{ userId }}
+            {{ translateText("chat.loggedInAs") }} {{ userId }}
           </p>
         </div>
         <UButton
@@ -759,19 +831,17 @@ watch(
           :aria-label="translateText('layout.toggleMembers')"
           @click="toggleRightSidebar"
         />
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="soft"
-          @click="handleLogout"
-        >
-          {{ translateText('chat.signOut') }}
+        <UButton size="sm" color="neutral" variant="soft" @click="handleLogout">
+          {{ translateText("chat.signOut") }}
         </UButton>
       </header>
 
-      <div v-if="!selectedRoomId" class="flex flex-1 items-center justify-center">
+      <div
+        v-if="!selectedRoomId"
+        class="flex flex-1 items-center justify-center"
+      >
         <p class="text-sm text-gray-500 dark:text-gray-400">
-          {{ translateText('chat.selectRoom') }}
+          {{ translateText("chat.selectRoom") }}
         </p>
       </div>
       <template v-else>
@@ -779,12 +849,10 @@ watch(
           :messages="messages"
           :can-load-older="canLoadOlder"
           :loading-older="loadingOlder"
+          :resolve-media-blob-url="resolveMediaBlobUrl"
           @load-older="onLoadOlder"
         />
-        <ChatMessageInput
-          :room-id="selectedRoomId"
-          :disabled="!client"
-        />
+        <ChatMessageInput :room-id="selectedRoomId" :disabled="!client" />
       </template>
     </main>
 
@@ -800,7 +868,7 @@ watch(
           ? rightSidebarOpen
             ? 'translate-x-0'
             : 'translate-x-full'
-          : 'translate-x-0'
+          : 'translate-x-0',
       ]"
     >
       <ChatMemberList :members="memberItems" />

@@ -13,6 +13,27 @@ interface StoredMatrixSession {
 const MATRIX_SESSION_STORAGE_KEY = 'decentra.matrix.session.v1'
 let cryptoWasmInitialization: Promise<void> | null = null
 
+interface MatrixEncryptedFile {
+  key: {
+    k: string
+    kty: string
+    alg: string
+    key_ops: string[]
+    ext: boolean
+  }
+  iv: string
+  hashes: Record<string, string>
+  v: string
+  url: string
+}
+
+interface ImageInfo {
+  mimetype: string
+  size: number
+  w?: number
+  h?: number
+}
+
 function extractUserLocalpart(userIdOrUsername: string): string {
   const normalized = userIdOrUsername.trim().toLowerCase()
   const withoutAtPrefix = normalized.startsWith('@')
@@ -96,6 +117,125 @@ async function ensureCryptoWasmInitialized(): Promise<void> {
       })
   }
   await cryptoWasmInitialization
+}
+
+function base64ToBase64Url(input: string): string {
+  return input.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ''
+  for (const value of bytes) {
+    binary += String.fromCharCode(value)
+  }
+  return btoa(binary)
+}
+
+function toUnpaddedBase64(bytes: Uint8Array): string {
+  return bytesToBase64(bytes).replace(/=+$/g, '')
+}
+
+async function encryptAttachmentData(
+  data: ArrayBuffer
+): Promise<{ encryptedData: ArrayBuffer; encryptedFile: Omit<MatrixEncryptedFile, 'url'> }> {
+  const cryptoKey = await crypto.subtle.generateKey(
+    { name: 'AES-CTR', length: 256 },
+    true,
+    ['encrypt', 'decrypt']
+  )
+  const rawKey = await crypto.subtle.exportKey('raw', cryptoKey)
+  const keyBytes = new Uint8Array(rawKey)
+  const ivBytes = new Uint8Array(16)
+  crypto.getRandomValues(ivBytes)
+  for (let index = 8; index < ivBytes.length; index++) {
+    ivBytes[index] = 0
+  }
+
+  const encryptedData = await crypto.subtle.encrypt(
+    {
+      name: 'AES-CTR',
+      counter: ivBytes,
+      length: 64
+    },
+    cryptoKey,
+    data
+  )
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encryptedData)
+  const hashBase64 = toUnpaddedBase64(new Uint8Array(hashBuffer))
+
+  return {
+    encryptedData,
+    encryptedFile: {
+      key: {
+        k: base64ToBase64Url(bytesToBase64(keyBytes)),
+        kty: 'oct',
+        alg: 'A256CTR',
+        key_ops: ['encrypt', 'decrypt'],
+        ext: true
+      },
+      iv: toUnpaddedBase64(ivBytes),
+      hashes: { sha256: hashBase64 },
+      v: 'v2'
+    }
+  }
+}
+
+function extractMxcUrl(uploadResponse: unknown): string {
+  if (typeof uploadResponse === 'string') {
+    return uploadResponse
+  }
+  if (uploadResponse && typeof uploadResponse === 'object') {
+    const response = uploadResponse as Record<string, unknown>
+    const contentUri = response.content_uri
+    if (typeof contentUri === 'string') {
+      return contentUri
+    }
+  }
+  throw new Error('Media upload did not return an MXC URL')
+}
+
+async function readImageDimensions(
+  imageFile: Blob
+): Promise<{ w?: number; h?: number }> {
+  if (typeof Image === 'undefined' || typeof URL === 'undefined') {
+    return {}
+  }
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(imageFile)
+    const image = new Image()
+    image.onload = () => {
+      resolve({ w: image.naturalWidth, h: image.naturalHeight })
+      URL.revokeObjectURL(objectUrl)
+    }
+    image.onerror = () => {
+      resolve({})
+      URL.revokeObjectURL(objectUrl)
+    }
+    image.src = objectUrl
+  })
+}
+
+function getImageInfo(imageFile: Blob, dimensions: { w?: number; h?: number }): ImageInfo {
+  return {
+    mimetype: imageFile.type || 'application/octet-stream',
+    size: imageFile.size,
+    ...dimensions
+  }
+}
+
+function isRoomEncrypted(room: sdk.Room): boolean {
+  const hasEncryptionStateEvent = (room as sdk.Room & {
+    hasEncryptionStateEvent?: () => boolean
+  }).hasEncryptionStateEvent
+  if (typeof hasEncryptionStateEvent === 'function') {
+    return hasEncryptionStateEvent.call(room)
+  }
+  const encryptionStateEvent = room.currentState
+    ?.getStateEvents?.('m.room.encryption', '')
+  if (Array.isArray(encryptionStateEvent)) {
+    return encryptionStateEvent.length > 0
+  }
+  return Boolean(encryptionStateEvent)
 }
 
 export function useMatrixClient() {
@@ -301,6 +441,69 @@ export function useMatrixClient() {
     })
   }
 
+  async function sendImageMessage(
+    roomId: string,
+    imageFile: File | Blob,
+    fileName = 'image'
+  ): Promise<void> {
+    const matrixClient = client.value
+    if (!matrixClient) {
+      throw new Error('Not logged in')
+    }
+    const mimetype = imageFile.type || ''
+    if (!mimetype.startsWith('image/')) {
+      throw new Error('Only image uploads are supported')
+    }
+    const room = matrixClient.getRoom(roomId)
+    if (!room) {
+      throw new Error('Room not found')
+    }
+    const dimensions = await readImageDimensions(imageFile)
+    const imageInfo = getImageInfo(imageFile, dimensions)
+    const encryptedRoom = isRoomEncrypted(room)
+
+    if (encryptedRoom) {
+      const cryptoReady = await ensureCryptoReady()
+      if (!cryptoReady) {
+        throw new Error('Encryption is not ready for media upload')
+      }
+      const plaintextData = await imageFile.arrayBuffer()
+      const encryptedResult = await encryptAttachmentData(plaintextData)
+      const encryptedBlob = new Blob(
+        [encryptedResult.encryptedData],
+        { type: 'application/octet-stream' }
+      )
+      const uploadResponse = await matrixClient.uploadContent(
+        encryptedBlob,
+        { type: 'application/octet-stream', includeFilename: true }
+      )
+      const mxcUrl = extractMxcUrl(uploadResponse)
+      const encryptedFile: MatrixEncryptedFile = {
+        ...encryptedResult.encryptedFile,
+        url: mxcUrl
+      }
+      await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
+        msgtype: MsgType.Image,
+        body: fileName,
+        info: imageInfo,
+        file: encryptedFile
+      })
+      return
+    }
+
+    const uploadResponse = await matrixClient.uploadContent(
+      imageFile,
+      { type: imageInfo.mimetype, includeFilename: true }
+    )
+    const mxcUrl = extractMxcUrl(uploadResponse)
+    await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
+      msgtype: MsgType.Image,
+      body: fileName,
+      info: imageInfo,
+      url: mxcUrl
+    })
+  }
+
   async function loadOlderMessages(roomId: string): Promise<boolean> {
     const room = client.value?.getRoom(roomId)
     if (!room || !client.value) return false
@@ -317,6 +520,7 @@ export function useMatrixClient() {
     getRooms,
     getRoom,
     sendMessage,
+    sendImageMessage,
     loadOlderMessages,
     ensureCryptoReady
   }
