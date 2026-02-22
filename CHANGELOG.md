@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Chat image messages with inline preview and lightbox support
+- E2EE image sending support from chat input
+- Media utilities for encrypted media fetch, decrypt, cache, and revoke flows
+- Unit and integration test coverage for media utilities and image timelines
 - Four-column chat layout with responsive sidebars and mobile overlays
 - Space rail with compact/expanded modes and create-space stub route
 - Account settings page and space settings base page
@@ -24,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Matrix attachment encryption now uses unpadded base64 for IV and hashes
+- Image sending flow now checks room encryption before creating media events
 - Space navigation now separates icon-button interaction from text-click area
 - Room navigation supports home categories for personal/unassigned rooms
 - Chat shell styling refined with distinct visual background accents
