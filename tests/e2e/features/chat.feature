@@ -31,3 +31,10 @@ Feature: Chat
   #    timeline still renders message with clear fallback text and no crash.
   # 4) Send a very large image and confirm timeline layout stays intact
   #    (no overflow outside message container, scrolling still works).
+  #
+  # Manual validation scenarios for Issue #9 (message replies):
+  # 1) Click "Reply" on an existing message and confirm composer shows
+  #    reply context with sender and message preview text.
+  # 2) Click "Cancel reply" and confirm composer exits reply mode.
+  # 3) Send reply and confirm timeline renders reply context above body.
+  # 4) Validate fallback rendering when original referenced event is missing.

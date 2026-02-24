@@ -219,6 +219,46 @@ describe('useMatrixClient', () => {
     })
   })
 
+  it('sends text message with reply relation payload', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+
+    await sendMessage('!room:example.org', 'Reply text', {
+      eventId: 'evt-original'
+    })
+
+    expect(matrixClient.sendEvent).toHaveBeenCalledWith(
+      '!room:example.org',
+      'm.room.message',
+      expect.objectContaining({
+        msgtype: 'm.text',
+        body: 'Reply text',
+        'm.relates_to': {
+          'm.in_reply_to': {
+            event_id: 'evt-original'
+          }
+        }
+      })
+    )
+  })
+
   it('sends image message with url payload for non-encrypted room', async () => {
     const authClient = {
       loginRequest: vi.fn(async () => ({

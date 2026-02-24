@@ -153,4 +153,75 @@ describe('chatTimeline integration', () => {
     mapped[0]?.body.should.equal('broken-image.jpg')
     ;(mapped[0]?.media === undefined).should.equal(true)
   })
+
+  it('maps reply chains from in-reply-to relations', () => {
+    const originalMessage = createTimelineEvent(
+      'evt20',
+      'm.room.message',
+      '@alice:example.org',
+      'Root message'
+    )
+    const firstReply = {
+      ...createTimelineEvent(
+        'evt21',
+        'm.room.message',
+        '@bob:example.org',
+        'First reply'
+      ),
+      getContent: () => ({
+        body: 'First reply',
+        msgtype: 'm.text',
+        'm.relates_to': {
+          'm.in_reply_to': {
+            event_id: 'evt20'
+          }
+        }
+      })
+    }
+    const secondReply = {
+      ...createTimelineEvent(
+        'evt22',
+        'm.room.message',
+        '@alice:example.org',
+        'Second reply'
+      ),
+      getContent: () => ({
+        body: 'Second reply',
+        msgtype: 'm.text',
+        'm.relates_to': {
+          'm.in_reply_to': {
+            event_id: 'evt21'
+          }
+        }
+      })
+    }
+    const roomMembers = [
+      { userId: '@alice:example.org', name: 'Alice' },
+      { userId: '@bob:example.org', name: 'Bob' }
+    ]
+    const room = {
+      getLiveTimeline: () => ({
+        getEvents: () => [originalMessage, firstReply, secondReply]
+      }),
+      getMembers: () => roomMembers,
+      getMember: (userId: string) => {
+        return roomMembers.find((member) => member.userId === userId)
+      },
+      hasUserReadEvent: () => false
+    }
+
+    const mapped = mapTimelineEventsToMessages({
+      room,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => ''
+    })
+
+    mapped.length.should.equal(3)
+    mapped[1]?.replyTo?.eventId.should.equal('evt20')
+    mapped[1]?.replyTo?.senderName.should.equal('Alice')
+    mapped[2]?.replyTo?.eventId.should.equal('evt21')
+    mapped[2]?.replyTo?.senderName.should.equal('Bob')
+  })
 })
