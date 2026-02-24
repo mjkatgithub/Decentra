@@ -19,12 +19,19 @@ export interface ChatTimelineMessage {
   senderName: string
   avatarUrl?: string
   body: string
+  replyTo?: ChatTimelineReply
   media?: ChatTimelineMedia
   readBy: Array<{
     userId: string
     displayName: string
     avatarUrl?: string
   }>
+}
+
+export interface ChatTimelineReply {
+  eventId: string
+  senderName: string
+  body: string
 }
 
 interface MapTimelineArgs {
@@ -59,6 +66,13 @@ export function mapTimelineEventsToMessages({
         eventType === 'm.room.topic'
       )
     })
+  const timelineEventsById = new Map<string, Record<string, any>>()
+  for (const timelineEvent of timelineEvents) {
+    const timelineEventId = timelineEvent.getId?.()
+    if (timelineEventId) {
+      timelineEventsById.set(timelineEventId, timelineEvent)
+    }
+  }
   const messageEvents = timelineEvents.filter(
     (timelineEvent: Record<string, any>) => {
       return (
@@ -127,6 +141,9 @@ export function mapTimelineEventsToMessages({
       const isEncryptedMedia = Boolean(content.file?.url)
       const mimetype = content.info?.mimetype
       let media: ChatTimelineMedia | undefined
+      const replyTo = eventType === 'm.room.message' && !undecryptableMessage
+        ? buildReplyMetadata(content, room, timelineEventsById)
+        : undefined
 
       if (eventType === 'm.room.message' && content.msgtype === 'm.image' && mxcUrl) {
         const needsBlobFetch = isEncryptedMedia ||
@@ -155,6 +172,7 @@ export function mapTimelineEventsToMessages({
         senderName,
         avatarUrl: senderMember ? getMemberAvatarUrl(senderMember) : undefined,
         body,
+        replyTo,
         media,
         readBy
       }
@@ -204,4 +222,50 @@ export function getMessageBody(
     return body
   }
   return 'Unsupported message content.'
+}
+
+function buildReplyMetadata(
+  content: Record<string, any>,
+  room: Record<string, any>,
+  timelineEventsById: Map<string, Record<string, any>>
+): ChatTimelineReply | undefined {
+  const replyEventId = getReplyEventId(content)
+  if (!replyEventId) {
+    return undefined
+  }
+
+  const replyTargetEvent = timelineEventsById.get(replyEventId)
+  if (!replyTargetEvent) {
+    return {
+      eventId: replyEventId,
+      senderName: 'Unknown user',
+      body: 'Original message unavailable.'
+    }
+  }
+
+  const replySenderId = replyTargetEvent.getSender?.() ?? ''
+  const replySenderMember = room.getMember?.(replySenderId)
+  const replySenderName = replySenderMember?.name || replySenderId || 'Unknown user'
+  const replyUndecryptable = isUndecryptableEvent(replyTargetEvent)
+
+  return {
+    eventId: replyEventId,
+    senderName: replySenderName,
+    body: getMessageBody(replyTargetEvent, replySenderName, replyUndecryptable)
+  }
+}
+
+function getReplyEventId(content: Record<string, any>): string | undefined {
+  const relatesTo = content['m.relates_to']
+  if (!relatesTo || typeof relatesTo !== 'object') {
+    return undefined
+  }
+  const inReplyTo = relatesTo['m.in_reply_to']
+  if (!inReplyTo || typeof inReplyTo !== 'object') {
+    return undefined
+  }
+  const replyEventId = inReplyTo.event_id
+  return typeof replyEventId === 'string' && replyEventId.length > 0
+    ? replyEventId
+    : undefined
 }

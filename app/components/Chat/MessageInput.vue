@@ -6,13 +6,21 @@ const message = ref('')
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 
+interface ReplyTarget {
+  eventId: string
+  senderName: string
+  body: string
+}
+
 const props = defineProps<{
   roomId: string | null
   disabled?: boolean
+  replyTo?: ReplyTarget | null
 }>()
 
 const emit = defineEmits<{
   send: [body: string]
+  cancelReply: []
 }>()
 
 const { sendMessage, sendImageMessage } = useMatrixClient()
@@ -24,9 +32,18 @@ async function handleSend() {
 
   loading.value = true
   try {
-    await sendMessage(props.roomId, body)
+    await sendMessage(
+      props.roomId,
+      body,
+      props.replyTo?.eventId
+        ? { eventId: props.replyTo.eventId }
+        : undefined
+    )
     message.value = ''
     emit('send', body)
+    if (props.replyTo) {
+      emit('cancelReply')
+    }
   } finally {
     loading.value = false
   }
@@ -76,6 +93,31 @@ async function onPaste(event: ClipboardEvent) {
 
 <template>
   <div class="border-t border-gray-200 p-4 dark:border-gray-700">
+    <div
+      v-if="replyTo"
+      class="mb-3 rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-900"
+    >
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="text-xs font-medium text-gray-600 dark:text-gray-300">
+            {{ translateText('chat.replyingTo') }} {{ replyTo.senderName }}
+          </p>
+          <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+            {{ replyTo.body }}
+          </p>
+        </div>
+        <UButton
+          type="button"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          :disabled="loading"
+          @click="emit('cancelReply')"
+        >
+          {{ translateText('chat.cancelReply') }}
+        </UButton>
+      </div>
+    </div>
     <form class="flex gap-2" @submit.prevent="handleSend">
       <input
         ref="fileInput"

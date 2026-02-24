@@ -164,4 +164,100 @@ describe('chatTimeline helpers', () => {
     media.isEncrypted.should.equal(true)
     media.encryptionInfo!.url.should.equal('mxc://example.org/encrypted-image')
   })
+
+  it('maps reply metadata from m.relates_to.m.in_reply_to', () => {
+    const originalEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@alice:example.org',
+      getId: () => 'evt_original',
+      getContent: () => ({
+        body: 'Original text',
+        msgtype: 'm.text'
+      }),
+      isDecryptionFailure: () => false
+    }
+    const replyEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@bob:example.org',
+      getId: () => 'evt_reply',
+      getContent: () => ({
+        body: 'Reply text',
+        msgtype: 'm.text',
+        'm.relates_to': {
+          'm.in_reply_to': {
+            event_id: 'evt_original'
+          }
+        }
+      }),
+      isDecryptionFailure: () => false
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [originalEvent, replyEvent]
+      }),
+      getMembers: () => [],
+      getMember: (userId: string) => {
+        if (userId === '@alice:example.org') {
+          return { name: 'Alice' }
+        }
+        if (userId === '@bob:example.org') {
+          return { name: 'Bob' }
+        }
+        return undefined
+      },
+      hasUserReadEvent: () => false
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => ''
+    })
+
+    messages.length.should.equal(2)
+    messages[1]!.replyTo!.eventId.should.equal('evt_original')
+    messages[1]!.replyTo!.senderName.should.equal('Alice')
+    messages[1]!.replyTo!.body.should.equal('Original text')
+  })
+
+  it('maps fallback reply metadata when original event is missing', () => {
+    const replyEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@bob:example.org',
+      getId: () => 'evt_reply_missing',
+      getContent: () => ({
+        body: 'Reply text',
+        msgtype: 'm.text',
+        'm.relates_to': {
+          'm.in_reply_to': {
+            event_id: 'evt_not_found'
+          }
+        }
+      }),
+      isDecryptionFailure: () => false
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [replyEvent]
+      }),
+      getMembers: () => [],
+      getMember: (userId: string) => ({ name: userId }),
+      hasUserReadEvent: () => false
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => ''
+    })
+
+    messages.length.should.equal(1)
+    messages[0]!.replyTo!.eventId.should.equal('evt_not_found')
+    messages[0]!.replyTo!.senderName.should.equal('Unknown user')
+    messages[0]!.replyTo!.body.should.equal('Original message unavailable.')
+  })
 })

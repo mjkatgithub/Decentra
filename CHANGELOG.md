@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - App i18n composable with English/German locale persistence
 - SVG favicon and global head registration
 - Message timeline event notices for join/leave/profile and room metadata changes
+- Message replies with Matrix `m.in_reply_to` relation payload support
+- Reply mode in chat composer with preview and explicit cancel action
+- Message interaction bar component for hover/focus actions
 - E2E env template and loader for credential-based login scenarios
 - Smoke-tagged E2E scenarios and dedicated smoke test script
 - GitHub Actions CI workflow with fast and full test lanes
@@ -35,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chat shell styling refined with distinct visual background accents
 - Read receipts now show smaller avatars on each reader's last-read message
 - README extended with CI and E2E credential setup documentation
+- Message list rendering was modularized with a dedicated `ChatMessageItem`
+  component and reusable `ChatMessageActionBar`
 
 ### Fixed
 

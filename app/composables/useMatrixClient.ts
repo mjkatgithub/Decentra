@@ -34,6 +34,10 @@ interface ImageInfo {
   h?: number
 }
 
+interface MessageReplyOptions {
+  eventId: string
+}
+
 function extractUserLocalpart(userIdOrUsername: string): string {
   const normalized = userIdOrUsername.trim().toLowerCase()
   const withoutAtPrefix = normalized.startsWith('@')
@@ -433,12 +437,30 @@ export function useMatrixClient() {
     return client.value?.getRoom(roomId) ?? null
   }
 
-  async function sendMessage(roomId: string, body: string): Promise<void> {
+  async function sendMessage(
+    roomId: string,
+    body: string,
+    replyTo?: MessageReplyOptions
+  ): Promise<void> {
     if (!client.value) throw new Error('Not logged in')
-    await client.value.sendEvent(roomId, EventType.RoomMessage, {
+    const content: Record<string, any> = {
       msgtype: MsgType.Text,
       body
-    })
+    }
+
+    if (replyTo?.eventId) {
+      content['m.relates_to'] = {
+        'm.in_reply_to': {
+          event_id: replyTo.eventId
+        }
+      }
+    }
+
+    await client.value.sendEvent(
+      roomId,
+      EventType.RoomMessage,
+      content as any
+    )
   }
 
   async function sendImageMessage(

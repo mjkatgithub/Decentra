@@ -14,6 +14,11 @@ interface ChatMessage {
   senderName: string;
   avatarUrl?: string;
   body: string;
+  replyTo?: {
+    eventId: string;
+    senderName: string;
+    body: string;
+  };
   readBy: Array<{
     userId: string;
     displayName: string;
@@ -65,6 +70,7 @@ const messages = ref<ChatMessage[]>([]);
 const matrixRooms = ref<Array<Record<string, any>>>([]);
 const loadingOlder = ref(false);
 const canLoadOlder = ref(true);
+const activeReplyTo = ref<ChatMessage["replyTo"] | null>(null);
 const loadMessagesTimerId = ref<number | null>(null);
 const leftSidebarOpen = ref(true);
 const rightSidebarOpen = ref(true);
@@ -294,10 +300,23 @@ watch(
 
 watch(selectedRoomId, (roomId) => {
   canLoadOlder.value = true;
+  activeReplyTo.value = null;
   if (roomId) {
     loadMessages(roomId);
   }
 });
+
+function setReplyTarget(replyTarget: {
+  eventId: string;
+  senderName: string;
+  body: string;
+}) {
+  activeReplyTo.value = replyTarget;
+}
+
+function clearReplyTarget() {
+  activeReplyTo.value = null;
+}
 
 function toMemberItem(member: Record<string, any>): MemberItem {
   return {
@@ -851,8 +870,14 @@ watch(
           :loading-older="loadingOlder"
           :resolve-media-blob-url="resolveMediaBlobUrl"
           @load-older="onLoadOlder"
+          @reply="setReplyTarget"
         />
-        <ChatMessageInput :room-id="selectedRoomId" :disabled="!client" />
+        <ChatMessageInput
+          :room-id="selectedRoomId"
+          :disabled="!client"
+          :reply-to="activeReplyTo"
+          @cancel-reply="clearReplyTarget"
+        />
       </template>
     </main>
 

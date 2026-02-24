@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
+import ChatMessageItem from "~/components/Chat/MessageItem.vue";
 import { useAppI18n } from "~/composables/useAppI18n";
 
 interface MediaInfo {
@@ -23,6 +24,11 @@ interface MessageItem {
   senderName: string;
   avatarUrl?: string;
   body: string;
+  replyTo?: {
+    eventId: string;
+    senderName: string;
+    body: string;
+  };
   media?: MediaInfo;
   readBy?: Array<{
     userId: string;
@@ -47,6 +53,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   loadOlder: [];
+  reply: [target: { eventId: string; senderName: string; body: string }];
 }>();
 
 const { translateText } = useAppI18n();
@@ -103,6 +110,14 @@ function closeLightbox() {
   lightboxUrl.value = null;
 }
 
+function emitReplyTarget(msg: MessageItem) {
+  emit("reply", {
+    eventId: msg.id,
+    senderName: msg.senderName,
+    body: msg.body,
+  });
+}
+
 watch(
   () => props.messages,
   (msgs) => {
@@ -138,99 +153,13 @@ watch(
     </template>
     <template v-else>
       <div v-for="msg in messages" :key="msg.id" class="mb-4">
-        <template v-if="msg.kind === 'notice'">
-          <p
-            class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
-            :class="
-              msg.isDecryptionError
-                ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-200'
-                : ''
-            "
-          >
-            {{ msg.body }}
-          </p>
-        </template>
-        <template v-else>
-          <div class="flex items-start gap-3">
-            <img
-              v-if="msg.avatarUrl"
-              :src="msg.avatarUrl"
-              :alt="msg.senderName"
-              class="mt-0.5 h-10 w-10 rounded-full object-cover"
-            />
-            <div
-              v-else
-              class="mt-0.5 flex h-10 w-10 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-700 dark:bg-gray-700 dark:text-gray-200"
-            >
-              {{ msg.senderName.trim().charAt(0).toUpperCase() || "?" }}
-            </div>
-
-            <div class="min-w-0 flex-1">
-              <span
-                class="text-xs font-medium text-gray-500 dark:text-gray-400"
-              >
-                {{ msg.senderName }}
-              </span>
-              <div
-                v-if="msg.media"
-                class="mt-1 max-w-sm overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
-              >
-                <div
-                  v-if="loadingMedia[msg.id]"
-                  class="flex h-48 w-full items-center justify-center bg-gray-50 dark:bg-gray-950"
-                >
-                  <span class="text-xs text-gray-400">Loading…</span>
-                </div>
-                <img
-                  v-else-if="getDisplayUrl(msg)"
-                  :src="getDisplayUrl(msg)"
-                  :alt="msg.body"
-                  class="max-h-96 w-full cursor-pointer object-contain bg-gray-50 dark:bg-gray-950"
-                  loading="lazy"
-                  @click="openLightbox(msg)"
-                />
-                <div
-                  v-else
-                  class="flex h-48 w-full items-center justify-center bg-gray-50 dark:bg-gray-950"
-                >
-                  <span class="text-xs text-gray-400">{{ msg.body }}</span>
-                </div>
-              </div>
-              <p v-else class="text-sm wrap-break-word">
-                {{ msg.body }}
-              </p>
-
-              <div
-                v-if="msg.readBy && msg.readBy.length > 0"
-                class="mt-1 flex items-center justify-end"
-              >
-                <div class="flex -space-x-2">
-                  <div
-                    v-for="reader in msg.readBy.slice(0, 5)"
-                    :key="`${msg.id}-${reader.userId}`"
-                    class="h-4 w-4 overflow-hidden rounded-full border border-white bg-gray-200 dark:border-gray-900 dark:bg-gray-700"
-                    :title="reader.displayName"
-                  >
-                    <img
-                      v-if="reader.avatarUrl"
-                      :src="reader.avatarUrl"
-                      :alt="reader.displayName"
-                      class="h-full w-full object-cover"
-                    />
-                    <span
-                      v-else
-                      class="flex h-full w-full items-center justify-center text-[8px] font-semibold text-gray-700 dark:text-gray-200"
-                    >
-                      {{
-                        reader.displayName.trim().charAt(0).toUpperCase() || "?"
-                      }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
+        <ChatMessageItem
+          :message="msg"
+          :display-url="getDisplayUrl(msg)"
+          :loading-media="Boolean(loadingMedia[msg.id])"
+          @reply="emitReplyTarget(msg)"
+          @open-lightbox="openLightbox(msg)"
+        />
       </div>
     </template>
   </div>
