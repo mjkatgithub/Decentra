@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - E2E env template and loader for credential-based login scenarios
 - Smoke-tagged E2E scenarios and dedicated smoke test script
 - GitHub Actions CI workflow with fast and full test lanes
+- Synapse-backed E2E orchestration script (`test:e2e`) with startup, seeding,
+  execution, and teardown flow
+- Local Synapse runtime scripts for env loading, server lifecycle management,
+  and deterministic test seeding
+- Synapse Docker Compose setup under `tests/e2e/synapse` for local and CI runs
+- Executable chat E2E scenarios for E2EE fallback continuity, image rendering
+  and lightbox behavior, plus reply and missing-origin fallback handling
 
 ### Changed
 
@@ -40,12 +47,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README extended with CI and E2E credential setup documentation
 - Message list rendering was modularized with a dedicated `ChatMessageItem`
   component and reusable `ChatMessageActionBar`
+- Full CI lane now runs E2E against local Dockerized Synapse instead of
+  requiring repository Matrix credential secrets
+- Synapse-specific E2E step definitions were consolidated into existing
+  `login.steps.mjs` and `chat.steps.mjs`
+- Synapse environment validation moved from scenario-level Given setup into
+  hook-based prechecks for seeded-room scenarios
 
 ### Fixed
 
 - Space-to-room parent mapping now uses Matrix `m.space.parent` state
 - Space avatar resolution now supports Matrix mxc avatar URLs with fallback
 - CI install issues from unused `@nuxt/test-utils` setup were resolved
+- Synapse compose configuration no longer contains duplicate `services` blocks
+  that broke Docker parsing
+- Seeded image events now include upload-backed media URLs so image preview and
+  lightbox assertions can pass reliably
 
 ## [0.1.0] - 2025-02-13
 
