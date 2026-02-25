@@ -1,0 +1,22 @@
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: decentra-e2e-synapse
+    restart: unless-stopped
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./data:/data
+services:
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: decentra-e2e-synapse
+    restart: unless-stopped
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./data:/data
