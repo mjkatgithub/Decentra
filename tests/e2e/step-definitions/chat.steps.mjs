@@ -24,3 +24,104 @@ Then('I am redirected to the login page', async function () {
   await expect(this.page.getByRole('heading', { name: /Sign in|Anmelden/i }))
     .toBeVisible()
 })
+
+When('I open the seeded test room', async function () {
+  const seededRoomName = process.env.E2E_TEST_ROOM_NAME || 'Decentra E2E Room'
+  const roomButton = this.page
+    .getByRole('button', { name: new RegExp(seededRoomName, 'i') })
+    .first()
+  await expect(roomButton).toBeVisible({ timeout: 20000 })
+  await roomButton.click()
+})
+
+Then('I should see message body {string}', async function (messageText) {
+  await expect(this.page.getByText(messageText, { exact: false }).first())
+    .toBeVisible({ timeout: 20000 })
+})
+
+Then('I should see an undecryptable fallback notice', async function () {
+  await expect(
+    this.page.getByText(/encrypted message that could not be decrypted/i).first()
+  ).toBeVisible({ timeout: 20000 })
+})
+
+Then('I should see image preview for {string}', async function (altLabel) {
+  const previewImage = this.page.locator(`img[alt="${altLabel}"]`).first()
+  await expect(previewImage).toBeVisible({ timeout: 20000 })
+})
+
+When('I open the image preview for {string}', async function (altLabel) {
+  const previewImage = this.page.locator(`img[alt="${altLabel}"]`).first()
+  await expect(previewImage).toBeVisible({ timeout: 20000 })
+  await previewImage.click()
+})
+
+Then('the lightbox should be visible', async function () {
+  await expect(this.page.locator('img[alt="Full size"]').first())
+    .toBeVisible({ timeout: 10000 })
+})
+
+When('I close the lightbox with the close button', async function () {
+  const closeButton = this.page.locator('div.fixed.inset-0 button').first()
+  await expect(closeButton).toBeVisible({ timeout: 10000 })
+  await closeButton.click()
+})
+
+Then('the lightbox should not be visible', async function () {
+  await expect(this.page.locator('img[alt="Full size"]')).toHaveCount(0)
+})
+
+Then('I should see image fallback label {string}', async function (fallbackLabel) {
+  await expect(this.page.getByText(fallbackLabel, { exact: false }).first())
+    .toBeVisible({ timeout: 20000 })
+})
+
+When('I click reply on message body {string}', async function (messageText) {
+  const messageItem = this.page.locator('div.group').filter({
+    hasText: messageText
+  }).first()
+  await expect(messageItem).toBeVisible({ timeout: 15000 })
+  await messageItem.hover()
+  const replyButton = messageItem
+    .getByRole('button', { name: /Reply|Antworten/i })
+    .first()
+  await expect(replyButton).toBeVisible({ timeout: 10000 })
+  await replyButton.click()
+})
+
+Then(
+  'I should see the reply composer with preview {string}',
+  async function (previewText) {
+    await expect(this.page.getByText(previewText, { exact: false }).first())
+      .toBeVisible({ timeout: 10000 })
+    await expect(
+      this.page.getByRole('button', { name: /Cancel reply|Antwort abbrechen/i })
+    ).toBeVisible({ timeout: 10000 })
+  }
+)
+
+When('I cancel reply mode', async function () {
+  await this.page
+    .getByRole('button', { name: /Cancel reply|Antwort abbrechen/i })
+    .click()
+})
+
+Then('reply mode should be inactive', async function () {
+  await expect(
+    this.page.getByRole('button', { name: /Cancel reply|Antwort abbrechen/i })
+  ).toHaveCount(0)
+})
+
+Then('I should see a rendered reply for {string}', async function (bodyText) {
+  const replyContainer = this.page.locator('div.group').filter({
+    hasText: bodyText
+  }).first()
+  await expect(replyContainer.locator('.reply-preview')).toBeVisible({
+    timeout: 10000
+  })
+})
+
+Then('I should see a missing-origin reply fallback', async function () {
+  await expect(this.page.getByText('Original message unavailable.').first())
+    .toBeVisible({ timeout: 10000 })
+})
