@@ -15,8 +15,7 @@ Feature: Chat
     When I open the space settings page for "space-demo"
     Then I am redirected to the login page
 
-  Scenario: Issue #4 - E2EE fallback and timeline continuity
-    Given seeded synapse env is configured
+  Scenario: E2EE fallback and timeline continuity
     When I open the login page
     And I sign in with secondary configured credentials
     And I open the seeded test room
@@ -24,8 +23,7 @@ Feature: Chat
     And I should see an undecryptable fallback notice
     And I should see message body "E2E_POST_UNDECRYPTABLE_MESSAGE"
 
-  Scenario: Issue #7 - Image rendering and lightbox behavior
-    Given seeded synapse env is configured
+  Scenario: Image rendering and lightbox behavior
     When I open the login page
     And I sign in with secondary configured credentials
     And I open the seeded test room
@@ -36,8 +34,7 @@ Feature: Chat
     Then the lightbox should not be visible
     And I should see image fallback label "E2E_INVALID_IMAGE_FALLBACK"
 
-  Scenario: Issue #9 - Reply composer and fallback rendering
-    Given seeded synapse env is configured
+  Scenario: Reply composer and fallback rendering
     When I open the login page
     And I sign in with configured credentials
     And I open the seeded test room

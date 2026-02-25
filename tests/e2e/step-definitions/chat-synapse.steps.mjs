@@ -1,4 +1,4 @@
-import { Given, When, Then } from '@cucumber/cucumber'
+import { When, Then } from '@cucumber/cucumber'
 import { expect } from '@playwright/test'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
@@ -19,20 +19,6 @@ async function submitLogin(page, homeserverValue, usernameValue, passwordValue) 
   await page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
   await expect(page).toHaveURL(/\/chat/, { timeout: 45000 })
 }
-
-Given('seeded synapse env is configured', async function () {
-  const requiredKeys = [
-    'E2E_MATRIX_HOMESERVER',
-    'E2E_MATRIX_USERNAME',
-    'E2E_MATRIX_PASSWORD',
-    'E2E_SECOND_MATRIX_USERNAME',
-    'E2E_SECOND_MATRIX_PASSWORD'
-  ]
-
-  for (const requiredKey of requiredKeys) {
-    requireEnv(requiredKey)
-  }
-})
 
 When('I sign in with secondary configured credentials', async function () {
   const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
