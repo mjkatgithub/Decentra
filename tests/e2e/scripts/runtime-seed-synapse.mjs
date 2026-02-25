@@ -93,6 +93,30 @@ async function sendMessage(accessToken, roomId, transactionId, content, eventTyp
   )
 }
 
+async function uploadImage(accessToken) {
+  const imageBytes = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/ebpNc8AAAAASUVORK5CYII=',
+    'base64'
+  )
+  const uploadResponse = await fetch(
+    apiUrl('/_matrix/media/v3/upload?filename=e2e-seeded-image.png'),
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'image/png'
+      },
+      body: imageBytes
+    }
+  )
+  const bodyText = await uploadResponse.text()
+  const body = bodyText ? JSON.parse(bodyText) : {}
+  if (!uploadResponse.ok || !body?.content_uri) {
+    throw new Error('Failed to upload seeded image')
+  }
+  return body.content_uri
+}
+
 async function main() {
   const primarySession = await ensureUser(primaryLocalpart, primaryPassword)
   const secondarySession = await ensureUser(secondaryLocalpart, secondaryPassword)
@@ -121,9 +145,12 @@ async function main() {
     msgtype: 'm.text',
     body: 'E2E_SEED_BASE_MESSAGE'
   })
+  const uploadedMxcUrl = await uploadImage(primarySession.access_token)
   await sendMessage(primarySession.access_token, roomId, 'seed-image-1', {
     msgtype: 'm.image',
-    body: 'E2E_SEED_IMAGE'
+    body: 'E2E_SEED_IMAGE',
+    info: { mimetype: 'image/png', size: 68, w: 1, h: 1 },
+    url: uploadedMxcUrl
   })
   await sendMessage(primarySession.access_token, roomId, 'seed-invalid-image', {
     msgtype: 'm.image',
