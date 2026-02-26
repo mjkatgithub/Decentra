@@ -1,47 +1,37 @@
 import { Before, After, BeforeAll, AfterAll } from '@cucumber/cucumber'
 import { chromium } from '@playwright/test'
-import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { loadE2EEnv } from '../scripts/runtime-e2e-env.mjs'
 
 let browser
 let page
 
 const isHeadless = process.env.HEADLESS !== 'false'
-loadE2EEnv()
+loadE2EEnv(resolve(process.cwd()))
 
-function loadE2EEnv() {
-  const envFileNames = [
-    'tests/e2e/.env.e2e.local',
-    'tests/e2e/.env.e2e',
-    '.env.e2e.local',
-    '.env.e2e'
-  ]
-
-  for (const envFileName of envFileNames) {
-    const absolutePath = resolve(process.cwd(), envFileName)
-    if (!existsSync(absolutePath)) {
-      continue
-    }
-    const envContent = readFileSync(absolutePath, 'utf8')
-    const envLines = envContent.split(/\r?\n/)
-
-    for (const envLine of envLines) {
-      const trimmedLine = envLine.trim()
-      if (!trimmedLine || trimmedLine.startsWith('#')) {
-        continue
-      }
-      const separatorIndex = trimmedLine.indexOf('=')
-      if (separatorIndex <= 0) {
-        continue
-      }
-      const variableName = trimmedLine.slice(0, separatorIndex).trim()
-      const variableValue = trimmedLine.slice(separatorIndex + 1).trim()
-      if (!process.env[variableName]) {
-        process.env[variableName] = variableValue
-      }
-    }
-    break
+function shouldValidateSynapseEnv(pickle) {
+  if (!pickle?.steps) {
+    return false
   }
+  return pickle.steps.some((step) => {
+    return typeof step.text === 'string' &&
+      step.text.includes('I open the seeded test room')
+  })
+}
+
+function validateSynapseEnv() {
+  const requiredKeys = [
+    'E2E_MATRIX_HOMESERVER',
+    'E2E_MATRIX_USERNAME',
+    'E2E_MATRIX_PASSWORD',
+    'E2E_SECOND_MATRIX_USERNAME',
+    'E2E_SECOND_MATRIX_PASSWORD'
+  ]
+  const missingKeys = requiredKeys.filter((requiredKey) => !process.env[requiredKey])
+  if (missingKeys.length === 0) {
+    return
+  }
+  throw new Error(`Missing Synapse E2E env: ${missingKeys.join(', ')}`)
 }
 
 BeforeAll(async function () {
@@ -52,7 +42,10 @@ AfterAll(async function () {
   if (browser) await browser.close()
 })
 
-Before(async function () {
+Before(async function ({ pickle }) {
+  if (shouldValidateSynapseEnv(pickle)) {
+    validateSynapseEnv()
+  }
   page = await browser.newPage()
   this.page = page
 })

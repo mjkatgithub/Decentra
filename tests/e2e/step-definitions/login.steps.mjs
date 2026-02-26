@@ -3,6 +3,23 @@ import { expect } from '@playwright/test'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
+function requireEnv(variableName) {
+  const variableValue = process.env[variableName]
+  if (!variableValue) {
+    throw new Error(`Missing required E2E env: ${variableName}`)
+  }
+  return variableValue
+}
+
+async function submitLogin(page, homeserverValue, usernameValue, passwordValue) {
+  await page.goto(`${BASE_URL}/login`)
+  await page.getByLabel(/Homeserver|Homeserver-URL/i).fill(homeserverValue)
+  await page.getByLabel(/Username|Benutzername/i).fill(usernameValue)
+  await page.getByLabel(/Password|Passwort/i).fill(passwordValue)
+  await page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
+  await expect(page).toHaveURL(/\/chat/, { timeout: 45000 })
+}
+
 When('I open the login page', async function () {
   await this.page.goto(`${BASE_URL}/login`)
 })
@@ -40,6 +57,20 @@ When('I log in with configured credentials', async function () {
   await this.page.getByLabel(/Username|Benutzername/i).fill(usernameValue)
   await this.page.getByLabel(/Password|Passwort/i).fill(passwordValue)
   await this.page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
+})
+
+When('I sign in with configured credentials', async function () {
+  const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
+  const usernameValue = requireEnv('E2E_MATRIX_USERNAME')
+  const passwordValue = requireEnv('E2E_MATRIX_PASSWORD')
+  await submitLogin(this.page, homeserverValue, usernameValue, passwordValue)
+})
+
+When('I sign in with secondary configured credentials', async function () {
+  const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
+  const usernameValue = requireEnv('E2E_SECOND_MATRIX_USERNAME')
+  const passwordValue = requireEnv('E2E_SECOND_MATRIX_PASSWORD')
+  await submitLogin(this.page, homeserverValue, usernameValue, passwordValue)
 })
 
 Then('I should see the login form', async function () {

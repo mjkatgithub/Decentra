@@ -78,24 +78,8 @@ jobs:
       - name: Install Playwright browser and system deps
         run: npx playwright install --with-deps chromium
 
-      - name: Create E2E env file from secrets
-        env:
-          E2E_MATRIX_HOMESERVER: ${{ secrets.E2E_MATRIX_HOMESERVER }}
-          E2E_MATRIX_USERNAME: ${{ secrets.E2E_MATRIX_USERNAME }}
-          E2E_MATRIX_PASSWORD: ${{ secrets.E2E_MATRIX_PASSWORD }}
-          BASE_URL: http://localhost:3000
-        run: |
-          if [ -z "$E2E_MATRIX_USERNAME" ] || [ -z "$E2E_MATRIX_PASSWORD" ]; then
-            echo "Missing E2E matrix credentials in repository secrets."
-            exit 1
-          fi
-          mkdir -p tests/e2e
-          {
-            echo "BASE_URL=$BASE_URL"
-            echo "E2E_MATRIX_HOMESERVER=${E2E_MATRIX_HOMESERVER:-https://matrix.org}"
-            echo "E2E_MATRIX_USERNAME=$E2E_MATRIX_USERNAME"
-            echo "E2E_MATRIX_PASSWORD=$E2E_MATRIX_PASSWORD"
-          } > tests/e2e/.env.e2e.local
+      - name: Verify Docker availability
+        run: docker --version
 
       - name: Run full CI lane
         run: npm run test:ci:full

@@ -15,26 +15,47 @@ Feature: Chat
     When I open the space settings page for "space-demo"
     Then I am redirected to the login page
 
-  # Manual E2EE validation scenarios for Issue #4:
-  # 1) Open an encrypted room and confirm readable message text is shown.
-  # 2) Trigger an undecryptable event and confirm a user-facing fallback is
-  #    rendered ("...could not be decrypted") without UI crash.
-  # 3) Verify timeline keeps updating after decryption callbacks.
-  #
-  # Manual validation scenarios for Issue #7 (image rendering):
-  # 1) Send an `m.image` message from client A and open chat in client B.
-  #    Confirm image preview is rendered in timeline and body text is used
-  #    as alt/fallback label.
-  # 2) Click image preview in timeline and confirm the lightbox opens.
-  #    Confirm close button and backdrop click both close the lightbox.
-  # 3) Send invalid image media content (missing/invalid URL) and confirm
-  #    timeline still renders message with clear fallback text and no crash.
-  # 4) Send a very large image and confirm timeline layout stays intact
-  #    (no overflow outside message container, scrolling still works).
-  #
-  # Manual validation scenarios for Issue #9 (message replies):
-  # 1) Click "Reply" on an existing message and confirm composer shows
-  #    reply context with sender and message preview text.
-  # 2) Click "Cancel reply" and confirm composer exits reply mode.
-  # 3) Send reply and confirm timeline renders reply context above body.
-  # 4) Validate fallback rendering when original referenced event is missing.
+  Scenario: E2EE fallback and timeline continuity
+    When I open the login page
+    And I sign in with secondary configured credentials
+    And I open the seeded test room
+    Then I should see message body "E2E_SEED_BASE_MESSAGE"
+    And I should see an undecryptable fallback notice
+    And I should see message body "E2E_POST_UNDECRYPTABLE_MESSAGE"
+
+  Scenario: Image rendering and lightbox behavior
+    When I open the login page
+    And I sign in with secondary configured credentials
+    And I open the seeded test room
+    Then I should see image preview for "E2E_SEED_IMAGE"
+    When I open the image preview for "E2E_SEED_IMAGE"
+    Then the lightbox should be visible
+    When I close the lightbox with the close button
+    Then the lightbox should not be visible
+    And I should see image fallback label "E2E_INVALID_IMAGE_FALLBACK"
+
+  Scenario: Reply composer and fallback rendering
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    And I click reply on message body "E2E_SEED_BASE_MESSAGE"
+    Then I should see the reply composer with preview "E2E_SEED_BASE_MESSAGE"
+    When I cancel reply mode
+    Then reply mode should be inactive
+    And I should see a rendered reply for "E2E_REPLY_TO_VALID_EVENT"
+    And I should see a missing-origin reply fallback
+
+  Scenario Outline: Member presence indicator reflects standard status
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the account settings page
+    And I set my presence to "<presence>"
+    And I open the chat page
+    And I open the seeded test room
+    Then I should see my member status indicator as "<presence>"
+
+    Examples:
+      | presence |
+      | online   |
+      | away     |
+      | offline  |
