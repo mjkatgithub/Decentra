@@ -1,5 +1,6 @@
 import { describe, it } from 'vitest'
 import {
+  buildReactionSummaryByEventId,
   buildUndecryptableMessageText,
   getMessageBody,
   isUndecryptableEvent,
@@ -259,5 +260,130 @@ describe('chatTimeline helpers', () => {
     messages[0]!.replyTo!.eventId.should.equal('evt_not_found')
     messages[0]!.replyTo!.senderName.should.equal('Unknown user')
     messages[0]!.replyTo!.body.should.equal('Original message unavailable.')
+  })
+
+  it('aggregates reactions by emoji and own user', () => {
+    const timelineEvents = [
+      {
+        getType: () => 'm.reaction',
+        getId: () => 'reaction-1',
+        getSender: () => '@alice:example.org',
+        getContent: () => ({
+          'm.relates_to': {
+            rel_type: 'm.annotation',
+            event_id: 'evt-message',
+            key: '👍'
+          }
+        })
+      },
+      {
+        getType: () => 'm.reaction',
+        getId: () => 'reaction-2',
+        getSender: () => '@bob:example.org',
+        getContent: () => ({
+          'm.relates_to': {
+            rel_type: 'm.annotation',
+            event_id: 'evt-message',
+            key: '👍'
+          }
+        })
+      },
+      {
+        getType: () => 'm.reaction',
+        getId: () => 'reaction-3',
+        getSender: () => '@alice:example.org',
+        getContent: () => ({
+          'm.relates_to': {
+            rel_type: 'm.annotation',
+            event_id: 'evt-message',
+            key: '🎉'
+          }
+        })
+      }
+    ]
+
+    const summary = buildReactionSummaryByEventId(
+      timelineEvents as any,
+      '@alice:example.org'
+    )
+
+    const messageReactions = summary.get('evt-message')!
+    messageReactions.length.should.equal(2)
+    messageReactions[0]!.emoji.should.equal('👍')
+    messageReactions[0]!.count.should.equal(2)
+    messageReactions[0]!.hasOwnReaction.should.equal(true)
+    messageReactions[1]!.emoji.should.equal('🎉')
+  })
+
+  it('drops redacted reactions from aggregation', () => {
+    const timelineEvents = [
+      {
+        getType: () => 'm.reaction',
+        getId: () => 'reaction-redacted',
+        getSender: () => '@alice:example.org',
+        getContent: () => ({
+          'm.relates_to': {
+            rel_type: 'm.annotation',
+            event_id: 'evt-message',
+            key: '👍'
+          }
+        })
+      },
+      {
+        getType: () => 'm.room.redaction',
+        getRedacts: () => 'reaction-redacted'
+      }
+    ]
+    const summary = buildReactionSummaryByEventId(
+      timelineEvents as any,
+      '@alice:example.org'
+    )
+    const messageReactions = summary.get('evt-message') ?? []
+    messageReactions.length.should.equal(0)
+  })
+
+  it('maps message reactions into message payload', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt-message',
+            getContent: () => ({
+              body: 'Hello',
+              msgtype: 'm.text'
+            }),
+            isDecryptionFailure: () => false
+          },
+          {
+            getType: () => 'm.reaction',
+            getId: () => 'reaction-1',
+            getSender: () => '@me:example.org',
+            getContent: () => ({
+              'm.relates_to': {
+                rel_type: 'm.annotation',
+                event_id: 'evt-message',
+                key: '🔥'
+              }
+            })
+          }
+        ]
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false
+    }
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => ''
+    })
+    messages.length.should.equal(1)
+    messages[0]!.reactions.length.should.equal(1)
+    messages[0]!.reactions[0]!.emoji.should.equal('🔥')
+    messages[0]!.reactions[0]!.hasOwnReaction.should.equal(true)
   })
 })
