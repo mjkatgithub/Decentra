@@ -44,3 +44,18 @@ Feature: Chat
     Then reply mode should be inactive
     And I should see a rendered reply for "E2E_REPLY_TO_VALID_EVENT"
     And I should see a missing-origin reply fallback
+
+  Scenario Outline: Member presence indicator reflects standard status
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the account settings page
+    And I set my presence to "<presence>"
+    And I open the chat page
+    And I open the seeded test room
+    Then I should see my member status indicator as "<presence>"
+
+    Examples:
+      | presence |
+      | online   |
+      | away     |
+      | offline  |

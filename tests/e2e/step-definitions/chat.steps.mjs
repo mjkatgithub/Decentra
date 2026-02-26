@@ -3,6 +3,45 @@ import { expect } from '@playwright/test'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
+function normalizePresenceValue(presenceValue) {
+  const normalizedPresence = presenceValue.trim().toLowerCase()
+  if (normalizedPresence === 'online') {
+    return 'online'
+  }
+  if (normalizedPresence === 'away') {
+    return 'unavailable'
+  }
+  if (normalizedPresence === 'offline') {
+    return 'offline'
+  }
+  throw new Error(`Unsupported presence value: ${presenceValue}`)
+}
+
+function expectedPresenceDotClass(presenceValue) {
+  const normalizedPresence = presenceValue.trim().toLowerCase()
+  if (normalizedPresence === 'online') {
+    return 'bg-green-500'
+  }
+  if (normalizedPresence === 'away') {
+    return 'bg-amber-500'
+  }
+  if (normalizedPresence === 'offline') {
+    return 'bg-gray-500'
+  }
+  throw new Error(`Unsupported presence value: ${presenceValue}`)
+}
+
+function currentUserNameNeedle() {
+  const configuredUserId = process.env.E2E_MATRIX_USERNAME
+  if (!configuredUserId) {
+    throw new Error('Missing required E2E env: E2E_MATRIX_USERNAME')
+  }
+  if (!configuredUserId.includes(':')) {
+    return configuredUserId.replace('@', '')
+  }
+  return configuredUserId.split(':')[0]?.replace('@', '') || configuredUserId
+}
+
 When('I open the chat page', async function () {
   await this.page.goto(`${BASE_URL}/chat`)
 })
@@ -23,6 +62,20 @@ Then('I am redirected to the login page', async function () {
   await expect(this.page).toHaveURL(/\/login/)
   await expect(this.page.getByRole('heading', { name: /Sign in|Anmelden/i }))
     .toBeVisible()
+})
+
+When('I set my presence to {string}', async function (presenceValue) {
+  const presenceSelect = this.page.locator('label')
+    .filter({ hasText: /Presence|Status/i })
+    .locator('select')
+    .first()
+  await expect(presenceSelect).toBeVisible({ timeout: 10000 })
+  await presenceSelect.selectOption(normalizePresenceValue(presenceValue))
+
+  const applyPresenceButton = this.page.getByRole('button', {
+    name: /Apply presence|Status setzen/i
+  })
+  await applyPresenceButton.click()
 })
 
 When('I open the seeded test room', async function () {
@@ -125,3 +178,21 @@ Then('I should see a missing-origin reply fallback', async function () {
   await expect(this.page.getByText('Original message unavailable.').first())
     .toBeVisible({ timeout: 10000 })
 })
+
+Then(
+  'I should see my member status indicator as {string}',
+  async function (presenceValue) {
+    const expectedClassName = expectedPresenceDotClass(presenceValue)
+    const currentUserNeedle = currentUserNameNeedle()
+    const memberRow = this.page.locator('li')
+      .filter({ hasText: new RegExp(currentUserNeedle, 'i') })
+      .first()
+    await expect(memberRow).toBeVisible({ timeout: 15000 })
+
+    const statusDot = memberRow.locator('span.absolute.h-3.w-3.rounded-full')
+      .first()
+    await expect(statusDot).toHaveClass(new RegExp(expectedClassName), {
+      timeout: 15000
+    })
+  }
+)
