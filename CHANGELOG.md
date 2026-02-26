@@ -35,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Synapse Docker Compose setup under `tests/e2e/synapse` for local and CI runs
 - Executable chat E2E scenarios for E2EE fallback continuity, image rendering
   and lightbox behavior, plus reply and missing-origin fallback handling
+- Executable chat E2E presence scenarios for standard member states
+  (online, away, offline) with sidebar status-dot verification
 
 ### Changed
 
