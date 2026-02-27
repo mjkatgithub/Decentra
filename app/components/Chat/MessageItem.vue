@@ -43,6 +43,7 @@ const props = defineProps<{
   message: MessageItem;
   displayUrl?: string;
   loadingMedia?: boolean;
+  currentUserId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -93,6 +94,7 @@ function handlePickerReaction(emoji: string) {
     ]"
   >
     <ChatMessageActionBar
+      :frequent-scope-key="props.currentUserId"
       @reply="emit('reply')"
       @reaction-pick="handlePickerReaction"
     />

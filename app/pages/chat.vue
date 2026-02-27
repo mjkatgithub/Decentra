@@ -773,6 +773,7 @@ watch(
       <template v-else>
         <ChatMessageList
           :messages="messages"
+          :current-user-id="userId ?? undefined"
           :can-load-older="canLoadOlder"
           :loading-older="loadingOlder"
           :resolve-media-blob-url="resolveMediaBlobUrl"

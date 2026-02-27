@@ -55,6 +55,7 @@ const props = defineProps<{
   canLoadOlder?: boolean;
   loadingOlder?: boolean;
   resolveMediaBlobUrl?: MediaResolver;
+  currentUserId?: string;
 }>();
 
 const emit = defineEmits<{
@@ -168,6 +169,7 @@ watch(
           :message="msg"
           :display-url="getDisplayUrl(msg)"
           :loading-media="Boolean(loadingMedia[msg.id])"
+          :current-user-id="props.currentUserId"
           @reply="emitReplyTarget(msg)"
           @toggle-reaction="emit('toggleReaction', $event)"
           @open-lightbox="openLightbox(msg)"

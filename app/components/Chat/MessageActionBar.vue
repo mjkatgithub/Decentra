@@ -6,13 +6,13 @@ const emit = defineEmits<{
   reply: [];
   reactionPick: [emoji: string];
 }>();
+const props = defineProps<{
+  frequentScopeKey?: string;
+}>();
 
 const { translateText } = useAppI18n();
 const pickerOpen = ref(false);
-const customEmoji = ref("");
 const pickerRoot = ref<HTMLElement | null>(null);
-
-const quickReactions = ["👍", "❤️", "😂", "🎉", "😮", "😢", "🙏", "🔥"];
 
 function emitReaction(emoji: string) {
   const trimmedEmoji = emoji.trim();
@@ -20,12 +20,7 @@ function emitReaction(emoji: string) {
     return;
   }
   emit("reactionPick", trimmedEmoji);
-  customEmoji.value = "";
   pickerOpen.value = false;
-}
-
-function submitCustomEmoji() {
-  emitReaction(customEmoji.value);
 }
 
 function togglePicker() {
@@ -78,7 +73,7 @@ onBeforeUnmount(() => {
         size="xs"
         color="neutral"
         variant="ghost"
-        icon="i-lucide-smile-plus"
+        icon="i-lucide-smile"
         aria-label="Add reaction"
         title="Reaktion hinzufügen"
         class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
@@ -98,42 +93,13 @@ onBeforeUnmount(() => {
     </div>
     <div
       v-if="pickerOpen"
-      class="mt-1 w-56 rounded-md border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-800"
+      class="mt-1"
       @click.stop
     >
-      <div class="grid grid-cols-4 gap-1">
-        <button
-          v-for="emoji in quickReactions"
-          :key="emoji"
-          type="button"
-          class="rounded px-2 py-1 text-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-700"
-          :data-emoji-option="emoji"
-          @click="emitReaction(emoji)"
-        >
-          {{ emoji }}
-        </button>
-      </div>
-      <div class="mt-2 flex items-center gap-1">
-        <input
-          v-model="customEmoji"
-          type="text"
-          placeholder="Any emoji"
-          class="
-            w-full rounded border border-gray-200 bg-white px-2 py-1 text-xs
-            dark:border-gray-600 dark:bg-gray-900
-          "
-          @keydown.enter.prevent="submitCustomEmoji"
-        />
-        <UButton
-          type="button"
-          size="xs"
-          color="neutral"
-          variant="soft"
-          @click="submitCustomEmoji"
-        >
-          Add
-        </UButton>
-      </div>
+      <ChatReactionEmojiPicker
+        :frequent-scope-key="props.frequentScopeKey"
+        @select="emitReaction"
+      />
     </div>
   </div>
 </template>
