@@ -38,6 +38,10 @@ interface MessageReplyOptions {
   eventId: string
 }
 
+interface ReactionToggleOptions {
+  ownReactionEventIds?: string[]
+}
+
 function extractUserLocalpart(userIdOrUsername: string): string {
   const normalized = userIdOrUsername.trim().toLowerCase()
   const withoutAtPrefix = normalized.startsWith('@')
@@ -533,6 +537,59 @@ export function useMatrixClient() {
     return client.value.paginateEventTimeline(timeline, { backwards: true })
   }
 
+  async function sendReaction(
+    roomId: string,
+    eventId: string,
+    emoji: string
+  ): Promise<void> {
+    if (!client.value) {
+      throw new Error('Not logged in')
+    }
+    const trimmedEmoji = emoji.trim()
+    if (!trimmedEmoji) {
+      throw new Error('Emoji is required')
+    }
+    await client.value.sendEvent(roomId, 'm.reaction' as any, {
+      'm.relates_to': {
+        rel_type: 'm.annotation',
+        event_id: eventId,
+        key: trimmedEmoji
+      }
+    } as any)
+  }
+
+  async function redactEvent(
+    roomId: string,
+    reactionEventId: string
+  ): Promise<void> {
+    if (!client.value) {
+      throw new Error('Not logged in')
+    }
+    await (client.value as MatrixClient & {
+      redactEvent: (
+        roomId: string,
+        eventId: string
+      ) => Promise<unknown>
+    }).redactEvent(roomId, reactionEventId)
+  }
+
+  async function toggleReaction(
+    roomId: string,
+    messageEventId: string,
+    emoji: string,
+    options?: ReactionToggleOptions | string[]
+  ): Promise<void> {
+    const ownReactionEventIds = Array.isArray(options)
+      ? options
+      : options?.ownReactionEventIds ?? []
+    const firstOwnReactionEventId = ownReactionEventIds[0]
+    if (firstOwnReactionEventId) {
+      await redactEvent(roomId, firstOwnReactionEventId)
+      return
+    }
+    await sendReaction(roomId, messageEventId, emoji)
+  }
+
   return {
     client,
     isLoggedIn,
@@ -543,6 +600,9 @@ export function useMatrixClient() {
     getRoom,
     sendMessage,
     sendImageMessage,
+    sendReaction,
+    redactEvent,
+    toggleReaction,
     loadOlderMessages,
     ensureCryptoReady
   }

@@ -26,6 +26,12 @@ interface MessageItem {
     body: string;
   };
   media?: MediaInfo;
+  reactions?: Array<{
+    emoji: string;
+    count: number;
+    hasOwnReaction: boolean;
+    ownReactionEventIds: string[];
+  }>;
   readBy?: Array<{
     userId: string;
     displayName: string;
@@ -37,12 +43,33 @@ const props = defineProps<{
   message: MessageItem;
   displayUrl?: string;
   loadingMedia?: boolean;
+  currentUserId?: string;
 }>();
 
 const emit = defineEmits<{
   reply: [];
   openLightbox: [];
+  toggleReaction: [payload: {
+    messageId: string;
+    emoji: string;
+    ownReactionEventIds: string[];
+  }];
 }>();
+
+function emitToggleReaction(emoji: string, ownReactionEventIds: string[] = []) {
+  emit("toggleReaction", {
+    messageId: props.message.id,
+    emoji,
+    ownReactionEventIds,
+  });
+}
+
+function handlePickerReaction(emoji: string) {
+  const existingReaction = props.message.reactions?.find((reaction) => {
+    return reaction.emoji === emoji;
+  });
+  emitToggleReaction(emoji, existingReaction?.ownReactionEventIds ?? []);
+}
 </script>
 
 <template>
@@ -66,7 +93,11 @@ const emit = defineEmits<{
       'hover:bg-gray-50 dark:hover:bg-gray-900/60'
     ]"
   >
-    <ChatMessageActionBar @reply="emit('reply')" />
+    <ChatMessageActionBar
+      :frequent-scope-key="props.currentUserId"
+      @reply="emit('reply')"
+      @reaction-pick="handlePickerReaction"
+    />
     <div class="flex items-start gap-3">
       <img
         v-if="message.avatarUrl"
@@ -128,6 +159,27 @@ const emit = defineEmits<{
         <p v-else class="text-sm wrap-break-word">
           {{ message.body }}
         </p>
+        <div
+          v-if="message.reactions && message.reactions.length > 0"
+          class="mt-2 flex flex-wrap gap-1"
+        >
+          <button
+            v-for="reaction in message.reactions"
+            :key="`${message.id}-${reaction.emoji}`"
+            type="button"
+            :data-reaction-chip="reaction.emoji"
+            class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs transition-colors"
+            :class="
+              reaction.hasOwnReaction
+                ? 'border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-500/70 dark:bg-blue-950/60 dark:text-blue-200'
+                : 'border-gray-200 bg-gray-50 text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+            "
+            @click="emitToggleReaction(reaction.emoji, reaction.ownReactionEventIds)"
+          >
+            <span>{{ reaction.emoji }}</span>
+            <span>{{ reaction.count }}</span>
+          </button>
+        </div>
 
         <div
           v-if="message.readBy && message.readBy.length > 0"

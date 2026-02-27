@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { ClientEvent, MatrixEventEvent, RoomEvent } from "matrix-js-sdk";
 import { useAppI18n } from "~/composables/useAppI18n";
-import { mapTimelineEventsToMessages } from "~/utils/chatTimeline";
-import { fetchMediaBlob, decryptMediaBlob } from "~/utils/mediaUtils";
+import { useChatMedia } from "~/composables/useChatMedia";
+import {
+  buildReactionSummaryByEventId,
+  mapTimelineEventsToMessages,
+} from "~/utils/chatTimeline";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
 
@@ -19,6 +22,24 @@ interface ChatMessage {
     senderName: string;
     body: string;
   };
+  media?: {
+    url: string;
+    mxcUrl: string;
+    mimetype?: string;
+    isEncrypted?: boolean;
+    encryptionInfo?: Record<string, any>;
+    info?: {
+      w?: number;
+      h?: number;
+      size?: number;
+    };
+  };
+  reactions: Array<{
+    emoji: string;
+    count: number;
+    hasOwnReaction: boolean;
+    ownReactionEventIds: string[];
+  }>;
   readBy: Array<{
     userId: string;
     displayName: string;
@@ -60,9 +81,22 @@ interface MemberItem {
 const MOBILE_BREAKPOINT = 1024;
 const HOME_SPACE_ID = "__home__";
 
-const { client, isLoggedIn, userId, getRooms, logout, loadOlderMessages } =
-  useMatrixClient();
+const {
+  client,
+  isLoggedIn,
+  userId,
+  getRooms,
+  logout,
+  loadOlderMessages,
+  toggleReaction,
+} = useMatrixClient();
 const { translateText } = useAppI18n();
+const {
+  getSpaceAvatarUrl,
+  getMemberAvatarUrl,
+  getMediaUrl,
+  resolveMediaBlobUrl,
+} = useChatMedia(client as any);
 
 const selectedRoomId = ref<string | null>(null);
 const selectedSpaceId = ref<string | null>(null);
@@ -359,184 +393,6 @@ function isDirectRoom(room: RoomItem): boolean {
   return room.parentSpaceIds.length === 0 && joinedMemberCount === 2;
 }
 
-function getSpaceAvatarUrl(spaceRoom: Record<string, any>): string | undefined {
-  const matrixClient = client.value;
-  const homeserverUrl = matrixClient?.getHomeserverUrl?.();
-  const getAvatarUrl = spaceRoom.getAvatarUrl;
-  const accessToken = matrixClient?.getAccessToken?.();
-
-  const withAccessToken = (
-    url: string | null | undefined,
-  ): string | undefined => {
-    if (!url) {
-      return undefined;
-    }
-    if (!accessToken || !url.includes("/_matrix/")) {
-      return url;
-    }
-    if (url.includes("access_token=")) {
-      return url;
-    }
-    const separator = url.includes("?") ? "&" : "?";
-    return `${url}${separator}access_token=${encodeURIComponent(accessToken)}`;
-  };
-
-  if (homeserverUrl && typeof getAvatarUrl === "function") {
-    const httpAvatarUrl = getAvatarUrl.call(
-      spaceRoom,
-      homeserverUrl,
-      40,
-      40,
-      "crop",
-      false,
-      true,
-    ) as string | null;
-    if (httpAvatarUrl) {
-      return withAccessToken(httpAvatarUrl);
-    }
-  }
-
-  const avatarMxcFromRoom = spaceRoom.getMxcAvatarUrl?.();
-  const avatarStateEvent = spaceRoom.currentState?.getStateEvents?.(
-    "m.room.avatar",
-    "",
-  );
-  const avatarMxcUrl =
-    avatarMxcFromRoom || avatarStateEvent?.getContent?.()?.url;
-  if (!avatarMxcUrl || !matrixClient?.mxcUrlToHttp) {
-    return undefined;
-  }
-
-  try {
-    const httpUrl = matrixClient.mxcUrlToHttp(
-      avatarMxcUrl,
-      40,
-      40,
-      "crop",
-      false,
-      true,
-      true,
-    ) as string;
-    return withAccessToken(httpUrl);
-  } catch {
-    return undefined;
-  }
-}
-
-function getMemberAvatarUrl(member: Record<string, any>): string | undefined {
-  const matrixClient = client.value;
-  const homeserverUrl = matrixClient?.getHomeserverUrl?.();
-  const getAvatarUrl = member.getAvatarUrl;
-  if (homeserverUrl && typeof getAvatarUrl === "function") {
-    const avatarUrl = getAvatarUrl.call(
-      member,
-      homeserverUrl,
-      40,
-      40,
-      "crop",
-      false,
-      false,
-      true,
-    ) as string | null;
-    if (avatarUrl) {
-      return appendAccessTokenToMediaUrl(avatarUrl);
-    }
-  }
-
-  const avatarMxcUrl = member.events?.member?.getContent?.()?.avatar_url;
-  if (!avatarMxcUrl || !matrixClient?.mxcUrlToHttp) {
-    return undefined;
-  }
-  const avatarUrl = matrixClient.mxcUrlToHttp(
-    avatarMxcUrl,
-    40,
-    40,
-    "crop",
-    false,
-    true,
-    true,
-  );
-  return appendAccessTokenToMediaUrl(avatarUrl);
-}
-
-function getMediaUrl(
-  mxcUrl: string | null | undefined,
-  mimetype?: string,
-  body?: string,
-): string | undefined {
-  if (!mxcUrl || !client.value?.mxcUrlToHttp) {
-    return undefined;
-  }
-  try {
-    const httpUrl = client.value.mxcUrlToHttp(
-      mxcUrl,
-      800,
-      800,
-      "scale",
-      false,
-      true,
-      true,
-    );
-    return appendAccessTokenToMediaUrl(httpUrl);
-  } catch {
-    return undefined;
-  }
-}
-
-async function resolveMediaBlobUrl(media: {
-  mxcUrl: string;
-  mimetype?: string;
-  isEncrypted?: boolean;
-  encryptionInfo?: Record<string, any>;
-}): Promise<string> {
-  const matrixClient = client.value;
-  if (!matrixClient) {
-    throw new Error("No client available");
-  }
-
-  const accessToken = matrixClient.getAccessToken?.() ?? "";
-  const httpUrl = matrixClient.mxcUrlToHttp(
-    media.mxcUrl,
-    undefined,
-    undefined,
-    undefined,
-    false,
-    true,
-    true,
-  );
-  if (!httpUrl) {
-    throw new Error("Could not resolve MXC URL");
-  }
-
-  if (media.isEncrypted && media.encryptionInfo) {
-    return decryptMediaBlob(
-      httpUrl,
-      accessToken,
-      media.encryptionInfo as any,
-      media.mimetype,
-    );
-  }
-  return fetchMediaBlob(httpUrl, accessToken);
-}
-
-function appendAccessTokenToMediaUrl(
-  avatarUrl: string | null | undefined,
-): string | undefined {
-  if (!avatarUrl) {
-    return undefined;
-  }
-  const matrixClient = client.value;
-  const accessToken = matrixClient?.getAccessToken?.();
-  if (!accessToken || !avatarUrl.includes("/_matrix/")) {
-    return avatarUrl;
-  }
-  if (avatarUrl.includes("access_token=")) {
-    return avatarUrl;
-  }
-  const separator = avatarUrl.includes("?") ? "&" : "?";
-  return `${avatarUrl}${separator}access_token=${encodeURIComponent(accessToken)}`;
-}
-
 function loadMessages(roomId: string) {
   const room = client.value?.getRoom(roomId);
   if (!room) {
@@ -552,6 +408,47 @@ function loadMessages(roomId: string) {
     getMediaUrl,
     buildNoticeText,
   });
+}
+
+function patchMessageReactions(roomId: string) {
+  const room = client.value?.getRoom(roomId);
+  if (!room) {
+    return;
+  }
+  const reactionSummaryByEventId = buildReactionSummaryByEventId(
+    room.getLiveTimeline().getEvents(),
+    client.value?.getUserId() ?? undefined,
+  );
+  messages.value = messages.value.map((message) => {
+    if (message.kind !== "message") {
+      return message;
+    }
+    return {
+      ...message,
+      reactions: reactionSummaryByEventId.get(message.id) ?? [],
+    };
+  });
+}
+
+function isReactionRelatedEvent(eventType: string): boolean {
+  return eventType === "m.reaction" || eventType === "m.room.redaction";
+}
+
+async function onToggleReaction(payload: {
+  messageId: string;
+  emoji: string;
+  ownReactionEventIds: string[];
+}) {
+  const activeRoomId = selectedRoomId.value;
+  if (!activeRoomId) {
+    return;
+  }
+  await toggleReaction(
+    activeRoomId,
+    payload.messageId,
+    payload.emoji,
+    payload.ownReactionEventIds,
+  );
 }
 
 function scheduleLoadMessages(roomId: string) {
@@ -730,10 +627,15 @@ watch(
       }
     });
     const timelineHandler = (
-      _event: unknown,
+      timelineEvent: Record<string, any> | undefined,
       room: Record<string, any> | undefined,
     ) => {
       if (room?.roomId === selectedRoomId.value) {
+        const eventType = timelineEvent?.getType?.() ?? "";
+        if (isReactionRelatedEvent(eventType)) {
+          patchMessageReactions(room.roomId);
+          return;
+        }
         scheduleLoadMessages(room.roomId);
       }
     };
@@ -745,6 +647,11 @@ watch(
         event?.getRoomId?.() === selectedRoomId.value &&
         selectedRoomId.value
       ) {
+        const eventType = event?.getType?.() ?? "";
+        if (isReactionRelatedEvent(eventType)) {
+          patchMessageReactions(selectedRoomId.value);
+          return;
+        }
         scheduleLoadMessages(selectedRoomId.value);
       }
     };
@@ -866,11 +773,13 @@ watch(
       <template v-else>
         <ChatMessageList
           :messages="messages"
+          :current-user-id="userId ?? undefined"
           :can-load-older="canLoadOlder"
           :loading-older="loadingOlder"
           :resolve-media-blob-url="resolveMediaBlobUrl"
           @load-older="onLoadOlder"
           @reply="setReplyTarget"
+          @toggle-reaction="onToggleReaction"
         />
         <ChatMessageInput
           :room-id="selectedRoomId"

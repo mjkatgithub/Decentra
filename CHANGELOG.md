@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and lightbox behavior, plus reply and missing-origin fallback handling
 - Executable chat E2E presence scenarios for standard member states
   (online, away, offline) with sidebar status-dot verification
+- Message reactions with add/remove support, grouped emoji counters, and
+  incremental live updates in timeline rendering
+- Advanced reaction emoji picker with category tabs, shortcode conversion
+  (for example `:wave:` to `👋`), and user-scoped frequent emojis
+- Additional reaction coverage in unit and E2E tests for Matrix toggle logic,
+  aggregation mapping, and message-level reaction UI behavior
 
 ### Changed
 
@@ -55,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `login.steps.mjs` and `chat.steps.mjs`
 - Synapse environment validation moved from scenario-level Given setup into
   hook-based prechecks for seeded-room scenarios
+- Message action bar now uses icon-only reply/reaction controls with compact
+  gray styling and native button tooltips
+- Chat page media helper logic was moved into `useChatMedia` to reduce page
+  size and improve composable reuse
 
 ### Fixed
 

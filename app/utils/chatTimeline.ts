@@ -21,11 +21,19 @@ export interface ChatTimelineMessage {
   body: string
   replyTo?: ChatTimelineReply
   media?: ChatTimelineMedia
+  reactions: ChatTimelineReaction[]
   readBy: Array<{
     userId: string
     displayName: string
     avatarUrl?: string
   }>
+}
+
+export interface ChatTimelineReaction {
+  emoji: string
+  count: number
+  hasOwnReaction: boolean
+  ownReactionEventIds: string[]
 }
 
 export interface ChatTimelineReply {
@@ -52,6 +60,11 @@ export function mapTimelineEventsToMessages({
   getMediaUrl,
   buildNoticeText
 }: MapTimelineArgs): ChatTimelineMessage[] {
+  const allTimelineEvents = room.getLiveTimeline().getEvents()
+  const reactionSummaryByEventId = buildReactionSummaryByEventId(
+    allTimelineEvents,
+    ownUserId
+  )
   const timelineEvents = room
     .getLiveTimeline()
     .getEvents()
@@ -137,6 +150,9 @@ export function mapTimelineEventsToMessages({
         : []
 
       const content = timelineEvent.getContent() ?? {}
+      const reactions = eventType === 'm.room.message' && currentEventId
+        ? reactionSummaryByEventId.get(currentEventId) ?? []
+        : []
       const mxcUrl = content.url || content.file?.url
       const isEncryptedMedia = Boolean(content.file?.url)
       const mimetype = content.info?.mimetype
@@ -174,6 +190,7 @@ export function mapTimelineEventsToMessages({
         body,
         replyTo,
         media,
+        reactions,
         readBy
       }
     } catch {
@@ -188,10 +205,76 @@ export function mapTimelineEventsToMessages({
         senderName,
         avatarUrl: senderMember ? getMemberAvatarUrl(senderMember) : undefined,
         body: buildUndecryptableMessageText(senderName),
+        reactions: [],
         readBy: []
       }
     }
   })
+}
+
+type TimelineEventRecord = Record<string, any>
+
+interface ReactionAggregate {
+  users: Set<string>
+  ownReactionEventIds: Set<string>
+}
+
+export function buildReactionSummaryByEventId(
+  timelineEvents: TimelineEventRecord[],
+  ownUserId: string | undefined
+): Map<string, ChatTimelineReaction[]> {
+  const redactedEventIds = getRedactedEventIds(timelineEvents)
+  const aggregatesByTargetEventId = new Map<string, Map<string, ReactionAggregate>>()
+
+  for (const timelineEvent of timelineEvents) {
+    const eventType = timelineEvent.getType?.() ?? ''
+    if (eventType !== 'm.reaction') {
+      continue
+    }
+    const reactionEventId = timelineEvent.getId?.()
+    if (!reactionEventId || redactedEventIds.has(reactionEventId)) {
+      continue
+    }
+    const reactionData = getReactionData(timelineEvent.getContent?.() ?? {})
+    if (!reactionData) {
+      continue
+    }
+    const senderUserId = timelineEvent.getSender?.() ?? ''
+    if (!senderUserId) {
+      continue
+    }
+
+    const byEmoji = getOrCreate(aggregatesByTargetEventId, reactionData.targetEventId, () => {
+      return new Map<string, ReactionAggregate>()
+    })
+    const aggregate = getOrCreate(byEmoji, reactionData.emoji, () => {
+      return {
+        users: new Set<string>(),
+        ownReactionEventIds: new Set<string>()
+      }
+    })
+    aggregate.users.add(senderUserId)
+    if (ownUserId && senderUserId === ownUserId) {
+      aggregate.ownReactionEventIds.add(reactionEventId)
+    }
+  }
+
+  const summaryByEventId = new Map<string, ChatTimelineReaction[]>()
+  for (const [targetEventId, byEmoji] of aggregatesByTargetEventId) {
+    const reactions = Array.from(byEmoji.entries())
+      .map(([emoji, aggregate]) => ({
+        emoji,
+        count: aggregate.users.size,
+        hasOwnReaction: aggregate.ownReactionEventIds.size > 0,
+        ownReactionEventIds: Array.from(aggregate.ownReactionEventIds)
+      }))
+      .sort((leftReaction, rightReaction) => {
+        return rightReaction.count - leftReaction.count ||
+          leftReaction.emoji.localeCompare(rightReaction.emoji)
+      })
+    summaryByEventId.set(targetEventId, reactions)
+  }
+  return summaryByEventId
 }
 
 export function isUndecryptableEvent(
@@ -268,4 +351,57 @@ function getReplyEventId(content: Record<string, any>): string | undefined {
   return typeof replyEventId === 'string' && replyEventId.length > 0
     ? replyEventId
     : undefined
+}
+
+function getRedactedEventIds(timelineEvents: TimelineEventRecord[]): Set<string> {
+  const redactedEventIds = new Set<string>()
+  for (const timelineEvent of timelineEvents) {
+    const eventType = timelineEvent.getType?.() ?? ''
+    if (eventType !== 'm.room.redaction') {
+      continue
+    }
+    const redactedEventId = timelineEvent.getRedacts?.() ??
+      timelineEvent.getContent?.()?.redacts ??
+      timelineEvent.event?.redacts
+    if (typeof redactedEventId === 'string' && redactedEventId.length > 0) {
+      redactedEventIds.add(redactedEventId)
+    }
+  }
+  return redactedEventIds
+}
+
+function getReactionData(
+  content: Record<string, any>
+): { targetEventId: string; emoji: string } | undefined {
+  const relatesTo = content['m.relates_to']
+  if (!relatesTo || typeof relatesTo !== 'object') {
+    return undefined
+  }
+  const relationType = relatesTo.rel_type
+  const targetEventId = relatesTo.event_id
+  const emoji = relatesTo.key
+  if (relationType !== 'm.annotation') {
+    return undefined
+  }
+  if (typeof targetEventId !== 'string' || targetEventId.length === 0) {
+    return undefined
+  }
+  if (typeof emoji !== 'string' || emoji.length === 0) {
+    return undefined
+  }
+  return { targetEventId, emoji }
+}
+
+function getOrCreate<TKey, TValue>(
+  inputMap: Map<TKey, TValue>,
+  key: TKey,
+  create: () => TValue
+): TValue {
+  const existingValue = inputMap.get(key)
+  if (existingValue !== undefined) {
+    return existingValue
+  }
+  const newValue = create()
+  inputMap.set(key, newValue)
+  return newValue
 }

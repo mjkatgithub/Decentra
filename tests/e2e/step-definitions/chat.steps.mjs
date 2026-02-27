@@ -42,6 +42,12 @@ function currentUserNameNeedle() {
   return configuredUserId.split(':')[0]?.replace('@', '') || configuredUserId
 }
 
+function messageContainerByBody(page, messageText) {
+  return page.locator('div.group').filter({
+    hasText: messageText
+  }).first()
+}
+
 When('I open the chat page', async function () {
   await this.page.goto(`${BASE_URL}/chat`)
 })
@@ -130,9 +136,7 @@ Then('I should see image fallback label {string}', async function (fallbackLabel
 })
 
 When('I click reply on message body {string}', async function (messageText) {
-  const messageItem = this.page.locator('div.group').filter({
-    hasText: messageText
-  }).first()
+  const messageItem = messageContainerByBody(this.page, messageText)
   await expect(messageItem).toBeVisible({ timeout: 15000 })
   await messageItem.hover()
   const replyButton = messageItem
@@ -141,6 +145,66 @@ When('I click reply on message body {string}', async function (messageText) {
   await expect(replyButton).toBeVisible({ timeout: 10000 })
   await replyButton.click()
 })
+
+When(
+  'I add reaction {string} on message body {string}',
+  async function (emoji, messageText) {
+    const messageItem = messageContainerByBody(this.page, messageText)
+    await expect(messageItem).toBeVisible({ timeout: 15000 })
+    await messageItem.hover()
+
+    const reactionButton = messageItem.getByRole('button', {
+      name: /Add reaction/i
+    }).first()
+    await expect(reactionButton).toBeVisible({ timeout: 10000 })
+    await reactionButton.click()
+
+    const emojiOption = this.page
+      .locator(`[data-emoji-option="${emoji}"]`)
+      .first()
+    await expect(emojiOption).toBeVisible({ timeout: 10000 })
+    await emojiOption.click()
+  }
+)
+
+When(
+  'I remove reaction {string} on message body {string}',
+  async function (emoji, messageText) {
+    const messageItem = messageContainerByBody(this.page, messageText)
+    await expect(messageItem).toBeVisible({ timeout: 15000 })
+    const reactionChip = messageItem
+      .locator(`[data-reaction-chip="${emoji}"]`)
+      .first()
+    await expect(reactionChip).toBeVisible({ timeout: 10000 })
+    await reactionChip.click()
+  }
+)
+
+Then(
+  'I should see reaction {string} with count {string} on message body {string}',
+  async function (emoji, count, messageText) {
+    const messageItem = messageContainerByBody(this.page, messageText)
+    await expect(messageItem).toBeVisible({ timeout: 15000 })
+    const reactionChip = messageItem
+      .locator(`[data-reaction-chip="${emoji}"]`)
+      .first()
+    await expect(reactionChip).toBeVisible({ timeout: 10000 })
+    await expect(reactionChip).toContainText(emoji)
+    await expect(reactionChip).toContainText(count)
+  }
+)
+
+Then(
+  'I should not see reaction {string} on message body {string}',
+  async function (emoji, messageText) {
+    const messageItem = messageContainerByBody(this.page, messageText)
+    await expect(messageItem).toBeVisible({ timeout: 15000 })
+    const reactionChip = messageItem
+      .locator(`[data-reaction-chip="${emoji}"]`)
+      .first()
+    await expect(reactionChip).toHaveCount(0)
+  }
+)
 
 Then(
   'I should see the reply composer with preview {string}',

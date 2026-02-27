@@ -45,6 +45,15 @@ Feature: Chat
     And I should see a rendered reply for "E2E_REPLY_TO_VALID_EVENT"
     And I should see a missing-origin reply fallback
 
+  Scenario: Add and remove message reaction
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    And I add reaction "👍" on message body "E2E_SEED_BASE_MESSAGE"
+    Then I should see reaction "👍" with count "1" on message body "E2E_SEED_BASE_MESSAGE"
+    When I remove reaction "👍" on message body "E2E_SEED_BASE_MESSAGE"
+    Then I should not see reaction "👍" on message body "E2E_SEED_BASE_MESSAGE"
+
   Scenario Outline: Member presence indicator reflects standard status
     When I open the login page
     And I sign in with configured credentials

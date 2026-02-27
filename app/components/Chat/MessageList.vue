@@ -30,6 +30,12 @@ interface MessageItem {
     body: string;
   };
   media?: MediaInfo;
+  reactions?: Array<{
+    emoji: string;
+    count: number;
+    hasOwnReaction: boolean;
+    ownReactionEventIds: string[];
+  }>;
   readBy?: Array<{
     userId: string;
     displayName: string;
@@ -49,11 +55,17 @@ const props = defineProps<{
   canLoadOlder?: boolean;
   loadingOlder?: boolean;
   resolveMediaBlobUrl?: MediaResolver;
+  currentUserId?: string;
 }>();
 
 const emit = defineEmits<{
   loadOlder: [];
   reply: [target: { eventId: string; senderName: string; body: string }];
+  toggleReaction: [payload: {
+    messageId: string;
+    emoji: string;
+    ownReactionEventIds: string[];
+  }];
 }>();
 
 const { translateText } = useAppI18n();
@@ -157,7 +169,9 @@ watch(
           :message="msg"
           :display-url="getDisplayUrl(msg)"
           :loading-media="Boolean(loadingMedia[msg.id])"
+          :current-user-id="props.currentUserId"
           @reply="emitReplyTarget(msg)"
+          @toggle-reaction="emit('toggleReaction', $event)"
           @open-lightbox="openLightbox(msg)"
         />
       </div>

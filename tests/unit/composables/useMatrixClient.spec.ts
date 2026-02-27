@@ -308,6 +308,78 @@ describe('useMatrixClient', () => {
     ;(globalThis as Record<string, unknown>).Image = originalImage
   })
 
+  it('sends reaction event payload', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendReaction } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+
+    await sendReaction('!room:example.org', 'evt-message', '👍')
+
+    expect(matrixClient.sendEvent).toHaveBeenCalledWith(
+      '!room:example.org',
+      'm.reaction',
+      expect.objectContaining({
+        'm.relates_to': {
+          rel_type: 'm.annotation',
+          event_id: 'evt-message',
+          key: '👍'
+        }
+      })
+    )
+  })
+
+  it('toggles reaction by redacting existing own reaction', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      sendEvent: vi.fn(async () => undefined),
+      redactEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, toggleReaction } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+
+    await toggleReaction(
+      '!room:example.org',
+      'evt-message',
+      '👍',
+      ['reaction-own']
+    )
+
+    expect(matrixClient.redactEvent).toHaveBeenCalledWith(
+      '!room:example.org',
+      'reaction-own'
+    )
+    expect(matrixClient.sendEvent).not.toHaveBeenCalled()
+  })
+
   it('sends image message with encrypted file payload for E2EE room', async () => {
     const authClient = {
       loginRequest: vi.fn(async () => ({
