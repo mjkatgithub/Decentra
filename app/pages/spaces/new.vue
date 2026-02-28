@@ -1,14 +1,9 @@
 <script setup lang="ts">
 import { useAppI18n } from '~/composables/useAppI18n'
 
-const { isLoggedIn } = useMatrixClient()
 const { translateText } = useAppI18n()
 const spaceName = ref('')
 const infoMessage = ref('')
-
-if (!isLoggedIn.value) {
-  navigateTo('/login')
-}
 
 function handleCreateStub() {
   infoMessage.value = translateText('spaces.stubInfo')

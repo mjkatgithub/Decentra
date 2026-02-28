@@ -5,15 +5,28 @@ Feature: Chat
   @smoke
   Scenario: Chat page requires authentication
     When I open the chat page
-    Then I am redirected to the login page
+    Then I am redirected to the root page
 
   Scenario: Account settings require authentication
     When I open the account settings page
-    Then I am redirected to the login page
+    Then I am redirected to the root page
 
   Scenario: Space settings require authentication
     When I open the space settings page for "space-demo"
-    Then I am redirected to the login page
+    Then I am redirected to the root page
+
+  Scenario: Reload on chat with valid session keeps chat
+    When I open the login page
+    And I sign in with configured credentials
+    And I reload the current page
+    Then I should be redirected to the chat page
+
+  Scenario: Reload on chat without session redirects to root
+    When I open the login page
+    And I sign in with configured credentials
+    And I clear the stored matrix session
+    And I reload the current page
+    Then I am redirected to the root page
 
   Scenario: E2EE fallback and timeline continuity
     When I open the login page
