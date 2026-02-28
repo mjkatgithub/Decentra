@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Dedicated GitHub Bug issue template at `.github/ISSUE_TEMPLATE/bug.md`
+  with `bug/<bugfix>` branch guidance and bug-focused planning/test sections
 - Chat image messages with inline preview and lightbox support
 - E2EE image sending support from chat input
 - Media utilities for encrypted media fetch, decrypt, cache, and revoke flows

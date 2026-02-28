@@ -16,7 +16,6 @@ assignees: []
 
 ## Branch
 `feature/<feature>` (Feature)
-`bug/<bugfix>` (Bugfix)
 
 ## Acceptance Criteria
 - [ ] ...
