@@ -521,7 +521,7 @@ async function onLoadOlder() {
 
 function handleLogout() {
   logout();
-  navigateTo("/login");
+  navigateTo("/");
 }
 
 function selectSpace(spaceId: string) {
