@@ -86,6 +86,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lightbox assertions can pass reliably
 - Protected route redirects now avoid startup auth flicker by waiting for
   session restore and sending unauthenticated users to `/`
+- E2EE decryption regressions after login/session changes were fixed by
+  reusing remembered Matrix `device_id` for the same account and homeserver
+  while preventing reuse across different homeservers
 
 ## [0.1.0] - 2025-02-13
 
