@@ -50,6 +50,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Global startup loading modal shown while Matrix session restore is in progress
 - Global auth middleware for protected routes with restore-aware redirect checks
 - Unit coverage for restore-state transitions and global auth middleware
+- Root landing page on `/` with hero content, feature cards, and a download
+  call-to-action placeholder
+- Dedicated landing logo background assets (`logoBg.svg`) for the root route
+- Unit tests for root-page restore and redirect behavior in
+  `tests/unit/pages/index.spec.ts`
 
 ### Changed
 
@@ -74,6 +79,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   size and improve composable reuse
 - Root route startup behavior now waits for restore completion before login/chat
   navigation decisions
+- Root route now keeps restore-aware `watchEffect` gating while rendering
+  landing content for unauthenticated users
+- Landing copy and i18n keys were aligned with the finalized Issue-41 hero and
+  feature text
+- Landing background logo loading now uses a bundler URL import to avoid
+  runtime path resolution issues
 
 ### Fixed
 

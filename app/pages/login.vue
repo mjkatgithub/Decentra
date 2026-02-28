@@ -81,6 +81,14 @@ async function handleLogin() {
         >
           {{ translateText('auth.signIn') }}
         </UButton>
+        <UButton
+          to="/"
+          block
+          variant="ghost"
+          color="neutral"
+        >
+          {{ translateText('layout.homeSpace') }}
+        </UButton>
       </form>
     </UCard>
   </div>
