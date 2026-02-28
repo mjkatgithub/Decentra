@@ -249,6 +249,42 @@ describe('useMatrixClient', () => {
     })
   })
 
+  it('reuses remembered device id without active session', async () => {
+    localStorage.setItem('decentra.matrix.device.v1', JSON.stringify({
+      baseUrl: 'https://matrix.example.org',
+      userId: '@alice:example.org',
+      deviceId: 'DEVICE123'
+    }))
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'new-token',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn()
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+
+    expect(authClient.loginRequest).toHaveBeenCalledWith({
+      type: 'm.login.password',
+      identifier: {
+        type: 'm.id.user',
+        user: 'alice'
+      },
+      password: 'secret',
+      device_id: 'DEVICE123'
+    })
+  })
+
   it('does not reuse stored device id for other user', async () => {
     localStorage.setItem('decentra.matrix.session.v1', JSON.stringify({
       baseUrl: 'https://matrix.example.org',
@@ -280,6 +316,43 @@ describe('useMatrixClient', () => {
       identifier: {
         type: 'm.id.user',
         user: 'bob'
+      },
+      password: 'secret',
+      device_id: undefined
+    })
+  })
+
+  it('does not reuse stored device id on other homeserver', async () => {
+    localStorage.setItem('decentra.matrix.session.v1', JSON.stringify({
+      baseUrl: 'https://matrix.example.org',
+      accessToken: 'old-token',
+      userId: '@alice:example.org',
+      deviceId: 'DEVICE123'
+    }))
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'new-token',
+        user_id: '@alice:other.org',
+        device_id: 'DEVICE999'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn()
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login } = useMatrixClient()
+    await login('https://other.example.org', 'alice', 'secret')
+
+    expect(authClient.loginRequest).toHaveBeenCalledWith({
+      type: 'm.login.password',
+      identifier: {
+        type: 'm.id.user',
+        user: 'alice'
       },
       password: 'secret',
       device_id: undefined

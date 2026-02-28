@@ -10,9 +10,16 @@ interface StoredMatrixSession {
   deviceId?: string
 }
 
+interface StoredMatrixDevice {
+  baseUrl: string
+  userId: string
+  deviceId: string
+}
+
 type SessionRestoreStatus = 'idle' | 'loading' | 'success' | 'failure'
 
 const MATRIX_SESSION_STORAGE_KEY = 'decentra.matrix.session.v1'
+const MATRIX_DEVICE_STORAGE_KEY = 'decentra.matrix.device.v1'
 let cryptoWasmInitialization: Promise<void> | null = null
 let sessionRestorePromise: Promise<void> | null = null
 
@@ -55,17 +62,48 @@ function extractUserLocalpart(userIdOrUsername: string): string {
 
 function shouldReuseStoredDeviceId(
   storedSession: StoredMatrixSession | null,
+  storedDevice: StoredMatrixDevice | null,
+  baseUrl: string,
   username: string
 ): boolean {
-  if (!storedSession?.deviceId || !storedSession.userId) {
+  const sessionDevice = storedSession?.deviceId
+  const sessionUserId = storedSession?.userId
+  const sessionBaseUrl = storedSession?.baseUrl
+  const fallbackDevice = storedDevice?.deviceId
+  const fallbackUserId = storedDevice?.userId
+  const fallbackBaseUrl = storedDevice?.baseUrl
+  const candidateDeviceId = sessionDevice || fallbackDevice
+  const candidateUserId = sessionUserId || fallbackUserId
+  const candidateBaseUrl = sessionBaseUrl || fallbackBaseUrl
+
+  if (!candidateDeviceId || !candidateUserId || !candidateBaseUrl) {
+    return false
+  }
+  if (!isSameHomeserver(candidateBaseUrl, baseUrl)) {
     return false
   }
   const normalizedUsername = username.trim().toLowerCase()
   if (normalizedUsername.startsWith('@')) {
-    return storedSession.userId.toLowerCase() === normalizedUsername
+    return candidateUserId.toLowerCase() === normalizedUsername
   }
-  return extractUserLocalpart(storedSession.userId) ===
+  return extractUserLocalpart(candidateUserId) ===
     extractUserLocalpart(normalizedUsername)
+}
+
+function normalizeHomeserver(input: string): string {
+  const trimmed = input.trim().toLowerCase()
+  if (!trimmed) {
+    return ''
+  }
+  try {
+    return new URL(trimmed).origin
+  } catch {
+    return trimmed.replace(/\/+$/g, '')
+  }
+}
+
+function isSameHomeserver(left: string, right: string): boolean {
+  return normalizeHomeserver(left) === normalizeHomeserver(right)
 }
 
 function isCryptoStoreAccountMismatch(error: unknown): boolean {
@@ -341,6 +379,39 @@ export function useMatrixClient() {
     localStorage.removeItem(MATRIX_SESSION_STORAGE_KEY)
   }
 
+  function readStoredDevice(): StoredMatrixDevice | null {
+    if (typeof window === 'undefined') {
+      return null
+    }
+    const rawStoredDevice = localStorage.getItem(MATRIX_DEVICE_STORAGE_KEY)
+    if (!rawStoredDevice) {
+      return null
+    }
+    try {
+      const parsedStoredDevice = JSON.parse(rawStoredDevice) as StoredMatrixDevice
+      if (
+        !parsedStoredDevice.baseUrl ||
+        !parsedStoredDevice.userId ||
+        !parsedStoredDevice.deviceId
+      ) {
+        return null
+      }
+      return parsedStoredDevice
+    } catch {
+      return null
+    }
+  }
+
+  function writeStoredDevice(device: StoredMatrixDevice): void {
+    if (typeof window === 'undefined') {
+      return
+    }
+    localStorage.setItem(
+      MATRIX_DEVICE_STORAGE_KEY,
+      JSON.stringify(device)
+    )
+  }
+
   async function initializeClientFromStoredSession(): Promise<void> {
     if (client.value) {
       return
@@ -407,6 +478,16 @@ export function useMatrixClient() {
   ): Promise<void> {
     const authClient = sdk.createClient({ baseUrl })
     const storedSession = readStoredSession()
+    const storedDevice = readStoredDevice()
+    const shouldReuseDeviceId = shouldReuseStoredDeviceId(
+      storedSession,
+      storedDevice,
+      baseUrl,
+      username
+    )
+    const preferredDeviceId = shouldReuseDeviceId
+      ? storedSession?.deviceId || storedDevice?.deviceId
+      : undefined
     const authData = await authClient.loginRequest({
       type: 'm.login.password',
       identifier: {
@@ -414,9 +495,7 @@ export function useMatrixClient() {
         user: username
       },
       password,
-      device_id: shouldReuseStoredDeviceId(storedSession, username)
-        ? storedSession?.deviceId
-        : undefined
+      device_id: preferredDeviceId
     })
     const deviceId = authData.device_id
 
@@ -441,6 +520,13 @@ export function useMatrixClient() {
       userId: authData.user_id,
       deviceId
     })
+    if (deviceId) {
+      writeStoredDevice({
+        baseUrl,
+        userId: authData.user_id,
+        deviceId
+      })
+    }
   }
 
   function logout(): void {
