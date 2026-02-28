@@ -42,6 +42,18 @@ export interface ChatTimelineReply {
   body: string
 }
 
+export interface TimelineWindowOptions {
+  windowSize: number
+  anchorEventId?: string
+}
+
+export interface TimelineWindowSelection {
+  startIndex: number
+  endIndex: number
+  anchorIndex: number | null
+  anchorFound: boolean
+}
+
 interface MapTimelineArgs {
   room: Record<string, any>
   ownUserId: string | undefined
@@ -210,6 +222,52 @@ export function mapTimelineEventsToMessages({
       }
     }
   })
+}
+
+export function resolveTimelineWindowSelection(
+  eventIds: string[],
+  options: TimelineWindowOptions
+): TimelineWindowSelection {
+  const totalEvents = eventIds.length
+  if (totalEvents === 0) {
+    return {
+      startIndex: 0,
+      endIndex: 0,
+      anchorIndex: null,
+      anchorFound: false
+    }
+  }
+
+  const normalizedWindowSize = Math.max(1, Math.floor(options.windowSize || 0))
+  const effectiveWindowSize = Math.min(normalizedWindowSize, totalEvents)
+  const anchorEventId = options.anchorEventId
+  const anchorIndex = anchorEventId
+    ? eventIds.findIndex((eventId) => eventId === anchorEventId)
+    : -1
+  const anchorFound = anchorIndex >= 0
+
+  if (!anchorFound) {
+    return {
+      startIndex: totalEvents - effectiveWindowSize,
+      endIndex: totalEvents,
+      anchorIndex: null,
+      anchorFound: false
+    }
+  }
+
+  const halfWindowSize = Math.floor(effectiveWindowSize / 2)
+  let startIndex = anchorIndex - halfWindowSize
+  startIndex = Math.max(0, startIndex)
+  const maxStartIndex = Math.max(0, totalEvents - effectiveWindowSize)
+  startIndex = Math.min(startIndex, maxStartIndex)
+  const endIndex = Math.min(totalEvents, startIndex + effectiveWindowSize)
+
+  return {
+    startIndex,
+    endIndex,
+    anchorIndex,
+    anchorFound: true
+  }
 }
 
 type TimelineEventRecord = Record<string, any>

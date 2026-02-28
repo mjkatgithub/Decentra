@@ -1,5 +1,8 @@
 import { describe, it } from 'vitest'
-import { mapTimelineEventsToMessages } from '~/utils/chatTimeline'
+import {
+  mapTimelineEventsToMessages,
+  resolveTimelineWindowSelection
+} from '~/utils/chatTimeline'
 
 function createTimelineEvent(
   id: string,
@@ -223,5 +226,18 @@ describe('chatTimeline integration', () => {
     mapped[1]?.replyTo?.senderName.should.equal('Alice')
     mapped[2]?.replyTo?.eventId.should.equal('evt21')
     mapped[2]?.replyTo?.senderName.should.equal('Bob')
+  })
+
+  it('creates a centered initial window around read anchor', () => {
+    const selection = resolveTimelineWindowSelection(
+      ['evt1', 'evt2', 'evt3', 'evt4', 'evt5', 'evt6'],
+      {
+        windowSize: 4,
+        anchorEventId: 'evt4'
+      }
+    )
+    selection.startIndex.should.equal(1)
+    selection.endIndex.should.equal(5)
+    selection.anchorFound.should.equal(true)
   })
 })

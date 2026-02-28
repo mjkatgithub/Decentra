@@ -58,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Chat timeline now opens with a bounded initial message window to reduce
+  startup scroll depth and perceived room-load latency
+- Chat history loading switched from button-based pagination to bidirectional
+  infinite scroll with guarded top/bottom sentinel triggers
+- Initial message viewport now centers around the user's last-read event when
+  newer messages exist, and otherwise starts at the bottom
 - Matrix attachment encryption now uses unpadded base64 for IV and hashes
 - Image sending flow now checks room encryption before creating media events
 - Space navigation now separates icon-button interaction from text-click area

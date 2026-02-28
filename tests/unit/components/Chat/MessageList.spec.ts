@@ -1,4 +1,4 @@
-import { describe, it } from 'vitest'
+import { afterEach, beforeEach, describe, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatMessageList from '~/components/Chat/MessageList.vue'
 
@@ -33,7 +33,40 @@ function mountMessageList(props: Record<string, unknown>) {
   })
 }
 
+interface IntersectionObserverRecord {
+  callback: IntersectionObserverCallback
+}
+
+const intersectionObserverRecords: IntersectionObserverRecord[] = []
+const originalIntersectionObserver = globalThis.IntersectionObserver
+
+class IntersectionObserverMock {
+  callback: IntersectionObserverCallback
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback
+    intersectionObserverRecords.push({ callback })
+  }
+
+  observe(): void {}
+  disconnect(): void {}
+  unobserve(): void {}
+  takeRecords(): IntersectionObserverEntry[] {
+    return []
+  }
+}
+
 describe('MessageList', () => {
+  beforeEach(() => {
+    intersectionObserverRecords.length = 0
+    globalThis.IntersectionObserver =
+      IntersectionObserverMock as unknown as typeof IntersectionObserver
+  })
+
+  afterEach(() => {
+    globalThis.IntersectionObserver = originalIntersectionObserver
+  })
+
   it('shows empty state when there are no messages', () => {
     const wrapper = mountMessageList({
       messages: []
@@ -204,5 +237,56 @@ describe('MessageList', () => {
     messageContainer.exists().should.equal(true)
     messageContainer.classes().should.include('group')
     messageContainer.classes().should.include('hover:bg-gray-50')
+  })
+
+  it('emits reachTop when top sentinel intersects', async () => {
+    const wrapper = mountMessageList({
+      messages: [
+        {
+          id: 'evt-scroll-top',
+          kind: 'message',
+          senderId: '@alice:example.org',
+          senderName: 'Alice',
+          body: 'Scroll top'
+        }
+      ]
+    })
+    await wrapper.vm.$nextTick()
+
+    const topObserver = intersectionObserverRecords[0]
+    intersectionObserverRecords.length.should.be.greaterThan(0)
+    topObserver?.callback(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver
+    )
+    await wrapper.vm.$nextTick()
+
+    const events = wrapper.emitted('reachTop') ?? []
+    events.length.should.equal(1)
+  })
+
+  it('does not emit reachTop while older messages load', async () => {
+    const wrapper = mountMessageList({
+      messages: [
+        {
+          id: 'evt-scroll-guard',
+          kind: 'message',
+          senderId: '@alice:example.org',
+          senderName: 'Alice',
+          body: 'Scroll guard'
+        }
+      ],
+      loadingOlder: true
+    })
+
+    const topObserver = intersectionObserverRecords[0]
+    topObserver?.callback(
+      [{ isIntersecting: true } as IntersectionObserverEntry],
+      {} as IntersectionObserver
+    )
+    await wrapper.vm.$nextTick()
+
+    const events = wrapper.emitted('reachTop') ?? []
+    events.length.should.equal(0)
   })
 })

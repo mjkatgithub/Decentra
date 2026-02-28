@@ -4,7 +4,8 @@ import {
   buildUndecryptableMessageText,
   getMessageBody,
   isUndecryptableEvent,
-  mapTimelineEventsToMessages
+  mapTimelineEventsToMessages,
+  resolveTimelineWindowSelection
 } from '~/utils/chatTimeline'
 
 describe('chatTimeline helpers', () => {
@@ -385,5 +386,38 @@ describe('chatTimeline helpers', () => {
     messages[0]!.reactions.length.should.equal(1)
     messages[0]!.reactions[0]!.emoji.should.equal('🔥')
     messages[0]!.reactions[0]!.hasOwnReaction.should.equal(true)
+  })
+
+  it('builds bottom-aligned window without anchor', () => {
+    const selection = resolveTimelineWindowSelection(
+      ['evt1', 'evt2', 'evt3', 'evt4', 'evt5'],
+      { windowSize: 3 }
+    )
+    selection.startIndex.should.equal(2)
+    selection.endIndex.should.equal(5)
+    selection.anchorFound.should.equal(false)
+    ;(selection.anchorIndex === null).should.equal(true)
+  })
+
+  it('centers the window around a known anchor', () => {
+    const selection = resolveTimelineWindowSelection(
+      ['evt1', 'evt2', 'evt3', 'evt4', 'evt5', 'evt6', 'evt7'],
+      { windowSize: 5, anchorEventId: 'evt4' }
+    )
+    selection.startIndex.should.equal(1)
+    selection.endIndex.should.equal(6)
+    selection.anchorFound.should.equal(true)
+    selection.anchorIndex.should.equal(3)
+  })
+
+  it('falls back to bottom when anchor is unknown', () => {
+    const selection = resolveTimelineWindowSelection(
+      ['evt1', 'evt2', 'evt3'],
+      { windowSize: 2, anchorEventId: 'evt-missing' }
+    )
+    selection.startIndex.should.equal(1)
+    selection.endIndex.should.equal(3)
+    selection.anchorFound.should.equal(false)
+    ;(selection.anchorIndex === null).should.equal(true)
   })
 })
