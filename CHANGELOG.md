@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (for example `:wave:` to `👋`), and user-scoped frequent emojis
 - Additional reaction coverage in unit and E2E tests for Matrix toggle logic,
   aggregation mapping, and message-level reaction UI behavior
+- Session restore gating with explicit startup lifecycle state and completion
+  helpers in `useMatrixClient`
+- Global startup loading modal shown while Matrix session restore is in progress
+- Global auth middleware for protected routes with restore-aware redirect checks
+- Unit coverage for restore-state transitions and global auth middleware
 
 ### Changed
 
@@ -65,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gray styling and native button tooltips
 - Chat page media helper logic was moved into `useChatMedia` to reduce page
   size and improve composable reuse
+- Root route startup behavior now waits for restore completion before login/chat
+  navigation decisions
 
 ### Fixed
 
@@ -75,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that broke Docker parsing
 - Seeded image events now include upload-backed media URLs so image preview and
   lightbox assertions can pass reliably
+- Protected route redirects now avoid startup auth flicker by waiting for
+  session restore and sending unauthenticated users to `/`
 
 ## [0.1.0] - 2025-02-13
 
