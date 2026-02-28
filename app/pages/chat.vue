@@ -83,7 +83,6 @@ const HOME_SPACE_ID = "__home__";
 
 const {
   client,
-  isLoggedIn,
   userId,
   getRooms,
   logout,
@@ -111,10 +110,6 @@ const rightSidebarOpen = ref(true);
 const isMobile = ref(false);
 const viewportInitialized = ref(false);
 const spaceRailExpanded = ref(false);
-
-if (!isLoggedIn.value) {
-  navigateTo("/login");
-}
 
 function getRoomType(room: Record<string, any>): string | undefined {
   return (room as { getType?: () => string }).getType?.();

@@ -10,8 +10,11 @@ interface StoredMatrixSession {
   deviceId?: string
 }
 
+type SessionRestoreStatus = 'idle' | 'loading' | 'success' | 'failure'
+
 const MATRIX_SESSION_STORAGE_KEY = 'decentra.matrix.session.v1'
 let cryptoWasmInitialization: Promise<void> | null = null
+let sessionRestorePromise: Promise<void> | null = null
 
 interface MatrixEncryptedFile {
   key: {
@@ -248,12 +251,21 @@ function isRoomEncrypted(room: sdk.Room): boolean {
 
 export function useMatrixClient() {
   const client = useState<MatrixClient | null>('matrix-client', () => null)
-  const restoreAttempted = useState<boolean>(
-    'matrix-client-restore-attempted',
-    () => false
+  const sessionRestoreStatus = useState<SessionRestoreStatus>(
+    'matrix-client-restore-status',
+    () => 'idle'
   )
   const isLoggedIn = computed(() => client.value !== null)
   const userId = computed(() => client.value?.getUserId() ?? null)
+  const isSessionRestoreInProgress = computed(() => {
+    return sessionRestoreStatus.value === 'loading'
+  })
+  const isSessionRestoreFinished = computed(() => {
+    return (
+      sessionRestoreStatus.value === 'success' ||
+      sessionRestoreStatus.value === 'failure'
+    )
+  })
 
   async function initRustCryptoWithRecovery(
     matrixClient: MatrixClient,
@@ -350,9 +362,42 @@ export function useMatrixClient() {
     client.value = restoredClient
   }
 
-  if (typeof window !== 'undefined' && !restoreAttempted.value) {
-    restoreAttempted.value = true
-    void initializeClientFromStoredSession()
+  function startSessionRestore(): Promise<void> {
+    if (sessionRestoreStatus.value === 'loading' && sessionRestorePromise) {
+      return sessionRestorePromise
+    }
+    if (
+      sessionRestoreStatus.value === 'success' ||
+      sessionRestoreStatus.value === 'failure'
+    ) {
+      return Promise.resolve()
+    }
+
+    sessionRestoreStatus.value = 'loading'
+    sessionRestorePromise = initializeClientFromStoredSession()
+      .then(() => {
+        sessionRestoreStatus.value = 'success'
+      })
+      .catch((error) => {
+        console.error('Failed to restore matrix session', error)
+        sessionRestoreStatus.value = 'failure'
+      })
+      .finally(() => {
+        sessionRestorePromise = null
+      })
+
+    return sessionRestorePromise
+  }
+
+  async function ensureSessionRestoreCompleted(): Promise<void> {
+    if (typeof window === 'undefined') {
+      return
+    }
+    await startSessionRestore()
+  }
+
+  if (typeof window !== 'undefined' && sessionRestoreStatus.value === 'idle') {
+    void startSessionRestore()
   }
 
   async function login(
@@ -594,6 +639,10 @@ export function useMatrixClient() {
     client,
     isLoggedIn,
     userId,
+    sessionRestoreStatus,
+    isSessionRestoreInProgress,
+    isSessionRestoreFinished,
+    ensureSessionRestoreCompleted,
     login,
     logout,
     getRooms,

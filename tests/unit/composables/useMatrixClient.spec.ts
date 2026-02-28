@@ -23,17 +23,84 @@ describe('useMatrixClient', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
+    const stateMap = new Map<string, { value: unknown }>()
+    const useStateMock = (
+      key: string,
+      init: () => unknown
+    ) => {
+      if (!stateMap.has(key)) {
+        stateMap.set(key, ref(init()))
+      }
+      return stateMap.get(key)
+    }
+    ;(globalThis as Record<string, unknown>).useState = useStateMock
+    useStateMock(
+      'matrix-client-restore-status',
+      () => 'success'
+    )
+    ;(globalThis as Record<string, unknown>).computed = computed
+    localStorage.clear()
+  })
+
+  it('marks restore as success when no session exists', async () => {
+    const stateMap = new Map<string, { value: unknown }>()
     ;(globalThis as Record<string, unknown>).useState = (
       key: string,
       init: () => unknown
     ) => {
-      if (key === 'matrix-client-restore-attempted') {
-        return ref(true)
+      if (!stateMap.has(key)) {
+        stateMap.set(key, ref(init()))
       }
-      return ref(init())
+      return stateMap.get(key)
     }
     ;(globalThis as Record<string, unknown>).computed = computed
-    localStorage.clear()
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const {
+      sessionRestoreStatus,
+      ensureSessionRestoreCompleted
+    } = useMatrixClient()
+
+    await ensureSessionRestoreCompleted()
+
+    expect(sessionRestoreStatus.value).toBe('success')
+    expect(createClient).not.toHaveBeenCalled()
+  })
+
+  it('marks restore as failure when session bootstrap throws', async () => {
+    localStorage.setItem('decentra.matrix.session.v1', JSON.stringify({
+      baseUrl: 'https://matrix.example.org',
+      accessToken: 'token-123',
+      userId: '@alice:example.org'
+    }))
+    createClient.mockImplementation(() => {
+      throw new Error('restore failed')
+    })
+    const consoleErrorSpy = vi.spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+    const stateMap = new Map<string, { value: unknown }>()
+    ;(globalThis as Record<string, unknown>).useState = (
+      key: string,
+      init: () => unknown
+    ) => {
+      if (!stateMap.has(key)) {
+        stateMap.set(key, ref(init()))
+      }
+      return stateMap.get(key)
+    }
+    ;(globalThis as Record<string, unknown>).computed = computed
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const {
+      sessionRestoreStatus,
+      ensureSessionRestoreCompleted
+    } = useMatrixClient()
+
+    await ensureSessionRestoreCompleted()
+
+    expect(sessionRestoreStatus.value).toBe('failure')
+    expect(consoleErrorSpy).toHaveBeenCalled()
+    consoleErrorSpy.mockRestore()
   })
 
   it('initializes Rust crypto before starting client', async () => {

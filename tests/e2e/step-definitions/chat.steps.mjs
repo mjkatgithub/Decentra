@@ -70,6 +70,20 @@ Then('I am redirected to the login page', async function () {
     .toBeVisible()
 })
 
+Then('I am redirected to the root page', async function () {
+  await expect(this.page).toHaveURL(/\/$/)
+})
+
+When('I reload the current page', async function () {
+  await this.page.reload()
+})
+
+When('I clear the stored matrix session', async function () {
+  await this.page.evaluate(() => {
+    window.localStorage.removeItem('decentra.matrix.session.v1')
+  })
+})
+
 When('I set my presence to {string}', async function (presenceValue) {
   const presenceSelect = this.page.locator('label')
     .filter({ hasText: /Presence|Status/i })

@@ -10,13 +10,9 @@ type PresenceMode =
   | 'offline'
   | 'org.matrix.msc3026.busy'
 
-const { client, isLoggedIn, userId, logout, ensureCryptoReady } = useMatrixClient()
+const { client, userId, logout, ensureCryptoReady } = useMatrixClient()
 const { locale, setLocale, translateText } = useAppI18n()
 const { getThemePreference, setThemePreference } = useThemePreference()
-
-if (!isLoggedIn.value) {
-  navigateTo('/login')
-}
 
 const selectedTheme = computed<ThemeMode>({
   get() {

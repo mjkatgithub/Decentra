@@ -2,12 +2,7 @@
 import { useAppI18n } from '~/composables/useAppI18n'
 
 const route = useRoute()
-const { isLoggedIn } = useMatrixClient()
 const { translateText } = useAppI18n()
-
-if (!isLoggedIn.value) {
-  navigateTo('/login')
-}
 
 const spaceId = computed(() => String(route.params.spaceId || ''))
 const storageKey = computed(() => `decentra.space-name.${spaceId.value}`)
