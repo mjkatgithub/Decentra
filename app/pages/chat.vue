@@ -5,6 +5,7 @@ import { useChatMedia } from "~/composables/useChatMedia";
 import {
   buildReactionSummaryByEventId,
   mapTimelineEventsToMessages,
+  resolveTimelineWindowSelection,
 } from "~/utils/chatTimeline";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
@@ -80,6 +81,8 @@ interface MemberItem {
 
 const MOBILE_BREAKPOINT = 1024;
 const HOME_SPACE_ID = "__home__";
+const INITIAL_TIMELINE_WINDOW_SIZE = 80;
+const SCROLL_WINDOW_EXPAND_STEP = 40;
 
 const {
   client,
@@ -99,10 +102,18 @@ const {
 
 const selectedRoomId = ref<string | null>(null);
 const selectedSpaceId = ref<string | null>(null);
+const allMessages = ref<ChatMessage[]>([]);
 const messages = ref<ChatMessage[]>([]);
 const matrixRooms = ref<Array<Record<string, any>>>([]);
 const loadingOlder = ref(false);
-const canLoadOlder = ref(true);
+const loadingNewer = ref(false);
+const hasMoreOlderMessages = ref(true);
+const windowStartIndex = ref(0);
+const windowEndIndex = ref(0);
+const centerOnMessageId = ref<string | undefined>(undefined);
+const stickToBottom = ref(false);
+const scrollIntentToken = ref(0);
+const preserveViewportOnPrepend = ref(false);
 const activeReplyTo = ref<ChatMessage["replyTo"] | null>(null);
 const loadMessagesTimerId = ref<number | null>(null);
 const leftSidebarOpen = ref(true);
@@ -311,6 +322,7 @@ watch(
   (rooms) => {
     if (rooms.length === 0) {
       selectedRoomId.value = null;
+      allMessages.value = [];
       messages.value = [];
       return;
     }
@@ -328,11 +340,14 @@ watch(
 );
 
 watch(selectedRoomId, (roomId) => {
-  canLoadOlder.value = true;
+  hasMoreOlderMessages.value = true;
   activeReplyTo.value = null;
-  if (roomId) {
-    loadMessages(roomId);
+  if (!roomId) {
+    allMessages.value = [];
+    messages.value = [];
+    return;
   }
+  loadMessages(roomId, { resetWindow: true });
 });
 
 function setReplyTarget(replyTarget: {
@@ -388,13 +403,63 @@ function isDirectRoom(room: RoomItem): boolean {
   return room.parentSpaceIds.length === 0 && joinedMemberCount === 2;
 }
 
-function loadMessages(roomId: string) {
+function getOwnReadAnchorEventId(room: Record<string, any>): string | undefined {
+  const ownUserId = client.value?.getUserId();
+  if (!ownUserId) {
+    return undefined;
+  }
+  const liveTimelineEvents = room.getLiveTimeline().getEvents();
+  for (let index = liveTimelineEvents.length - 1; index >= 0; index -= 1) {
+    const timelineEvent = liveTimelineEvents[index];
+    if (!timelineEvent) {
+      continue;
+    }
+    const eventType = timelineEvent.getType?.() ?? "";
+    if (eventType !== "m.room.message") {
+      continue;
+    }
+    const eventId = timelineEvent.getId?.();
+    if (!eventId) {
+      continue;
+    }
+    if (room.hasUserReadEvent(ownUserId, eventId)) {
+      return eventId;
+    }
+  }
+  return undefined;
+}
+
+function clampWindowRange(totalMessages: number) {
+  if (totalMessages <= 0) {
+    windowStartIndex.value = 0;
+    windowEndIndex.value = 0;
+    return;
+  }
+  windowStartIndex.value = Math.max(0, windowStartIndex.value);
+  windowEndIndex.value = Math.max(windowStartIndex.value, windowEndIndex.value);
+  windowEndIndex.value = Math.min(totalMessages, windowEndIndex.value);
+}
+
+function applyWindow() {
+  clampWindowRange(allMessages.value.length);
+  messages.value = allMessages.value.slice(
+    windowStartIndex.value,
+    windowEndIndex.value,
+  );
+}
+
+function loadMessages(
+  roomId: string,
+  options?: { resetWindow?: boolean },
+) {
   const room = client.value?.getRoom(roomId);
   if (!room) {
+    allMessages.value = [];
     messages.value = [];
     return;
   }
-  messages.value = mapTimelineEventsToMessages({
+  const previousVisibleMessages = messages.value;
+  const mappedMessages = mapTimelineEventsToMessages({
     room,
     ownUserId: client.value?.getUserId() ?? undefined,
     getMemberAvatarUrl: (member) => {
@@ -403,6 +468,53 @@ function loadMessages(roomId: string) {
     getMediaUrl,
     buildNoticeText,
   });
+  allMessages.value = mappedMessages;
+
+  const shouldResetWindow = options?.resetWindow ?? false;
+  if (shouldResetWindow) {
+    const allMessageIds = mappedMessages.map((message) => message.id);
+    const ownReadAnchorEventId = getOwnReadAnchorEventId(room);
+    const selection = resolveTimelineWindowSelection(allMessageIds, {
+      windowSize: INITIAL_TIMELINE_WINDOW_SIZE,
+      anchorEventId: ownReadAnchorEventId,
+    });
+    windowStartIndex.value = selection.startIndex;
+    windowEndIndex.value = selection.endIndex;
+    const hasNewerMessagesThanAnchor =
+      selection.anchorFound &&
+      selection.anchorIndex !== null &&
+      selection.anchorIndex < allMessageIds.length - 1;
+    centerOnMessageId.value =
+      hasNewerMessagesThanAnchor && ownReadAnchorEventId
+        ? ownReadAnchorEventId
+        : undefined;
+    stickToBottom.value = !hasNewerMessagesThanAnchor;
+    applyWindow();
+    scrollIntentToken.value += 1;
+    return;
+  }
+
+  const previousFirstMessageId = previousVisibleMessages[0]?.id;
+  const previousLastMessageId =
+    previousVisibleMessages[previousVisibleMessages.length - 1]?.id;
+  const nextStartIndex = previousFirstMessageId
+    ? mappedMessages.findIndex((message) => message.id === previousFirstMessageId)
+    : -1;
+  const nextLastIndex = previousLastMessageId
+    ? mappedMessages.findIndex((message) => message.id === previousLastMessageId)
+    : -1;
+  if (nextStartIndex >= 0 && nextLastIndex >= nextStartIndex) {
+    windowStartIndex.value = nextStartIndex;
+    windowEndIndex.value = nextLastIndex + 1;
+  } else {
+    const fallbackSelection = resolveTimelineWindowSelection(
+      mappedMessages.map((message) => message.id),
+      { windowSize: INITIAL_TIMELINE_WINDOW_SIZE },
+    );
+    windowStartIndex.value = fallbackSelection.startIndex;
+    windowEndIndex.value = fallbackSelection.endIndex;
+  }
+  applyWindow();
 }
 
 function patchMessageReactions(roomId: string) {
@@ -414,7 +526,7 @@ function patchMessageReactions(roomId: string) {
     room.getLiveTimeline().getEvents(),
     client.value?.getUserId() ?? undefined,
   );
-  messages.value = messages.value.map((message) => {
+  allMessages.value = allMessages.value.map((message) => {
     if (message.kind !== "message") {
       return message;
     }
@@ -423,6 +535,7 @@ function patchMessageReactions(roomId: string) {
       reactions: reactionSummaryByEventId.get(message.id) ?? [],
     };
   });
+  applyWindow();
 }
 
 function isReactionRelatedEvent(eventType: string): boolean {
@@ -448,7 +561,7 @@ async function onToggleReaction(payload: {
 
 function scheduleLoadMessages(roomId: string) {
   if (!import.meta.client) {
-    loadMessages(roomId);
+    loadMessages(roomId, { resetWindow: false });
     return;
   }
   if (loadMessagesTimerId.value !== null) {
@@ -456,7 +569,7 @@ function scheduleLoadMessages(roomId: string) {
   }
   loadMessagesTimerId.value = window.setTimeout(() => {
     loadMessagesTimerId.value = null;
-    loadMessages(roomId);
+    loadMessages(roomId, { resetWindow: false });
   }, 120);
 }
 
@@ -505,17 +618,68 @@ function buildNoticeText(
   return `${senderName} updated room settings`;
 }
 
-async function onLoadOlder() {
+async function withPrependViewportPreservation(
+  callback: () => Promise<void> | void,
+) {
+  preserveViewportOnPrepend.value = true;
+  try {
+    await callback();
+  } finally {
+    await nextTick();
+    preserveViewportOnPrepend.value = false;
+  }
+}
+
+async function onReachTop() {
   if (!selectedRoomId.value || loadingOlder.value) {
     return;
   }
+  if (windowStartIndex.value > 0) {
+    await withPrependViewportPreservation(() => {
+      windowStartIndex.value = Math.max(
+        0,
+        windowStartIndex.value - SCROLL_WINDOW_EXPAND_STEP,
+      );
+      applyWindow();
+    });
+    return;
+  }
+  if (!hasMoreOlderMessages.value) {
+    return;
+  }
   loadingOlder.value = true;
+  await withPrependViewportPreservation(async () => {
+    try {
+      const hasMoreMessages = await loadOlderMessages(selectedRoomId.value!);
+      hasMoreOlderMessages.value = hasMoreMessages;
+      loadMessages(selectedRoomId.value!, { resetWindow: false });
+      windowStartIndex.value = Math.max(
+        0,
+        windowStartIndex.value - SCROLL_WINDOW_EXPAND_STEP,
+      );
+      applyWindow();
+    } finally {
+      loadingOlder.value = false;
+    }
+  });
+}
+
+async function onReachBottom() {
+  if (loadingNewer.value) {
+    return;
+  }
+  if (windowEndIndex.value >= allMessages.value.length) {
+    return;
+  }
+  loadingNewer.value = true;
   try {
-    const hasMoreMessages = await loadOlderMessages(selectedRoomId.value);
-    canLoadOlder.value = hasMoreMessages;
-    loadMessages(selectedRoomId.value);
+    windowEndIndex.value = Math.min(
+      allMessages.value.length,
+      windowEndIndex.value + SCROLL_WINDOW_EXPAND_STEP,
+    );
+    applyWindow();
   } finally {
-    loadingOlder.value = false;
+    loadingNewer.value = false;
   }
 }
 
@@ -769,10 +933,15 @@ watch(
         <ChatMessageList
           :messages="messages"
           :current-user-id="userId ?? undefined"
-          :can-load-older="canLoadOlder"
           :loading-older="loadingOlder"
+          :loading-newer="loadingNewer"
+          :center-on-message-id="centerOnMessageId"
+          :stick-to-bottom="stickToBottom"
+          :scroll-intent-token="scrollIntentToken"
+          :preserve-viewport-on-prepend="preserveViewportOnPrepend"
           :resolve-media-blob-url="resolveMediaBlobUrl"
-          @load-older="onLoadOlder"
+          @reach-top="onReachTop"
+          @reach-bottom="onReachBottom"
           @reply="setReplyTarget"
           @toggle-reaction="onToggleReaction"
         />
