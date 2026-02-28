@@ -4,6 +4,17 @@ import { mount } from '@vue/test-utils'
 import IndexPage from '~/pages/index.vue'
 
 const navigateToMock = vi.fn(async () => undefined)
+const isLoggedInState = ref(false)
+const isSessionRestoreFinishedState = ref(false)
+
+vi.mock('~/stores/authSessionStore', () => {
+  return {
+    useAuthSessionStore: () => ({
+      isLoggedIn: isLoggedInState,
+      isSessionRestoreFinished: isSessionRestoreFinishedState
+    })
+  }
+})
 
 const UButtonStub = {
   template: '<a><slot /></a>'
@@ -36,10 +47,8 @@ describe('index page', () => {
     isLoggedIn: boolean;
     isSessionRestoreFinished: boolean;
   }) {
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      isLoggedIn: ref(options.isLoggedIn),
-      isSessionRestoreFinished: ref(options.isSessionRestoreFinished)
-    })
+    isLoggedInState.value = options.isLoggedIn
+    isSessionRestoreFinishedState.value = options.isSessionRestoreFinished
 
     return mount(IndexPage, {
       global: {

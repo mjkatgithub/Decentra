@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { mount } from "@vue/test-utils";
+import { createPinia } from "pinia";
 import ChatReactionEmojiPicker from "~/components/Chat/ReactionEmojiPicker.vue";
 import { buildFrequentEmojiStorageKey } from "~/composables/useEmojiPickerData";
 
@@ -9,7 +10,11 @@ describe("ReactionEmojiPicker", () => {
   });
 
   it("emits selected emoji when clicking an emoji option", async () => {
-    const wrapper = mount(ChatReactionEmojiPicker);
+    const wrapper = mount(ChatReactionEmojiPicker, {
+      global: {
+        plugins: [createPinia()],
+      },
+    });
     const firstEmojiButton = wrapper.find('[data-emoji-option="👍"]');
     await firstEmojiButton.trigger("click");
 
@@ -19,7 +24,11 @@ describe("ReactionEmojiPicker", () => {
   });
 
   it("converts shortcode input before emit", async () => {
-    const wrapper = mount(ChatReactionEmojiPicker);
+    const wrapper = mount(ChatReactionEmojiPicker, {
+      global: {
+        plugins: [createPinia()],
+      },
+    });
     const input = wrapper.find('input[placeholder="Any emoji or :wave:"]');
     await input.setValue(":wave:");
     await input.trigger("keydown.enter");
@@ -30,7 +39,11 @@ describe("ReactionEmojiPicker", () => {
   });
 
   it("supports :people_hugging: shortcode", async () => {
-    const wrapper = mount(ChatReactionEmojiPicker);
+    const wrapper = mount(ChatReactionEmojiPicker, {
+      global: {
+        plugins: [createPinia()],
+      },
+    });
     const input = wrapper.find('input[placeholder="Any emoji or :wave:"]');
     await input.setValue(":people_hugging:");
     await input.trigger("keydown.enter");
@@ -44,6 +57,9 @@ describe("ReactionEmojiPicker", () => {
     const wrapper = mount(ChatReactionEmojiPicker, {
       props: {
         frequentScopeKey: "@alice:example.org",
+      },
+      global: {
+        plugins: [createPinia()],
       },
     });
     await wrapper.find('[data-emoji-option="👍"]').trigger("click");

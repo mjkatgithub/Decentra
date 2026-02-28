@@ -13,7 +13,7 @@ describe('auth middleware', () => {
       handler: (...args: unknown[]) => unknown
     ) => handler
     ;(globalThis as Record<string, unknown>).navigateTo = navigateToMock
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
+    ;(globalThis as Record<string, unknown>).useAuthSessionStore = () => ({
       isLoggedIn: isLoggedInState,
       ensureSessionRestoreCompleted: ensureSessionRestoreCompletedMock
     })

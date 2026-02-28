@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 const createClient = vi.fn()
 const initCryptoWasm = vi.fn(async () => undefined)
@@ -23,6 +24,7 @@ describe('useMatrixClient', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
+    setActivePinia(createPinia())
     const stateMap = new Map<string, { value: unknown }>()
     const useStateMock = (
       key: string,

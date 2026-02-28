@@ -16,7 +16,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return
   }
 
-  const { isLoggedIn, ensureSessionRestoreCompleted } = useMatrixClient()
+  const authSessionStore = useAuthSessionStore()
+  const { isLoggedIn, ensureSessionRestoreCompleted } = authSessionStore
   await ensureSessionRestoreCompleted()
 
   if (!isLoggedIn.value) {

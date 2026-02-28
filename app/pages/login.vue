@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { useAppI18n } from '~/composables/useAppI18n'
+import { storeToRefs } from 'pinia'
+import { useAuthSessionStore } from '~/stores/authSessionStore'
 
 const baseUrl = ref('https://matrix.org')
 const username = ref('')
@@ -7,7 +9,9 @@ const password = ref('')
 const error = ref('')
 const loading = ref(false)
 
-const { login, isLoggedIn } = useMatrixClient()
+const authSessionStore = useAuthSessionStore()
+const { login } = authSessionStore
+const { isLoggedIn } = storeToRefs(authSessionStore)
 const { translateText } = useAppI18n()
 
 if (isLoggedIn.value) {
