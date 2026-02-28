@@ -15,7 +15,7 @@ assignees: []
 -->
 
 ## Branch
-`feature/<feature>`
+`feature/<feature>` (Feature)
 
 ## Acceptance Criteria
 - [ ] ...
