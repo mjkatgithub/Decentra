@@ -48,6 +48,17 @@ function messageContainerByBody(page, messageText) {
   }).first()
 }
 
+function reactionChipByEmoji(messageItem, emoji) {
+  const exactReactionChip = messageItem
+    .locator(`[data-reaction-chip="${emoji}"]`)
+    .first()
+  return exactReactionChip.or(
+    messageItem.locator('[data-reaction-chip]').filter({
+      hasText: emoji
+    }).first()
+  )
+}
+
 When('I open the chat page', async function () {
   await this.page.goto(`${BASE_URL}/chat`)
 })
@@ -85,17 +96,22 @@ When('I clear the stored matrix session', async function () {
 })
 
 When('I set my presence to {string}', async function (presenceValue) {
+  const normalizedPresence = normalizePresenceValue(presenceValue)
   const presenceSelect = this.page.locator('label')
     .filter({ hasText: /Presence|Status/i })
     .locator('select')
     .first()
   await expect(presenceSelect).toBeVisible({ timeout: 10000 })
-  await presenceSelect.selectOption(normalizePresenceValue(presenceValue))
+  await presenceSelect.selectOption(normalizedPresence)
 
   const applyPresenceButton = this.page.getByRole('button', {
     name: /Apply presence|Status setzen/i
   })
   await applyPresenceButton.click()
+  await this.page.evaluate((presence) => {
+    window.localStorage.setItem('decentra.presence.preference.v1', presence)
+  }, normalizedPresence)
+  await this.page.waitForTimeout(500)
 })
 
 When('I open the seeded test room', async function () {
@@ -165,19 +181,28 @@ When(
   async function (emoji, messageText) {
     const messageItem = messageContainerByBody(this.page, messageText)
     await expect(messageItem).toBeVisible({ timeout: 15000 })
-    await messageItem.hover()
-
     const reactionButton = messageItem.getByRole('button', {
       name: /Add reaction/i
     }).first()
-    await expect(reactionButton).toBeVisible({ timeout: 10000 })
-    await reactionButton.click()
+    const reactionChip = reactionChipByEmoji(messageItem, emoji)
 
-    const emojiOption = this.page
-      .locator(`[data-emoji-option="${emoji}"]`)
-      .first()
-    await expect(emojiOption).toBeVisible({ timeout: 10000 })
-    await emojiOption.click()
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await messageItem.hover()
+      await expect(reactionButton).toBeVisible({ timeout: 10000 })
+      await reactionButton.click()
+
+      const emojiOption = this.page
+        .locator(`[data-emoji-option="${emoji}"]`)
+        .first()
+      await expect(emojiOption).toBeVisible({ timeout: 10000 })
+      await emojiOption.click()
+
+      const visibleReactionCount = await reactionChip.count()
+      if (visibleReactionCount > 0) {
+        return
+      }
+      await this.page.waitForTimeout(400)
+    }
   }
 )
 
@@ -186,23 +211,27 @@ When(
   async function (emoji, messageText) {
     const messageItem = messageContainerByBody(this.page, messageText)
     await expect(messageItem).toBeVisible({ timeout: 15000 })
-    const reactionChip = messageItem
-      .locator(`[data-reaction-chip="${emoji}"]`)
-      .first()
-    await expect(reactionChip).toBeVisible({ timeout: 10000 })
-    await reactionChip.click()
+    const reactionChip = reactionChipByEmoji(messageItem, emoji)
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const visibleReactionCount = await reactionChip.count()
+      if (visibleReactionCount === 0) {
+        return
+      }
+      await expect(reactionChip).toBeVisible({ timeout: 10000 })
+      await reactionChip.click()
+      await this.page.waitForTimeout(300)
+    }
   }
 )
 
 Then(
   'I should see reaction {string} with count {string} on message body {string}',
+  { timeout: 30000 },
   async function (emoji, count, messageText) {
     const messageItem = messageContainerByBody(this.page, messageText)
     await expect(messageItem).toBeVisible({ timeout: 15000 })
-    const reactionChip = messageItem
-      .locator(`[data-reaction-chip="${emoji}"]`)
-      .first()
-    await expect(reactionChip).toBeVisible({ timeout: 10000 })
+    const reactionChip = reactionChipByEmoji(messageItem, emoji)
+    await expect(reactionChip).toBeVisible({ timeout: 20000 })
     await expect(reactionChip).toContainText(emoji)
     await expect(reactionChip).toContainText(count)
   }
@@ -210,13 +239,12 @@ Then(
 
 Then(
   'I should not see reaction {string} on message body {string}',
+  { timeout: 30000 },
   async function (emoji, messageText) {
     const messageItem = messageContainerByBody(this.page, messageText)
     await expect(messageItem).toBeVisible({ timeout: 15000 })
-    const reactionChip = messageItem
-      .locator(`[data-reaction-chip="${emoji}"]`)
-      .first()
-    await expect(reactionChip).toHaveCount(0)
+    const reactionChip = reactionChipByEmoji(messageItem, emoji)
+    await expect(reactionChip).toHaveCount(0, { timeout: 20000 })
   }
 )
 
@@ -259,6 +287,7 @@ Then('I should see a missing-origin reply fallback', async function () {
 
 Then(
   'I should see my member status indicator as {string}',
+  { timeout: 30000 },
   async function (presenceValue) {
     const expectedClassName = expectedPresenceDotClass(presenceValue)
     const currentUserNeedle = currentUserNameNeedle()

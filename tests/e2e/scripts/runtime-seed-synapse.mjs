@@ -16,13 +16,37 @@ const secondaryLocalpart = process.env.E2E_SECONDARY_LOCALPART || 'e2e-bob'
 const secondaryPassword = process.env.E2E_SECONDARY_PASSWORD || 'e2e-bob-pass'
 const registrationSecret = process.env.SYNAPSE_REGISTRATION_SHARED_SECRET ||
   'decentra-e2e-shared-secret'
+const NETWORK_RETRY_ATTEMPTS = 10
+const NETWORK_RETRY_DELAY_MS = 1500
 
 function apiUrl(path) {
   return `${homeserver}${path}`
 }
 
+function waitMs(durationMs) {
+  return new Promise((resolvePromise) => {
+    setTimeout(resolvePromise, durationMs)
+  })
+}
+
+async function fetchWithRetry(url, init) {
+  let lastError = null
+  for (let attempt = 1; attempt <= NETWORK_RETRY_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetch(url, init)
+    } catch (error) {
+      lastError = error
+      if (attempt === NETWORK_RETRY_ATTEMPTS) {
+        throw error
+      }
+      await waitMs(NETWORK_RETRY_DELAY_MS)
+    }
+  }
+  throw lastError || new Error('Network request failed without explicit error')
+}
+
 async function requestJson(path, init) {
-  const response = await fetch(apiUrl(path), init)
+  const response = await fetchWithRetry(apiUrl(path), init)
   const bodyText = await response.text()
   const body = bodyText ? JSON.parse(bodyText) : {}
   if (!response.ok) {
@@ -98,7 +122,7 @@ async function uploadImage(accessToken) {
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/ebpNc8AAAAASUVORK5CYII=',
     'base64'
   )
-  const uploadResponse = await fetch(
+  const uploadResponse = await fetchWithRetry(
     apiUrl('/_matrix/media/v3/upload?filename=e2e-seeded-image.png'),
     {
       method: 'POST',

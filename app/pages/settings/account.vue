@@ -10,6 +10,8 @@ type PresenceMode =
   | 'offline'
   | 'org.matrix.msc3026.busy'
 
+const OWN_PRESENCE_STORAGE_KEY = 'decentra.presence.preference.v1'
+
 const { client, userId, logout, ensureCryptoReady } = useMatrixClient()
 const { locale, setLocale, translateText } = useAppI18n()
 const { getThemePreference, setThemePreference } = useThemePreference()
@@ -156,7 +158,37 @@ function syncPresenceFromCurrentUser() {
   }
   if (ownUserPresence === 'dnd' && busyPresenceSupported.value) {
     presenceValue.value = 'org.matrix.msc3026.busy'
+    return
   }
+  const storedPresence = readStoredPresencePreference()
+  if (storedPresence) {
+    presenceValue.value = storedPresence
+  }
+}
+
+function readStoredPresencePreference(): PresenceMode | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  const rawPresencePreference = window.localStorage.getItem(
+    OWN_PRESENCE_STORAGE_KEY
+  )
+  if (
+    rawPresencePreference === 'online' ||
+    rawPresencePreference === 'unavailable' ||
+    rawPresencePreference === 'offline' ||
+    rawPresencePreference === 'org.matrix.msc3026.busy'
+  ) {
+    return rawPresencePreference
+  }
+  return null
+}
+
+function persistPresencePreference(presence: PresenceMode) {
+  if (typeof window === 'undefined') {
+    return
+  }
+  window.localStorage.setItem(OWN_PRESENCE_STORAGE_KEY, presence)
 }
 
 async function applyPresence() {
@@ -171,10 +203,21 @@ async function applyPresence() {
     return
   }
   try {
+    const setSyncPresence = (
+      client.value as
+        | { setSyncPresence?: (presence: 'online' | 'offline' | 'unavailable') => void }
+        | null
+    )?.setSyncPresence
+    if (typeof setSyncPresence === 'function') {
+      setSyncPresence(
+        presenceValue.value as unknown as 'online' | 'offline' | 'unavailable'
+      )
+    }
     await client.value.setPresence({
       presence: presenceValue.value as unknown as
         'online' | 'offline' | 'unavailable'
     })
+    persistPresencePreference(presenceValue.value)
     presenceFeedback.value = translateText('settings.presenceSaved')
   } catch {
     presenceFeedback.value = translateText('auth.signInFailed')

@@ -11,6 +11,7 @@ import {
 } from "~/utils/chatTimeline";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
+const OWN_PRESENCE_STORAGE_KEY = "decentra.presence.preference.v1";
 
 interface ChatMessage {
   id: string;
@@ -365,14 +366,58 @@ function clearReplyTarget() {
 }
 
 function toMemberItem(member: Record<string, any>): MemberItem {
+  const memberPresence = extractMemberPresence(member);
+  const ownUserId = client.value?.getUserId?.();
+  const ownStoredPresence =
+    ownUserId && String(member.userId || "") === ownUserId
+      ? readStoredOwnPresence()
+      : undefined;
+  const ownPresence =
+    ownUserId && String(member.userId || "") === ownUserId
+      ? extractOwnUserPresence(ownUserId)
+      : undefined;
   return {
     userId: String(member.userId || ""),
     displayName: String(member.name || member.userId || ""),
     avatarUrl: getMemberAvatarUrl(member),
-    status: normalizePresence(
-      typeof member.presence === "string" ? member.presence : undefined,
-    ),
+    status: normalizePresence(ownStoredPresence ?? memberPresence ?? ownPresence),
   };
+}
+
+function readStoredOwnPresence(): string | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  const rawPresence = window.localStorage.getItem(OWN_PRESENCE_STORAGE_KEY);
+  if (typeof rawPresence !== "string" || rawPresence.trim().length === 0) {
+    return undefined;
+  }
+  return rawPresence;
+}
+
+function extractOwnUserPresence(userId: string): string | undefined {
+  const ownUser = client.value?.getUser?.(userId);
+  if (typeof ownUser?.presence === "string") {
+    return ownUser.presence;
+  }
+  return undefined;
+}
+
+function extractMemberPresence(member: Record<string, any>): string | undefined {
+  if (typeof member.presence === "string") {
+    return member.presence;
+  }
+  if (typeof member.getPresence === "function") {
+    const dynamicPresence = member.getPresence();
+    if (typeof dynamicPresence === "string") {
+      return dynamicPresence;
+    }
+  }
+  const eventPresence = member.events?.presence?.getContent?.()?.presence;
+  if (typeof eventPresence === "string") {
+    return eventPresence;
+  }
+  return undefined;
 }
 
 function normalizePresence(rawPresence: string | undefined): PresenceStatus {

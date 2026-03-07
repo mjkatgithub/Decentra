@@ -14,7 +14,7 @@ describe('auth middleware', () => {
     ) => handler
     ;(globalThis as Record<string, unknown>).navigateTo = navigateToMock
     ;(globalThis as Record<string, unknown>).useAuthSessionStore = () => ({
-      isLoggedIn: isLoggedInState,
+      isLoggedIn: isLoggedInState.value,
       ensureSessionRestoreCompleted: ensureSessionRestoreCompletedMock
     })
     isLoggedInState.value = false

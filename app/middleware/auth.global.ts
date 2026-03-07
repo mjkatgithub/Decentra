@@ -17,10 +17,10 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
 
   const authSessionStore = useAuthSessionStore()
-  const { isLoggedIn, ensureSessionRestoreCompleted } = authSessionStore
+  const { ensureSessionRestoreCompleted } = authSessionStore
   await ensureSessionRestoreCompleted()
 
-  if (!isLoggedIn.value) {
+  if (!authSessionStore.isLoggedIn) {
     return navigateTo('/')
   }
 })

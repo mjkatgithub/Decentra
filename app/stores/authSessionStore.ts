@@ -222,7 +222,11 @@ export const useAuthSessionStore = defineStore("authSession", () => {
       sessionRestoreStatus.value === "success" ||
       sessionRestoreStatus.value === "failure"
     ) {
-      return Promise.resolve();
+      const hasStoredSession = Boolean(readStoredSession());
+      const hasActiveClient = client.value !== null;
+      if (hasActiveClient || !hasStoredSession) {
+        return Promise.resolve();
+      }
     }
 
     sessionRestoreStatus.value = "loading";
@@ -502,7 +506,38 @@ export const useAuthSessionStore = defineStore("authSession", () => {
     const ownReactionEventIds = Array.isArray(options)
       ? options
       : options?.ownReactionEventIds ?? [];
-    const firstOwnReactionEventId = ownReactionEventIds[0];
+    const fallbackOwnReactionEventId = (() => {
+      if (!client.value) {
+        return undefined;
+      }
+      const ownUserId = client.value.getUserId?.();
+      const room = client.value.getRoom(roomId);
+      const timelineEvents = room?.getLiveTimeline?.().getEvents?.() ?? [];
+      for (let index = timelineEvents.length - 1; index >= 0; index -= 1) {
+        const timelineEvent = timelineEvents[index];
+        if (!timelineEvent || timelineEvent.getType?.() !== "m.reaction") {
+          continue;
+        }
+        if (ownUserId && timelineEvent.getSender?.() !== ownUserId) {
+          continue;
+        }
+        const reactionContent = timelineEvent.getContent?.() ?? {};
+        const relation = reactionContent["m.relates_to"] ?? {};
+        if (
+          relation?.rel_type === "m.annotation" &&
+          relation?.event_id === messageEventId &&
+          relation?.key === emoji
+        ) {
+          const reactionEventId = timelineEvent.getId?.();
+          if (reactionEventId) {
+            return reactionEventId;
+          }
+        }
+      }
+      return undefined;
+    })();
+    const firstOwnReactionEventId =
+      ownReactionEventIds[0] ?? fallbackOwnReactionEventId;
     if (firstOwnReactionEventId) {
       await redactEvent(roomId, firstOwnReactionEventId);
       return;

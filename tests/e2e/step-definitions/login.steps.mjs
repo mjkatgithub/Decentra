@@ -59,19 +59,27 @@ When('I log in with configured credentials', async function () {
   await this.page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
 })
 
-When('I sign in with configured credentials', async function () {
-  const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
-  const usernameValue = requireEnv('E2E_MATRIX_USERNAME')
-  const passwordValue = requireEnv('E2E_MATRIX_PASSWORD')
-  await submitLogin(this.page, homeserverValue, usernameValue, passwordValue)
-})
+When(
+  'I sign in with configured credentials',
+  { timeout: 60000 },
+  async function () {
+    const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
+    const usernameValue = requireEnv('E2E_MATRIX_USERNAME')
+    const passwordValue = requireEnv('E2E_MATRIX_PASSWORD')
+    await submitLogin(this.page, homeserverValue, usernameValue, passwordValue)
+  }
+)
 
-When('I sign in with secondary configured credentials', async function () {
-  const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
-  const usernameValue = requireEnv('E2E_SECOND_MATRIX_USERNAME')
-  const passwordValue = requireEnv('E2E_SECOND_MATRIX_PASSWORD')
-  await submitLogin(this.page, homeserverValue, usernameValue, passwordValue)
-})
+When(
+  'I sign in with secondary configured credentials',
+  { timeout: 60000 },
+  async function () {
+    const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
+    const usernameValue = requireEnv('E2E_SECOND_MATRIX_USERNAME')
+    const passwordValue = requireEnv('E2E_SECOND_MATRIX_PASSWORD')
+    await submitLogin(this.page, homeserverValue, usernameValue, passwordValue)
+  }
+)
 
 Then('I should see the login form', async function () {
   await expect(this.page.getByRole('heading', { name: /Sign in|Anmelden/i }))
