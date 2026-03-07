@@ -11,12 +11,17 @@ const loading = ref(false)
 
 const authSessionStore = useAuthSessionStore()
 const { login } = authSessionStore
-const { isLoggedIn } = storeToRefs(authSessionStore)
+const { isLoggedIn, isSessionRestoreFinished } = storeToRefs(authSessionStore)
 const { translateText } = useAppI18n()
 
-if (isLoggedIn.value) {
-  navigateTo('/chat')
-}
+watchEffect(() => {
+  if (!isSessionRestoreFinished.value) {
+    return
+  }
+  if (isLoggedIn.value) {
+    void navigateTo('/chat')
+  }
+})
 
 async function handleLogin() {
   error.value = ''

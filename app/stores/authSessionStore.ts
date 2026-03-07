@@ -1,28 +1,19 @@
 import type { MatrixClient } from "matrix-js-sdk";
 import * as sdk from "matrix-js-sdk";
 import { ClientEvent, EventType, MsgType } from "matrix-js-sdk";
-import { initAsync as initCryptoWasm } from "@matrix-org/matrix-sdk-crypto-wasm";
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-
-interface StoredMatrixSession {
-  baseUrl: string;
-  accessToken: string;
-  userId: string;
-  deviceId?: string;
-}
-
-interface StoredMatrixDevice {
-  baseUrl: string;
-  userId: string;
-  deviceId: string;
-}
+import {
+  clearStoredSession,
+  initRustCryptoWithRecovery,
+  readStoredDevice,
+  readStoredSession,
+  shouldReuseStoredDeviceId,
+  writeStoredDevice,
+  writeStoredSession,
+} from "~/services/matrixAuthService";
 
 type SessionRestoreStatus = "idle" | "loading" | "success" | "failure";
-
-const MATRIX_SESSION_STORAGE_KEY = "decentra.matrix.session.v1";
-const MATRIX_DEVICE_STORAGE_KEY = "decentra.matrix.device.v1";
-let cryptoWasmInitialization: Promise<void> | null = null;
 let sessionRestorePromise: Promise<void> | null = null;
 
 interface MatrixEncryptedFile {
@@ -52,124 +43,6 @@ interface MessageReplyOptions {
 
 interface ReactionToggleOptions {
   ownReactionEventIds?: string[];
-}
-
-function extractUserLocalpart(userIdOrUsername: string): string {
-  const normalized = userIdOrUsername.trim().toLowerCase();
-  const withoutAtPrefix = normalized.startsWith("@")
-    ? normalized.slice(1)
-    : normalized;
-  return withoutAtPrefix.split(":")[0] ?? withoutAtPrefix;
-}
-
-function shouldReuseStoredDeviceId(
-  storedSession: StoredMatrixSession | null,
-  storedDevice: StoredMatrixDevice | null,
-  baseUrl: string,
-  username: string,
-): boolean {
-  const sessionDevice = storedSession?.deviceId;
-  const sessionUserId = storedSession?.userId;
-  const sessionBaseUrl = storedSession?.baseUrl;
-  const fallbackDevice = storedDevice?.deviceId;
-  const fallbackUserId = storedDevice?.userId;
-  const fallbackBaseUrl = storedDevice?.baseUrl;
-  const candidateDeviceId = sessionDevice || fallbackDevice;
-  const candidateUserId = sessionUserId || fallbackUserId;
-  const candidateBaseUrl = sessionBaseUrl || fallbackBaseUrl;
-
-  if (!candidateDeviceId || !candidateUserId || !candidateBaseUrl) {
-    return false;
-  }
-  if (!isSameHomeserver(candidateBaseUrl, baseUrl)) {
-    return false;
-  }
-  const normalizedUsername = username.trim().toLowerCase();
-  if (normalizedUsername.startsWith("@")) {
-    return candidateUserId.toLowerCase() === normalizedUsername;
-  }
-  return (
-    extractUserLocalpart(candidateUserId) ===
-    extractUserLocalpart(normalizedUsername)
-  );
-}
-
-function normalizeHomeserver(input: string): string {
-  const trimmed = input.trim().toLowerCase();
-  if (!trimmed) {
-    return "";
-  }
-  try {
-    return new URL(trimmed).origin;
-  } catch {
-    return trimmed.replace(/\/+$/g, "");
-  }
-}
-
-function isSameHomeserver(left: string, right: string): boolean {
-  return normalizeHomeserver(left) === normalizeHomeserver(right);
-}
-
-function isCryptoStoreAccountMismatch(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  const message = error.message.toLowerCase();
-  return (
-    message.includes("account in the store doesn't match") ||
-    message.includes("account in the store doesn\\'t match")
-  );
-}
-
-function deleteIndexedDb(databaseName: string): Promise<void> {
-  return new Promise((resolve) => {
-    try {
-      const request = indexedDB.deleteDatabase(databaseName);
-      request.onsuccess = () => resolve();
-      request.onerror = () => resolve();
-      request.onblocked = () => resolve();
-    } catch {
-      resolve();
-    }
-  });
-}
-
-async function clearRustCryptoStores(): Promise<void> {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const databaseNames = new Set<string>(["matrix-js-sdk::matrix-sdk-crypto"]);
-  const indexedDbFactory = window.indexedDB as IDBFactory & {
-    databases?: () => Promise<Array<{ name?: string }>>;
-  };
-
-  if (typeof indexedDbFactory.databases === "function") {
-    try {
-      const databases = await indexedDbFactory.databases();
-      for (const database of databases) {
-        const databaseName = database.name ?? "";
-        if (databaseName.includes("matrix-sdk-crypto")) {
-          databaseNames.add(databaseName);
-        }
-      }
-    } catch {
-      // Continue with known fallback DB names.
-    }
-  }
-
-  for (const databaseName of databaseNames) {
-    await deleteIndexedDb(databaseName);
-  }
-}
-
-async function ensureCryptoWasmInitialized(): Promise<void> {
-  if (!cryptoWasmInitialization) {
-    cryptoWasmInitialization = initCryptoWasm().catch((error) => {
-      cryptoWasmInitialization = null;
-      throw error;
-    });
-  }
-  await cryptoWasmInitialization;
 }
 
 function base64ToBase64Url(input: string): string {
@@ -320,109 +193,6 @@ export const useAuthSessionStore = defineStore("authSession", () => {
     );
   });
 
-  async function initRustCryptoWithRecovery(
-    matrixClient: MatrixClient,
-    context: string,
-  ): Promise<boolean> {
-    try {
-      await ensureCryptoWasmInitialized();
-      await matrixClient.initRustCrypto();
-      return true;
-    } catch (error) {
-      if (!isCryptoStoreAccountMismatch(error)) {
-        console.error(`Failed to initialize Rust crypto ${context}`, error);
-        return false;
-      }
-      console.warn(
-        "Crypto store mismatch detected; resetting local crypto stores",
-      );
-      try {
-        await matrixClient.clearStores();
-      } catch {
-        // clearStores can fail if store does not exist yet.
-      }
-      await clearRustCryptoStores();
-      try {
-        await ensureCryptoWasmInitialized();
-        await matrixClient.initRustCrypto();
-        return true;
-      } catch (retryError) {
-        console.error(
-          `Failed to initialize Rust crypto ${context} after store reset`,
-          retryError,
-        );
-        return false;
-      }
-    }
-  }
-
-  function readStoredSession(): StoredMatrixSession | null {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    const rawSession = localStorage.getItem(MATRIX_SESSION_STORAGE_KEY);
-    if (!rawSession) {
-      return null;
-    }
-    try {
-      const parsedSession = JSON.parse(rawSession) as StoredMatrixSession;
-      if (
-        !parsedSession.baseUrl ||
-        !parsedSession.accessToken ||
-        !parsedSession.userId
-      ) {
-        return null;
-      }
-      return parsedSession;
-    } catch {
-      return null;
-    }
-  }
-
-  function writeStoredSession(session: StoredMatrixSession): void {
-    if (typeof window === "undefined") {
-      return;
-    }
-    localStorage.setItem(MATRIX_SESSION_STORAGE_KEY, JSON.stringify(session));
-  }
-
-  function clearStoredSession(): void {
-    if (typeof window === "undefined") {
-      return;
-    }
-    localStorage.removeItem(MATRIX_SESSION_STORAGE_KEY);
-  }
-
-  function readStoredDevice(): StoredMatrixDevice | null {
-    if (typeof window === "undefined") {
-      return null;
-    }
-    const rawStoredDevice = localStorage.getItem(MATRIX_DEVICE_STORAGE_KEY);
-    if (!rawStoredDevice) {
-      return null;
-    }
-    try {
-      const parsedStoredDevice = JSON.parse(rawStoredDevice) as StoredMatrixDevice;
-      if (
-        !parsedStoredDevice.baseUrl ||
-        !parsedStoredDevice.userId ||
-        !parsedStoredDevice.deviceId
-      ) {
-        return null;
-      }
-      return parsedStoredDevice;
-    } catch {
-      return null;
-    }
-  }
-
-  function writeStoredDevice(device: StoredMatrixDevice): void {
-    if (typeof window === "undefined") {
-      return;
-    }
-    localStorage.setItem(MATRIX_DEVICE_STORAGE_KEY, JSON.stringify(device));
-  }
-
   async function initializeClientFromStoredSession(): Promise<void> {
     if (client.value) {
       return;
@@ -436,7 +206,7 @@ export const useAuthSessionStore = defineStore("authSession", () => {
       accessToken: session.accessToken,
       userId: session.userId,
       deviceId: session.deviceId,
-    });
+    }) as MatrixClient;
     if (session.deviceId) {
       await initRustCryptoWithRecovery(restoredClient, "for restored session");
     }
@@ -478,8 +248,10 @@ export const useAuthSessionStore = defineStore("authSession", () => {
     await startSessionRestore();
   }
 
-  const isVitestRuntime =
-    typeof process !== "undefined" && process.env.VITEST === "true";
+  const processEnv = (
+    globalThis as { process?: { env?: Record<string, string | undefined> } }
+  ).process?.env;
+  const isVitestRuntime = processEnv?.VITEST === "true";
   if (
     typeof window !== "undefined" &&
     sessionRestoreStatus.value === "idle" &&
@@ -521,7 +293,7 @@ export const useAuthSessionStore = defineStore("authSession", () => {
       accessToken: authData.access_token,
       userId: authData.user_id,
       deviceId,
-    });
+    }) as MatrixClient;
 
     if (!deviceId) {
       console.warn(
@@ -557,7 +329,7 @@ export const useAuthSessionStore = defineStore("authSession", () => {
   }
 
   async function ensureCryptoReady(): Promise<boolean> {
-    const matrixClient = client.value;
+    const matrixClient = client.value as MatrixClient | null;
     if (!matrixClient) {
       return false;
     }

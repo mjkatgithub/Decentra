@@ -2,12 +2,38 @@
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useThemePreference } from '~/composables/useThemePreference'
 
-const { initializeThemePreference } = useThemePreference()
-const { isSessionRestoreInProgress } = useMatrixClient()
-const { translateText } = useAppI18n()
+const MIN_STARTUP_OVERLAY_MS = 700
 
-onMounted(() => {
+const { initializeThemePreference } = useThemePreference()
+const {
+  isSessionRestoreInProgress,
+  ensureSessionRestoreCompleted
+} = useMatrixClient()
+const { translateText } = useAppI18n()
+const isBootingApp = ref(true)
+
+const showStartupOverlay = computed(() => {
+  return isBootingApp.value || isSessionRestoreInProgress.value
+})
+
+function waitMilliseconds(durationMs: number): Promise<void> {
+  if (durationMs <= 0) {
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    window.setTimeout(() => resolve(), durationMs)
+  })
+}
+
+onMounted(async () => {
+  const bootStartTimestamp = Date.now()
   initializeThemePreference()
+  if (typeof ensureSessionRestoreCompleted === 'function') {
+    await ensureSessionRestoreCompleted()
+  }
+  const bootElapsedMs = Date.now() - bootStartTimestamp
+  await waitMilliseconds(MIN_STARTUP_OVERLAY_MS - bootElapsedMs)
+  isBootingApp.value = false
 })
 </script>
 
@@ -16,7 +42,7 @@ onMounted(() => {
     <NuxtRouteAnnouncer />
     <NuxtPage />
     <div
-      v-if="isSessionRestoreInProgress"
+      v-if="showStartupOverlay"
       class="fixed inset-0 z-100 flex items-center justify-center bg-black/60"
       role="status"
       aria-live="polite"
@@ -29,7 +55,7 @@ onMounted(() => {
             class="h-6 w-6 animate-spin text-primary"
           />
           <p class="text-sm text-gray-700 dark:text-gray-200">
-            {{ translateText('auth.restoringSession') }}
+            {{ translateText('common.loading') }}
           </p>
         </div>
       </UCard>
