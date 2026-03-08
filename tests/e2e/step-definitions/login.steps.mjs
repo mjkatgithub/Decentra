@@ -24,6 +24,19 @@ When('I open the login page', async function () {
   await this.page.goto(`${BASE_URL}/login`)
 })
 
+When('I open the landing page', async function () {
+  await this.page.goto(`${BASE_URL}/`)
+})
+
+When('I navigate to the signup page', async function () {
+  await this.page.getByRole('link', { name: /Sign up|Registrieren/i }).first()
+    .click()
+})
+
+When('I open the signup page', async function () {
+  await this.page.goto(`${BASE_URL}/signup`)
+})
+
 When(
   'I log in with {string} and {string}',
   async function (username, password) {
@@ -85,4 +98,17 @@ Then('an error message should appear', async function () {
 
 Then('I should be redirected to the chat page', async function () {
   await expect(this.page).toHaveURL(/\/chat/)
+})
+
+Then('I should see the signup form', async function () {
+  await expect(this.page.getByRole('heading', { name: /Sign up|Registrieren/i }))
+    .toBeVisible()
+  await expect(this.page.getByLabel(/Email|E-Mail/i))
+    .toBeVisible()
+  await expect(this.page.getByLabel(/Homeserver|Homeserver-URL/i))
+    .toBeVisible()
+  await expect(this.page.getByLabel(/Username|Benutzername/i))
+    .toBeVisible()
+  await expect(this.page.getByLabel(/Password|Passwort/i))
+    .toBeVisible()
 })

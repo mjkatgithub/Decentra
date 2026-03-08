@@ -33,12 +33,20 @@ watchEffect(() => {
         class="border-b border-gray-200/70 bg-white/90 backdrop-blur dark:border-gray-800 dark:bg-gray-900/85"
       >
         <div class="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
-          <p class="text-lg font-semibold text-white/70 dark:text-white/80">
+          <NuxtLink
+            to="/"
+            class="text-lg font-semibold text-white/70 transition hover:text-white dark:text-white/80"
+          >
             Decentra
-          </p>
-          <UButton to="/login" color="primary">
-            {{ translateText('auth.signIn') }}
-          </UButton>
+          </NuxtLink>
+          <div class="flex items-center gap-2">
+            <UButton to="/login" color="primary">
+              {{ translateText('auth.signIn') }}
+            </UButton>
+            <UButton to="/signup" color="neutral" variant="outline">
+              {{ translateText('auth.signUp') }}
+            </UButton>
+          </div>
         </div>
       </header>
 
@@ -50,7 +58,7 @@ watchEffect(() => {
             :src="logoBgUrl"
             alt=""
             aria-hidden="true"
-            class="pointer-events-none absolute left-1/2 top-1/2 w-[100%] max-w-[1100px] -translate-x-1/2 -translate-y-1/2 opacity-[0.16]"
+            class="pointer-events-none absolute left-1/2 top-1/2 w-full max-w-[1100px] -translate-x-1/2 -translate-y-1/2 opacity-[0.16]"
           >
           <div class="relative z-10 space-y-4">
             <p class="text-sm font-semibold uppercase tracking-wide text-primary-400">

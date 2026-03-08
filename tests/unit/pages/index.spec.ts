@@ -25,7 +25,10 @@ describe('index page', () => {
           'landing.kicker': 'OPEN AND FEDERATED TEAM CHAT',
           'landing.title': 'Own your collaboration with Decentra.',
           'landing.subtitle': 'Keep communication in your control while staying connected through Matrix.',
-          'landing.loginCta': 'Sign in'
+          'landing.loginCta': 'Sign in',
+          'landing.signupCta': 'Sign up',
+          'auth.signIn': 'Sign in',
+          'auth.signUp': 'Sign up'
         }
         return messages[key] ?? key
       }
@@ -70,6 +73,16 @@ describe('index page', () => {
     wrapper.text().includes('Own your collaboration with Decentra.')
       .should.equal(true)
     expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('shows sign in and sign up actions', () => {
+    const wrapper = mountIndexPage({
+      isLoggedIn: false,
+      isSessionRestoreFinished: true
+    })
+
+    expect(wrapper.text().includes('Sign in')).toBe(true)
+    expect(wrapper.text().includes('Sign up')).toBe(true)
   })
 
   it('redirects to chat after restore when logged in', async () => {

@@ -52,6 +52,23 @@ interface ReactionToggleOptions {
   ownReactionEventIds?: string[]
 }
 
+interface MatrixApiErrorShape {
+  errcode?: string
+  error?: string
+  flows?: Array<{ stages?: string[] }>
+  data?: {
+    errcode?: string
+    error?: string
+    flows?: Array<{ stages?: string[] }>
+  }
+  httpStatus?: number
+  statusCode?: number
+}
+
+export const SIGNUP_UNAVAILABLE_ERROR = 'SIGNUP_UNAVAILABLE'
+export const SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR =
+  'SIGNUP_EMAIL_VERIFICATION_REQUIRED'
+
 function extractUserLocalpart(userIdOrUsername: string): string {
   const normalized = userIdOrUsername.trim().toLowerCase()
   const withoutAtPrefix = normalized.startsWith('@')
@@ -113,6 +130,70 @@ function isCryptoStoreAccountMismatch(error: unknown): boolean {
   const message = error.message.toLowerCase()
   return message.includes('account in the store doesn\'t match') ||
     message.includes("account in the store doesn't match")
+}
+
+function readMatrixErrorCode(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return ''
+  }
+  const matrixError = error as MatrixApiErrorShape
+  return (
+    matrixError.errcode ||
+    matrixError.data?.errcode ||
+    ''
+  )
+}
+
+function readMatrixErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+  if (!error || typeof error !== 'object') {
+    return ''
+  }
+  const matrixError = error as MatrixApiErrorShape
+  return (
+    matrixError.error ||
+    matrixError.data?.error ||
+    ''
+  )
+}
+
+function isSignupUnsupported(error: unknown): boolean {
+  const matrixErrorCode = readMatrixErrorCode(error)
+  if (
+    matrixErrorCode === 'M_UNRECOGNIZED' ||
+    matrixErrorCode === 'M_UNSUPPORTED' ||
+    matrixErrorCode === 'M_FORBIDDEN'
+  ) {
+    return true
+  }
+  const matrixErrorMessage = readMatrixErrorMessage(error).toLowerCase()
+  return (
+    matrixErrorMessage.includes('registration has been disabled') ||
+    matrixErrorMessage.includes('registration is disabled') ||
+    matrixErrorMessage.includes('registration not supported') ||
+    matrixErrorMessage.includes('registration is not available')
+  )
+}
+
+function supportsEmailVerificationStage(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false
+  }
+  const matrixError = error as MatrixApiErrorShape
+  const flows = matrixError.flows || matrixError.data?.flows || []
+  return flows.some((flow) => {
+    const stages = flow.stages || []
+    return stages.includes('m.login.email.identity')
+  })
+}
+
+function createRegisterEmailClientSecret(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `decentra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function deleteIndexedDb(databaseName: string): Promise<void> {
@@ -529,6 +610,85 @@ export function useMatrixClient() {
     }
   }
 
+  async function register(
+    baseUrl: string,
+    username: string,
+    password: string,
+    email?: string
+  ): Promise<void> {
+    const authClient = sdk.createClient({ baseUrl })
+    const normalizedUsername = extractUserLocalpart(username)
+    const trimmedEmail = email?.trim() || ''
+    const authApiClient = authClient as MatrixClient & {
+      registerRequest?: (payload: Record<string, unknown>) => Promise<unknown>
+      register?: (
+        username: string,
+        password: string,
+        sessionId?: string,
+        auth?: Record<string, unknown>,
+        bindThreepids?: boolean,
+        guestAccessToken?: string,
+        inhibitLogin?: boolean
+      ) => Promise<unknown>
+      requestRegisterEmailToken?: (
+        email: string,
+        clientSecret: string,
+        sendAttempt: number,
+        nextLink?: string
+      ) => Promise<unknown>
+    }
+    try {
+      if (typeof authApiClient.registerRequest === 'function') {
+        const registerPayload: Record<string, unknown> = {
+          username: normalizedUsername,
+          password,
+          auth: { type: 'm.login.dummy' },
+          inhibit_login: true
+        }
+        await authApiClient.registerRequest(registerPayload)
+        return
+      }
+      if (typeof authApiClient.register === 'function') {
+        await authApiClient.register(
+          normalizedUsername,
+          password,
+          undefined,
+          { type: 'm.login.dummy' },
+          undefined,
+          undefined,
+          true
+        )
+        return
+      }
+      throw new Error(SIGNUP_UNAVAILABLE_ERROR)
+    } catch (error) {
+      const requiresEmailVerification = supportsEmailVerificationStage(error)
+      const matrixErrorMessage = readMatrixErrorMessage(error)
+      const hasSdkEmailHttpError = (
+        trimmedEmail &&
+        matrixErrorMessage.includes("reading 'http'")
+      )
+      if (trimmedEmail && (requiresEmailVerification || hasSdkEmailHttpError)) {
+        if (typeof authApiClient.requestRegisterEmailToken === 'function') {
+          const clientSecret = createRegisterEmailClientSecret()
+          await authApiClient.requestRegisterEmailToken(
+            trimmedEmail,
+            clientSecret,
+            1
+          )
+        }
+        throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
+      }
+      if (isSignupUnsupported(error)) {
+        throw new Error(SIGNUP_UNAVAILABLE_ERROR)
+      }
+      if (matrixErrorMessage) {
+        throw new Error(matrixErrorMessage)
+      }
+      throw new Error('Sign up failed')
+    }
+  }
+
   function logout(): void {
     if (client.value) {
       client.value.stopClient()
@@ -730,6 +890,7 @@ export function useMatrixClient() {
     isSessionRestoreFinished,
     ensureSessionRestoreCompleted,
     login,
+    register,
     logout,
     getRooms,
     getRoom,
