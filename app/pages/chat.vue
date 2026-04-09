@@ -2,6 +2,8 @@
 import { ClientEvent, MatrixEventEvent, RoomEvent } from "matrix-js-sdk";
 import { useAppI18n } from "~/composables/useAppI18n";
 import { useChatMedia } from "~/composables/useChatMedia";
+import { storeToRefs } from "pinia";
+import { useChatStore } from "~/stores/chatStore";
 import {
   buildReactionSummaryByEventId,
   mapTimelineEventsToMessages,
@@ -9,6 +11,7 @@ import {
 } from "~/utils/chatTimeline";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
+const OWN_PRESENCE_STORAGE_KEY = "decentra.presence.preference.v1";
 
 interface ChatMessage {
   id: string;
@@ -79,10 +82,7 @@ interface MemberItem {
   status: PresenceStatus;
 }
 
-const MOBILE_BREAKPOINT = 1024;
 const HOME_SPACE_ID = "__home__";
-const INITIAL_TIMELINE_WINDOW_SIZE = 80;
-const SCROLL_WINDOW_EXPAND_STEP = 40;
 
 const {
   client,
@@ -99,28 +99,31 @@ const {
   getMediaUrl,
   resolveMediaBlobUrl,
 } = useChatMedia(client as any);
-
-const selectedRoomId = ref<string | null>(null);
-const selectedSpaceId = ref<string | null>(null);
-const allMessages = ref<ChatMessage[]>([]);
-const messages = ref<ChatMessage[]>([]);
-const matrixRooms = ref<Array<Record<string, any>>>([]);
-const loadingOlder = ref(false);
-const loadingNewer = ref(false);
-const hasMoreOlderMessages = ref(true);
-const windowStartIndex = ref(0);
-const windowEndIndex = ref(0);
-const centerOnMessageId = ref<string | undefined>(undefined);
-const stickToBottom = ref(false);
-const scrollIntentToken = ref(0);
-const preserveViewportOnPrepend = ref(false);
-const activeReplyTo = ref<ChatMessage["replyTo"] | null>(null);
-const loadMessagesTimerId = ref<number | null>(null);
-const leftSidebarOpen = ref(true);
-const rightSidebarOpen = ref(true);
-const isMobile = ref(false);
-const viewportInitialized = ref(false);
-const spaceRailExpanded = ref(false);
+const chatStore = useChatStore();
+const {
+  selectedRoomId,
+  selectedSpaceId,
+  allMessages,
+  messages,
+  matrixRooms,
+  loadingOlder,
+  loadingNewer,
+  hasMoreOlderMessages,
+  windowStartIndex,
+  windowEndIndex,
+  centerOnMessageId,
+  stickToBottom,
+  scrollIntentToken,
+  preserveViewportOnPrepend,
+  activeReplyTo,
+  loadMessagesTimerId,
+  leftSidebarOpen,
+  rightSidebarOpen,
+  isMobile,
+  spaceRailExpanded,
+  timelineWindowSize,
+  scrollWindowExpandStep,
+} = storeToRefs(chatStore);
 
 function getRoomType(room: Record<string, any>): string | undefined {
   return (room as { getType?: () => string }).getType?.();
@@ -144,7 +147,7 @@ function getParentSpaceIds(room: Record<string, any>): string[] {
 }
 
 function refreshRooms() {
-  matrixRooms.value = getRooms();
+  chatStore.setRooms(getRooms());
 }
 
 const spaceItems = computed<SpaceItem[]>(() => {
@@ -280,8 +283,8 @@ const memberItems = computed<MemberItem[]>(() => {
 
   return room
     .getMembers()
-    .map((member) => toMemberItem(member))
-    .sort((memberA, memberB) => {
+    .map((member: Record<string, any>) => toMemberItem(member))
+    .sort((memberA: MemberItem, memberB: MemberItem) => {
       const rank = {
         online: 0,
         busy: 1,
@@ -355,22 +358,66 @@ function setReplyTarget(replyTarget: {
   senderName: string;
   body: string;
 }) {
-  activeReplyTo.value = replyTarget;
+  chatStore.setReplyTarget(replyTarget);
 }
 
 function clearReplyTarget() {
-  activeReplyTo.value = null;
+  chatStore.clearReplyTarget();
 }
 
 function toMemberItem(member: Record<string, any>): MemberItem {
+  const memberPresence = extractMemberPresence(member);
+  const ownUserId = client.value?.getUserId?.();
+  const ownStoredPresence =
+    ownUserId && String(member.userId || "") === ownUserId
+      ? readStoredOwnPresence()
+      : undefined;
+  const ownPresence =
+    ownUserId && String(member.userId || "") === ownUserId
+      ? extractOwnUserPresence(ownUserId)
+      : undefined;
   return {
     userId: String(member.userId || ""),
     displayName: String(member.name || member.userId || ""),
     avatarUrl: getMemberAvatarUrl(member),
-    status: normalizePresence(
-      typeof member.presence === "string" ? member.presence : undefined,
-    ),
+    status: normalizePresence(ownStoredPresence ?? memberPresence ?? ownPresence),
   };
+}
+
+function readStoredOwnPresence(): string | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  const rawPresence = window.localStorage.getItem(OWN_PRESENCE_STORAGE_KEY);
+  if (typeof rawPresence !== "string" || rawPresence.trim().length === 0) {
+    return undefined;
+  }
+  return rawPresence;
+}
+
+function extractOwnUserPresence(userId: string): string | undefined {
+  const ownUser = client.value?.getUser?.(userId);
+  if (typeof ownUser?.presence === "string") {
+    return ownUser.presence;
+  }
+  return undefined;
+}
+
+function extractMemberPresence(member: Record<string, any>): string | undefined {
+  if (typeof member.presence === "string") {
+    return member.presence;
+  }
+  if (typeof member.getPresence === "function") {
+    const dynamicPresence = member.getPresence();
+    if (typeof dynamicPresence === "string") {
+      return dynamicPresence;
+    }
+  }
+  const eventPresence = member.events?.presence?.getContent?.()?.presence;
+  if (typeof eventPresence === "string") {
+    return eventPresence;
+  }
+  return undefined;
 }
 
 function normalizePresence(rawPresence: string | undefined): PresenceStatus {
@@ -475,7 +522,7 @@ function loadMessages(
     const allMessageIds = mappedMessages.map((message) => message.id);
     const ownReadAnchorEventId = getOwnReadAnchorEventId(room);
     const selection = resolveTimelineWindowSelection(allMessageIds, {
-      windowSize: INITIAL_TIMELINE_WINDOW_SIZE,
+      windowSize: timelineWindowSize.value,
       anchorEventId: ownReadAnchorEventId,
     });
     windowStartIndex.value = selection.startIndex;
@@ -509,7 +556,7 @@ function loadMessages(
   } else {
     const fallbackSelection = resolveTimelineWindowSelection(
       mappedMessages.map((message) => message.id),
-      { windowSize: INITIAL_TIMELINE_WINDOW_SIZE },
+      { windowSize: timelineWindowSize.value },
     );
     windowStartIndex.value = fallbackSelection.startIndex;
     windowEndIndex.value = fallbackSelection.endIndex;
@@ -638,7 +685,7 @@ async function onReachTop() {
     await withPrependViewportPreservation(() => {
       windowStartIndex.value = Math.max(
         0,
-        windowStartIndex.value - SCROLL_WINDOW_EXPAND_STEP,
+        windowStartIndex.value - scrollWindowExpandStep.value,
       );
       applyWindow();
     });
@@ -655,7 +702,7 @@ async function onReachTop() {
       loadMessages(selectedRoomId.value!, { resetWindow: false });
       windowStartIndex.value = Math.max(
         0,
-        windowStartIndex.value - SCROLL_WINDOW_EXPAND_STEP,
+        windowStartIndex.value - scrollWindowExpandStep.value,
       );
       applyWindow();
     } finally {
@@ -675,7 +722,7 @@ async function onReachBottom() {
   try {
     windowEndIndex.value = Math.min(
       allMessages.value.length,
-      windowEndIndex.value + SCROLL_WINDOW_EXPAND_STEP,
+      windowEndIndex.value + scrollWindowExpandStep.value,
     );
     applyWindow();
   } finally {
@@ -689,14 +736,14 @@ function handleLogout() {
 }
 
 function selectSpace(spaceId: string) {
-  selectedSpaceId.value = spaceId;
+  chatStore.setSelectedSpaceId(spaceId);
   if (isMobile.value) {
     leftSidebarOpen.value = false;
   }
 }
 
 function selectRoom(roomId: string) {
-  selectedRoomId.value = roomId;
+  chatStore.setSelectedRoomId(roomId);
   if (isMobile.value) {
     leftSidebarOpen.value = false;
   }
@@ -713,15 +760,15 @@ function openSpaceSettings() {
 }
 
 function toggleLeftSidebar() {
-  leftSidebarOpen.value = !leftSidebarOpen.value;
+  chatStore.toggleLeftSidebar();
 }
 
 function toggleRightSidebar() {
-  rightSidebarOpen.value = !rightSidebarOpen.value;
+  chatStore.toggleRightSidebar();
 }
 
 function toggleSpaceRail() {
-  spaceRailExpanded.value = !spaceRailExpanded.value;
+  chatStore.toggleSpaceRail();
 }
 
 function openCreateSpaceStub() {
@@ -729,30 +776,14 @@ function openCreateSpaceStub() {
 }
 
 function closeMobileOverlays() {
-  if (!isMobile.value) {
-    return;
-  }
-  leftSidebarOpen.value = false;
-  rightSidebarOpen.value = false;
+  chatStore.closeMobileOverlays();
 }
 
 function syncViewport(force = false) {
   if (!import.meta.client) {
     return;
   }
-  const wasMobile = isMobile.value;
-  isMobile.value = window.innerWidth < MOBILE_BREAKPOINT;
-
-  const shouldReset =
-    force || !viewportInitialized.value || wasMobile !== isMobile.value;
-
-  if (shouldReset) {
-    leftSidebarOpen.value = !isMobile.value;
-    rightSidebarOpen.value = !isMobile.value;
-    spaceRailExpanded.value = false;
-  }
-
-  viewportInitialized.value = true;
+  chatStore.syncViewport(window.innerWidth, force);
 }
 
 onMounted(() => {
@@ -780,7 +811,7 @@ watch(
       return;
     }
     refreshRooms();
-    matrixClient.once(ClientEvent.Sync, (state) => {
+    matrixClient.once(ClientEvent.Sync, (state: string) => {
       if (state === "PREPARED") {
         refreshRooms();
       }

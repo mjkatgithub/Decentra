@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import ChatMessageItem from "~/components/Chat/MessageItem.vue";
 import { useAppI18n } from "~/composables/useAppI18n";
+import { useMediaCacheStore } from "~/stores/mediaCacheStore";
 
 interface MediaInfo {
   url: string;
@@ -76,8 +78,8 @@ const emit = defineEmits<{
 
 const { translateText } = useAppI18n();
 
-const resolvedBlobUrls = ref<Record<string, string>>({});
-const loadingMedia = ref<Record<string, boolean>>({});
+const mediaCacheStore = useMediaCacheStore();
+const { resolvedBlobUrls, loadingMedia } = storeToRefs(mediaCacheStore);
 const lightboxUrl = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
 const topSentinel = ref<HTMLElement | null>(null);
@@ -106,10 +108,12 @@ function getDisplayUrl(msg: MessageItem): string | undefined {
 
 async function resolveMedia(msg: MessageItem) {
   if (!msg.media || !props.resolveMediaBlobUrl) return;
-  if (resolvedBlobUrls.value[msg.id] || loadingMedia.value[msg.id]) return;
+  if (mediaCacheStore.getResolvedUrl(msg.id) || mediaCacheStore.isLoading(msg.id)) {
+    return;
+  }
   if (!needsBlobFetch(msg.media)) return;
 
-  loadingMedia.value[msg.id] = true;
+  mediaCacheStore.setLoading(msg.id, true);
   try {
     const blobUrl = await props.resolveMediaBlobUrl({
       mxcUrl: msg.media.mxcUrl,
@@ -117,11 +121,11 @@ async function resolveMedia(msg: MessageItem) {
       isEncrypted: msg.media.isEncrypted,
       encryptionInfo: msg.media.encryptionInfo,
     });
-    resolvedBlobUrls.value[msg.id] = blobUrl;
+    mediaCacheStore.setResolvedUrl(msg.id, blobUrl);
   } catch (error) {
     console.error("Failed to resolve media for", msg.id, error);
   } finally {
-    loadingMedia.value[msg.id] = false;
+    mediaCacheStore.setLoading(msg.id, false);
   }
 }
 
@@ -310,6 +314,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   disconnectObservers();
+  mediaCacheStore.clearAll();
 });
 
 watch(

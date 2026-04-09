@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import ChatMessageList from '~/components/Chat/MessageList.vue'
 
 const UButtonStub = {
@@ -28,7 +29,8 @@ function mountMessageList(props: Record<string, unknown>) {
       stubs: {
         UButton: UButtonStub,
         ChatMessageActionBar: ChatMessageActionBarStub
-      }
+      },
+      plugins: [createPinia()]
     }
   })
 }
@@ -161,7 +163,8 @@ describe('MessageList', () => {
         stubs: {
           UButton: UButtonStub,
           ChatMessageActionBar: ChatMessageActionBarStub
-        }
+        },
+        plugins: [createPinia()]
       }
     })
 

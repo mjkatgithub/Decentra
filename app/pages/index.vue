@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useAppI18n } from '~/composables/useAppI18n'
+import { storeToRefs } from 'pinia'
+import { useAuthSessionStore } from '~/stores/authSessionStore'
 import logoBgUrl from '~/assets/logoBg.svg?url'
 
 const { translateText } = useAppI18n()
-const {
-  isLoggedIn,
-  isSessionRestoreFinished
-} = useMatrixClient()
+const authSessionStore = useAuthSessionStore()
+const { isLoggedIn, isSessionRestoreFinished } = storeToRefs(authSessionStore)
 
 watchEffect(() => {
   if (!isSessionRestoreFinished.value) {

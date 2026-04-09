@@ -1,15 +1,13 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useEmojiUsageStore } from "~/stores/emojiUsageStore";
 import {
   categoryOrder,
   createShortcodeMap,
   defaultFrequentEmojis,
   emojiCatalog,
   getFrequentEmojis,
-  loadFrequentEmojiUsage,
   normalizeShortcodes,
-  saveFrequentEmojiUsage,
-  trackEmojiUsage,
   type EmojiCategoryId,
 } from "~/composables/useEmojiPickerData";
 
@@ -23,24 +21,24 @@ const props = defineProps<{
 const activeCategory = ref<EmojiCategoryId>("frequent");
 const searchTerm = ref("");
 const customEmoji = ref("");
-const frequentUsage = ref<Record<string, number>>({});
+const emojiUsageStore = useEmojiUsageStore();
 const shortcodeToEmoji = createShortcodeMap(emojiCatalog);
 
 watch(
   () => props.frequentScopeKey,
   (scopeKey) => {
-    frequentUsage.value = loadFrequentEmojiUsage(scopeKey);
+    emojiUsageStore.ensureScopeLoaded(scopeKey);
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 const frequentEmojis = computed(() => {
-  return getFrequentEmojis(frequentUsage.value, defaultFrequentEmojis, 16);
+  const scopeUsage = emojiUsageStore.getUsage(props.frequentScopeKey);
+  return getFrequentEmojis(scopeUsage, defaultFrequentEmojis, 16);
 });
 
 function selectEmoji(emoji: string) {
-  frequentUsage.value = trackEmojiUsage(frequentUsage.value, emoji);
-  saveFrequentEmojiUsage(frequentUsage.value, props.frequentScopeKey);
+  emojiUsageStore.track(props.frequentScopeKey, emoji);
   emit("select", emoji);
 }
 
