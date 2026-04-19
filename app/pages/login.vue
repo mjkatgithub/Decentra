@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import {
+  HOMESERVER_CONNECTION_HINT_ERROR,
+  useMatrixClient
+} from '~/composables/useMatrixClient'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 const baseUrl = ref('https://matrix.org')
@@ -25,10 +29,17 @@ async function handleLogin() {
     await login(effectiveBaseUrl, username.value, password.value)
     await navigateTo('/chat')
   } catch (thrownError) {
-    error.value =
-      thrownError instanceof Error
-        ? thrownError.message
-        : translateText('auth.signInFailed')
+    if (
+      thrownError instanceof Error &&
+      thrownError.message === HOMESERVER_CONNECTION_HINT_ERROR
+    ) {
+      error.value = translateText('auth.homeserverConnectionHint')
+    } else {
+      error.value =
+        thrownError instanceof Error
+          ? thrownError.message
+          : translateText('auth.signInFailed')
+    }
   } finally {
     loading.value = false
   }

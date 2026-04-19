@@ -797,4 +797,92 @@ describe('useMatrixClient', () => {
     expect(sendEventPayload.file).toBeUndefined()
     ;(globalThis as Record<string, unknown>).Image = originalImage
   })
+
+  it('upgrades public http homeserver to https for login clients', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:matrix.moepg.de',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn()
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login } = useMatrixClient()
+    await login(
+      'http://matrix.moepg.de',
+      '@alice:matrix.moepg.de',
+      'secret'
+    )
+
+    expect(createClient).toHaveBeenNthCalledWith(1, {
+      baseUrl: 'https://matrix.moepg.de'
+    })
+    expect(createClient).toHaveBeenNthCalledWith(2, {
+      baseUrl: 'https://matrix.moepg.de',
+      accessToken: 'token-123',
+      userId: '@alice:matrix.moepg.de',
+      deviceId: 'DEVICE123'
+    })
+  })
+
+  it('maps browser fetch failures on login to connection hint', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      })
+    }
+    createClient.mockReturnValueOnce(authClient)
+
+    const {
+      HOMESERVER_CONNECTION_HINT_ERROR,
+      useMatrixClient
+    } = await import('~/composables/useMatrixClient')
+    const { login } = useMatrixClient()
+
+    await expect(
+      login('https://matrix.example.org', 'alice', 'secret')
+    ).rejects.toThrow(HOMESERVER_CONNECTION_HINT_ERROR)
+  })
+})
+
+describe('resolveHomeserverBaseUrlForClient', () => {
+  it('upgrades http to https for public hostnames', async () => {
+    const { resolveHomeserverBaseUrlForClient } =
+      await import('~/composables/useMatrixClient')
+    expect(
+      resolveHomeserverBaseUrlForClient('http://matrix.moepg.de')
+    ).toBe('https://matrix.moepg.de')
+  })
+
+  it('keeps http for localhost', async () => {
+    const { resolveHomeserverBaseUrlForClient } =
+      await import('~/composables/useMatrixClient')
+    expect(
+      resolveHomeserverBaseUrlForClient('http://localhost:8008')
+    ).toBe('http://localhost:8008')
+  })
+
+  it('keeps http for private IPv4', async () => {
+    const { resolveHomeserverBaseUrlForClient } =
+      await import('~/composables/useMatrixClient')
+    expect(
+      resolveHomeserverBaseUrlForClient('http://192.168.1.5:8080')
+    ).toBe('http://192.168.1.5:8080')
+  })
+
+  it('defaults scheme to https when omitted', async () => {
+    const { resolveHomeserverBaseUrlForClient } =
+      await import('~/composables/useMatrixClient')
+    expect(resolveHomeserverBaseUrlForClient('matrix.org')).toBe(
+      'https://matrix.org'
+    )
+  })
 })

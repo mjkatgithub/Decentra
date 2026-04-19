@@ -16,6 +16,10 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpUnavailable': 'Sign-up is not available on this homeserver',
     'auth.signUpEmailVerificationRequired': 'Sign-up requires email verification on this homeserver',
     'auth.signUpSuccess': 'Account created. Please sign in.',
+    'auth.homeserverConnectionHint':
+      'Cannot reach the homeserver from the browser. For public ' +
+      'servers use https:// (not http://) so a redirect does not break ' +
+      'CORS preflight. Synapse must allow this app origin in CORS.',
     'auth.restoringSession': 'Restoring session...',
     'chat.loggedInAs': 'Signed in as',
     'chat.signOut': 'Sign out',
@@ -127,6 +131,10 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpUnavailable': 'Registrierung ist auf diesem Homeserver nicht verfuegbar',
     'auth.signUpEmailVerificationRequired': 'Registrierung erfordert E-Mail-Verifizierung auf diesem Homeserver',
     'auth.signUpSuccess': 'Account erstellt. Bitte melde dich an.',
+    'auth.homeserverConnectionHint':
+      'Homeserver aus dem Browser nicht erreichbar. Oeffentliche ' +
+      'Server: https:// statt http:// (sonst bricht CORS-Preflight). Synapse ' +
+      'muss diese App-Origin in CORS erlauben.',
     'auth.restoringSession': 'Session wird wiederhergestellt...',
     'chat.loggedInAs': 'Eingeloggt als',
     'chat.signOut': 'Abmelden',

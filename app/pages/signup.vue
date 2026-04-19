@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import {
+  HOMESERVER_CONNECTION_HINT_ERROR,
   SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
   SIGNUP_UNAVAILABLE_ERROR,
   useMatrixClient
@@ -47,6 +48,11 @@ async function handleSignup() {
       thrownError.message === SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR
     ) {
       error.value = translateText('auth.signUpEmailVerificationRequired')
+    } else if (
+      thrownError instanceof Error &&
+      thrownError.message === HOMESERVER_CONNECTION_HINT_ERROR
+    ) {
+      error.value = translateText('auth.homeserverConnectionHint')
     } else {
       error.value =
         thrownError instanceof Error &&
