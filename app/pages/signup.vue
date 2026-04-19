@@ -1,44 +1,64 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import {
   HOMESERVER_CONNECTION_HINT_ERROR,
+  SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
+  SIGNUP_UNAVAILABLE_ERROR,
   useMatrixClient
 } from '~/composables/useMatrixClient'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 const baseUrl = ref('https://matrix.org')
+const email = ref('')
 const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
-const route = useRoute()
-const signupSuccess = computed(() => route.query.signup === 'success')
 
-const { login, isLoggedIn } = useMatrixClient()
+const { register, isLoggedIn } = useMatrixClient()
 const { translateText } = useAppI18n()
 
 if (isLoggedIn.value) {
   navigateTo('/chat')
 }
 
-async function handleLogin() {
+async function handleSignup() {
   error.value = ''
   loading.value = true
   const effectiveBaseUrl = baseUrl.value.trim() || 'https://matrix.org'
   try {
-    await login(effectiveBaseUrl, username.value, password.value)
-    await navigateTo('/chat')
+    await register(
+      effectiveBaseUrl,
+      username.value,
+      password.value,
+      email.value
+    )
+    await navigateTo({
+      path: '/login',
+      query: { signup: 'success' }
+    })
   } catch (thrownError) {
     if (
+      thrownError instanceof Error &&
+      thrownError.message === SIGNUP_UNAVAILABLE_ERROR
+    ) {
+      error.value = translateText('auth.signUpUnavailable')
+    } else if (
+      thrownError instanceof Error &&
+      thrownError.message === SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR
+    ) {
+      error.value = translateText('auth.signUpEmailVerificationRequired')
+    } else if (
       thrownError instanceof Error &&
       thrownError.message === HOMESERVER_CONNECTION_HINT_ERROR
     ) {
       error.value = translateText('auth.homeserverConnectionHint')
     } else {
       error.value =
-        thrownError instanceof Error
+        thrownError instanceof Error &&
+        thrownError.message.trim()
           ? thrownError.message
-          : translateText('auth.signInFailed')
+          : translateText('auth.signUpFailed')
     }
   } finally {
     loading.value = false
@@ -47,6 +67,7 @@ async function handleLogin() {
 
 function clearForm() {
   baseUrl.value = 'https://matrix.org'
+  email.value = ''
   username.value = ''
   password.value = ''
   error.value = ''
@@ -66,10 +87,10 @@ function clearForm() {
           Decentra
         </NuxtLink>
         <div class="flex items-center gap-2">
-          <UButton to="/login" color="primary">
+          <UButton to="/login" color="neutral" variant="outline">
             {{ translateText('auth.signIn') }}
           </UButton>
-          <UButton to="/signup" color="neutral" variant="outline">
+          <UButton to="/signup" color="primary">
             {{ translateText('auth.signUp') }}
           </UButton>
         </div>
@@ -80,17 +101,20 @@ function clearForm() {
       <UCard class="w-full max-w-md">
         <template #header>
           <h1 class="text-xl font-semibold">
-            Decentra - {{ translateText('auth.signIn') }}
+            Decentra - {{ translateText('auth.signUp') }}
           </h1>
         </template>
 
-        <form class="space-y-4" @submit.prevent="handleLogin">
-          <UAlert
-            v-if="signupSuccess"
-            color="success"
-            :title="translateText('auth.signUpSuccess')"
-            class="mb-4"
-          />
+        <form class="space-y-4" @submit.prevent="handleSignup">
+          <UFormField :label="translateText('auth.email')">
+            <UInput
+              v-model="email"
+              placeholder="name@example.org"
+              type="email"
+              required
+            />
+          </UFormField>
+
           <UFormField :label="translateText('auth.homeserver')">
             <UInput
               v-model="baseUrl"
@@ -140,7 +164,7 @@ function clearForm() {
               class="w-full justify-center"
               :loading="loading"
             >
-              {{ translateText('auth.signIn') }}
+              {{ translateText('auth.signUp') }}
             </UButton>
           </div>
         </form>

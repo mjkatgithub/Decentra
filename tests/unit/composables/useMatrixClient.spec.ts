@@ -359,6 +359,163 @@ describe('useMatrixClient', () => {
     })
   })
 
+  it('submits register request with normalized username', async () => {
+    const authClient = {
+      registerRequest: vi.fn(async () => ({ user_id: '@alice:example.org' }))
+    }
+    createClient.mockReturnValueOnce(authClient)
+
+    const {
+      useMatrixClient
+    } = await import('~/composables/useMatrixClient')
+    const { register } = useMatrixClient()
+    await register('https://matrix.example.org', '@Alice:example.org', 'secret')
+
+    expect(authClient.registerRequest).toHaveBeenCalledWith({
+      username: 'alice',
+      password: 'secret',
+      auth: { type: 'm.login.dummy' },
+      inhibit_login: true
+    })
+  })
+
+  it('accepts email input without changing dummy register payload', async () => {
+    const authClient = {
+      registerRequest: vi.fn(async () => ({ user_id: '@alice:example.org' }))
+    }
+    createClient.mockReturnValueOnce(authClient)
+
+    const {
+      useMatrixClient
+    } = await import('~/composables/useMatrixClient')
+    const { register } = useMatrixClient()
+    await register(
+      'https://matrix.example.org',
+      '@Alice:example.org',
+      'secret',
+      'alice@example.org'
+    )
+
+    expect(authClient.registerRequest).toHaveBeenCalledWith({
+      username: 'alice',
+      password: 'secret',
+      auth: { type: 'm.login.dummy' },
+      inhibit_login: true
+    })
+  })
+
+  it('maps disabled registration errors to signup unavailable', async () => {
+    const authClient = {
+      registerRequest: vi.fn(async () => {
+        throw new Error('Registration has been disabled')
+      })
+    }
+    createClient.mockReturnValueOnce(authClient)
+
+    const {
+      SIGNUP_UNAVAILABLE_ERROR,
+      useMatrixClient
+    } = await import('~/composables/useMatrixClient')
+    const { register } = useMatrixClient()
+
+    await expect(
+      register('https://matrix.example.org', 'alice', 'secret')
+    ).rejects.toThrow(SIGNUP_UNAVAILABLE_ERROR)
+  })
+
+  it('maps email identity stage to email verification required', async () => {
+    const requestRegisterEmailToken = vi.fn(async () => ({ sid: 'sid-1' }))
+    const authClient = {
+      registerRequest: vi.fn(async () => {
+        const stageError = new Error('Additional auth required') as Error & {
+          data?: { flows?: Array<{ stages?: string[] }> }
+        }
+        stageError.data = {
+          flows: [
+            { stages: ['m.login.email.identity'] }
+          ]
+        }
+        throw stageError
+      }),
+      requestRegisterEmailToken
+    }
+    createClient.mockReturnValueOnce(authClient)
+
+    const {
+      SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
+      useMatrixClient
+    } = await import('~/composables/useMatrixClient')
+    const { register } = useMatrixClient()
+
+    await expect(
+      register(
+        'https://matrix.example.org',
+        'alice',
+        'secret',
+        'alice@example.org'
+      )
+    ).rejects.toThrow(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
+    expect(requestRegisterEmailToken).toHaveBeenCalledWith(
+      'alice@example.org',
+      expect.any(String),
+      1
+    )
+  })
+
+  it('maps sdk http identity-server error to email verification required', async () => {
+    const requestRegisterEmailToken = vi.fn(async () => ({ sid: 'sid-1' }))
+    const authClient = {
+      registerRequest: vi.fn(async () => {
+        throw new Error("Cannot read properties of undefined (reading 'http')")
+      }),
+      requestRegisterEmailToken
+    }
+    createClient.mockReturnValueOnce(authClient)
+
+    const {
+      SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
+      useMatrixClient
+    } = await import('~/composables/useMatrixClient')
+    const { register } = useMatrixClient()
+
+    await expect(
+      register(
+        'https://matrix.example.org',
+        'alice',
+        'secret',
+        'alice@example.org'
+      )
+    ).rejects.toThrow(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
+    expect(requestRegisterEmailToken).toHaveBeenCalledWith(
+      'alice@example.org',
+      expect.any(String),
+      1
+    )
+  })
+
+  it('falls back to legacy register method when needed', async () => {
+    const authClient = {
+      register: vi.fn(async () => ({ user_id: '@alice:example.org' }))
+    }
+    createClient.mockReturnValueOnce(authClient)
+
+    const {
+      useMatrixClient
+    } = await import('~/composables/useMatrixClient')
+    const { register } = useMatrixClient()
+    await register('https://matrix.example.org', 'alice', 'secret')
+
+    expect(authClient.register).toHaveBeenCalledWith(
+      'alice',
+      'secret',
+      undefined,
+      { type: 'm.login.dummy' },
+      undefined,
+      undefined,
+      true
+    )
+  })
+
   it('sends text message with reply relation payload', async () => {
     const authClient = {
       loginRequest: vi.fn(async () => ({
@@ -639,5 +796,93 @@ describe('useMatrixClient', () => {
     expect(sendEventPayload.url).toBe('mxc://example.org/plain-image')
     expect(sendEventPayload.file).toBeUndefined()
     ;(globalThis as Record<string, unknown>).Image = originalImage
+  })
+
+  it('upgrades public http homeserver to https for login clients', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:matrix.moepg.de',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn()
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login } = useMatrixClient()
+    await login(
+      'http://matrix.moepg.de',
+      '@alice:matrix.moepg.de',
+      'secret'
+    )
+
+    expect(createClient).toHaveBeenNthCalledWith(1, {
+      baseUrl: 'https://matrix.moepg.de'
+    })
+    expect(createClient).toHaveBeenNthCalledWith(2, {
+      baseUrl: 'https://matrix.moepg.de',
+      accessToken: 'token-123',
+      userId: '@alice:matrix.moepg.de',
+      deviceId: 'DEVICE123'
+    })
+  })
+
+  it('maps browser fetch failures on login to connection hint', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      })
+    }
+    createClient.mockReturnValueOnce(authClient)
+
+    const {
+      HOMESERVER_CONNECTION_HINT_ERROR,
+      useMatrixClient
+    } = await import('~/composables/useMatrixClient')
+    const { login } = useMatrixClient()
+
+    await expect(
+      login('https://matrix.example.org', 'alice', 'secret')
+    ).rejects.toThrow(HOMESERVER_CONNECTION_HINT_ERROR)
+  })
+})
+
+describe('resolveHomeserverBaseUrlForClient', () => {
+  it('upgrades http to https for public hostnames', async () => {
+    const { resolveHomeserverBaseUrlForClient } =
+      await import('~/composables/useMatrixClient')
+    expect(
+      resolveHomeserverBaseUrlForClient('http://matrix.moepg.de')
+    ).toBe('https://matrix.moepg.de')
+  })
+
+  it('keeps http for localhost', async () => {
+    const { resolveHomeserverBaseUrlForClient } =
+      await import('~/composables/useMatrixClient')
+    expect(
+      resolveHomeserverBaseUrlForClient('http://localhost:8008')
+    ).toBe('http://localhost:8008')
+  })
+
+  it('keeps http for private IPv4', async () => {
+    const { resolveHomeserverBaseUrlForClient } =
+      await import('~/composables/useMatrixClient')
+    expect(
+      resolveHomeserverBaseUrlForClient('http://192.168.1.5:8080')
+    ).toBe('http://192.168.1.5:8080')
+  })
+
+  it('defaults scheme to https when omitted', async () => {
+    const { resolveHomeserverBaseUrlForClient } =
+      await import('~/composables/useMatrixClient')
+    expect(resolveHomeserverBaseUrlForClient('matrix.org')).toBe(
+      'https://matrix.org'
+    )
   })
 })

@@ -5,10 +5,21 @@ const STORAGE_KEY = 'decentra.locale'
 const messages: Record<AppLocale, Record<string, string>> = {
   en: {
     'auth.signIn': 'Sign in',
+    'auth.signUp': 'Sign up',
+    'cancel': 'Cancel',
+    'auth.email': 'Email',
     'auth.homeserver': 'Homeserver',
     'auth.username': 'Username',
     'auth.password': 'Password',
     'auth.signInFailed': 'Sign in failed',
+    'auth.signUpFailed': 'Sign up failed',
+    'auth.signUpUnavailable': 'Sign-up is not available on this homeserver',
+    'auth.signUpEmailVerificationRequired': 'Sign-up requires email verification on this homeserver',
+    'auth.signUpSuccess': 'Account created. Please sign in.',
+    'auth.homeserverConnectionHint':
+      'Cannot reach the homeserver from the browser. For public ' +
+      'servers use https:// (not http://) so a redirect does not break ' +
+      'CORS preflight. Synapse must allow this app origin in CORS.',
     'auth.restoringSession': 'Restoring session...',
     'chat.loggedInAs': 'Signed in as',
     'chat.signOut': 'Sign out',
@@ -92,6 +103,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'landing.title': 'Own your collaboration with Decentra.',
     'landing.subtitle': 'Keep communication in your control while staying connected through Matrix.',
     'landing.loginCta': 'Sign in',
+    'landing.signupCta': 'Sign up',
     'landing.chatCta': 'Open chat',
     'landing.featureOneTitle': 'Federated by default',
     'landing.featureOneText': 'Use Matrix homeservers to connect teams without vendor lock-in.',
@@ -108,10 +120,21 @@ const messages: Record<AppLocale, Record<string, string>> = {
   },
   de: {
     'auth.signIn': 'Anmelden',
+    'auth.signUp': 'Registrieren',
+    'cancel': 'Abbrechen',
+    'auth.email': 'E-Mail',
     'auth.homeserver': 'Homeserver',
     'auth.username': 'Benutzername',
     'auth.password': 'Passwort',
     'auth.signInFailed': 'Anmeldung fehlgeschlagen',
+    'auth.signUpFailed': 'Registrierung fehlgeschlagen',
+    'auth.signUpUnavailable': 'Registrierung ist auf diesem Homeserver nicht verfuegbar',
+    'auth.signUpEmailVerificationRequired': 'Registrierung erfordert E-Mail-Verifizierung auf diesem Homeserver',
+    'auth.signUpSuccess': 'Account erstellt. Bitte melde dich an.',
+    'auth.homeserverConnectionHint':
+      'Homeserver aus dem Browser nicht erreichbar. Oeffentliche ' +
+      'Server: https:// statt http:// (sonst bricht CORS-Preflight). Synapse ' +
+      'muss diese App-Origin in CORS erlauben.',
     'auth.restoringSession': 'Session wird wiederhergestellt...',
     'chat.loggedInAs': 'Eingeloggt als',
     'chat.signOut': 'Abmelden',
@@ -195,6 +218,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'landing.title': 'Own your collaboration with Decentra.',
     'landing.subtitle': 'Keep communication in your control while staying connected through Matrix.',
     'landing.loginCta': 'Anmelden',
+    'landing.signupCta': 'Registrieren',
     'landing.chatCta': 'Chat oeffnen',
     'landing.featureOneTitle': 'Foederiert von Anfang an',
     'landing.featureOneText': 'Nutze Matrix-Homeserver fuer Team-Chats ohne Vendor-Lock-in.',

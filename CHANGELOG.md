@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Dedicated GitHub Bug issue template at `.github/ISSUE_TEMPLATE/bug.md`
   with `bug/<bugfix>` branch guidance and bug-focused planning/test sections
+- MVP signup page with Matrix registration and user-facing error feedback (#52)
 - Chat image messages with inline preview and lightbox support
 - E2EE image sending support from chat input
 - Media utilities for encrypted media fetch, decrypt, cache, and revoke flows
@@ -60,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Chat timeline now opens with a bounded initial message window to reduce
   startup scroll depth and perceived room-load latency
+- Login page now shows a post-signup success banner (#52)
 - Chat history loading switched from button-based pagination to bidirectional
   infinite scroll with guarded top/bottom sentinel triggers
 - Initial message viewport now centers around the user's last-read event when
@@ -96,6 +98,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Space-to-room parent mapping now uses Matrix `m.space.parent` state
 - Space avatar resolution now supports Matrix mxc avatar URLs with fallback
+- Homeserver base URL normalization now upgrades public http to https to avoid
+  redirect-driven CORS failures in the browser (#52)
 - CI install issues from unused `@nuxt/test-utils` setup were resolved
 - Synapse compose configuration no longer contains duplicate `services` blocks
   that broke Docker parsing
