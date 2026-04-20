@@ -44,4 +44,12 @@ describe('auth middleware', () => {
     expect(ensureSessionRestoreCompletedMock).not.toHaveBeenCalled()
     expect(navigateToMock).not.toHaveBeenCalled()
   })
+
+  it('protects nested /rooms routes', async () => {
+    const middleware = (await import('~/middleware/auth.global')).default
+    await middleware({ path: '/rooms/new' })
+
+    expect(ensureSessionRestoreCompletedMock).toHaveBeenCalledTimes(1)
+    expect(navigateToMock).toHaveBeenCalledWith('/')
+  })
 })

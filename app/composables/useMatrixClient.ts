@@ -1,6 +1,13 @@
 import type { MatrixClient } from 'matrix-js-sdk'
 import * as sdk from 'matrix-js-sdk'
-import { ClientEvent, EventType, MsgType } from 'matrix-js-sdk'
+import {
+  ClientEvent,
+  EventType,
+  JoinRule,
+  MsgType,
+  Preset,
+  Visibility
+} from 'matrix-js-sdk'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
 
 interface StoredMatrixSession {
@@ -70,6 +77,116 @@ export const SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR =
   'SIGNUP_EMAIL_VERIFICATION_REQUIRED'
 export const HOMESERVER_CONNECTION_HINT_ERROR =
   'HOMESERVER_CONNECTION_HINT'
+
+export interface PublicRoomListItem {
+  roomId: string
+  name?: string
+  topic?: string
+  canonicalAlias?: string
+  aliases?: string[]
+  numJoinedMembers?: number
+}
+
+export interface SearchPublicRoomsResult {
+  rooms: PublicRoomListItem[]
+  nextBatch?: string
+  prevBatch?: string
+  totalRoomCountEstimate?: number
+}
+
+export interface CreateGroupRoomInput {
+  name: string
+  topic?: string
+  /** Private = invite-only; public = joinable and directory-listed */
+  visibility: 'private' | 'public'
+}
+
+export interface UserDirectoryResultItem {
+  userId: string
+  displayName?: string
+  avatarUrl?: string
+}
+
+const MATRIX_TO_BASE = 'https://matrix.to/#'
+
+function homeserverFromUserId(matrixUserId: string): string {
+  const colonIndex = matrixUserId.indexOf(':')
+  if (colonIndex < 0) {
+    return ''
+  }
+  return matrixUserId.slice(colonIndex + 1)
+}
+
+export function normalizeMatrixUserId(
+  input: string,
+  defaultDomain: string
+): string {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    throw new Error('Matrix user id is required')
+  }
+  const withAt = trimmed.startsWith('@') ? trimmed : `@${trimmed}`
+  if (withAt.includes(':')) {
+    return withAt
+  }
+  const domain = defaultDomain.trim()
+  if (!domain) {
+    throw new Error('Enter a full Matrix id like @name:server')
+  }
+  return `${withAt}:${domain}`
+}
+
+export function buildMatrixToUserLink(matrixUserId: string): string {
+  const id = matrixUserId.trim()
+  if (!id) {
+    return MATRIX_TO_BASE
+  }
+  return `${MATRIX_TO_BASE}/${encodeURIComponent(id)}`
+}
+
+function mapPublicRoomsChunk(
+  chunk: Array<Record<string, unknown>>
+): PublicRoomListItem[] {
+  return chunk.map((entry) => {
+    const roomId = String(entry.room_id ?? '')
+    return {
+      roomId,
+      name: typeof entry.name === 'string' ? entry.name : undefined,
+      topic: typeof entry.topic === 'string' ? entry.topic : undefined,
+      canonicalAlias:
+        typeof entry.canonical_alias === 'string'
+          ? entry.canonical_alias
+          : undefined,
+      aliases: Array.isArray(entry.aliases)
+        ? entry.aliases.filter((a): a is string => typeof a === 'string')
+        : undefined,
+      numJoinedMembers:
+        typeof entry.num_joined_members === 'number'
+          ? entry.num_joined_members
+          : undefined
+    }
+  })
+}
+
+function throwMappedMatrixError(error: unknown, fallback: string): never {
+  const code = readMatrixErrorCode(error)
+  const message = readMatrixErrorMessage(error)
+  if (code === 'M_FORBIDDEN' || code === 'M_UNAUTHORIZED') {
+    throw new Error(message || 'This action is not allowed on this homeserver')
+  }
+  if (code === 'M_NOT_FOUND') {
+    throw new Error(message || 'Room or user was not found')
+  }
+  if (code === 'M_UNRECOGNIZED' || code === 'M_UNKNOWN') {
+    throw new Error(
+      message || 'This homeserver does not support this operation'
+    )
+  }
+  if (message) {
+    throw new Error(message)
+  }
+  throw new Error(fallback)
+}
 
 function isPrivateOrLocalIPv4(hostname: string): boolean {
   if (hostname === 'localhost') {
@@ -972,6 +1089,263 @@ export function useMatrixClient() {
     await sendReaction(roomId, messageEventId, emoji)
   }
 
+  function requireClient(): MatrixClient {
+    const matrixClient = client.value
+    if (!matrixClient) {
+      throw new Error('Not logged in')
+    }
+    return matrixClient
+  }
+
+  async function mergeDirectAccountData(
+    matrixClient: MatrixClient,
+    peerUserId: string,
+    roomId: string
+  ): Promise<void> {
+    const directEvent = matrixClient.getAccountData(EventType.Direct)
+    const previous = (directEvent?.getContent() as
+      | Record<string, string[]>
+      | undefined) ?? {}
+    const next: Record<string, string[]> = { ...previous }
+    const existing = new Set(next[peerUserId] ?? [])
+    existing.add(roomId)
+    next[peerUserId] = [...existing]
+    await matrixClient.setAccountData(EventType.Direct, next)
+  }
+
+  function findJoinedDirectRoomId(
+    matrixClient: MatrixClient,
+    peerUserId: string
+  ): string | null {
+    const directEvent = matrixClient.getAccountData(EventType.Direct)
+    const content = directEvent?.getContent() as
+      | Record<string, string[]>
+      | undefined
+    const candidates = content?.[peerUserId] ?? []
+    for (const roomId of candidates) {
+      const room = matrixClient.getRoom(roomId)
+      if (room?.getMyMembership() === 'join') {
+        return roomId
+      }
+    }
+    return null
+  }
+
+  async function getOrCreateDirectMessageRoom(
+    rawUserId: string
+  ): Promise<string> {
+    const matrixClient = requireClient()
+    const selfId = matrixClient.getUserId()
+    if (!selfId) {
+      throw new Error('Not logged in')
+    }
+    const domain = homeserverFromUserId(selfId)
+    const peerUserId = normalizeMatrixUserId(rawUserId, domain)
+    if (peerUserId.toLowerCase() === selfId.toLowerCase()) {
+      throw new Error('Cannot start a direct message with yourself')
+    }
+    const fromAccount = findJoinedDirectRoomId(matrixClient, peerUserId)
+    if (fromAccount) {
+      return fromAccount
+    }
+    const createOpts: sdk.ICreateRoomOpts = {
+      invite: [peerUserId],
+      preset: Preset.PrivateChat,
+      is_direct: true
+    }
+    if (await ensureCryptoReady()) {
+      createOpts.initial_state = [
+        {
+          type: EventType.RoomEncryption,
+          state_key: '',
+          content: { algorithm: 'm.megolm.v1.aes-sha2' }
+        }
+      ]
+    }
+    try {
+      const { room_id: roomId } = await matrixClient.createRoom(createOpts)
+      await mergeDirectAccountData(matrixClient, peerUserId, roomId)
+      return roomId
+    } catch (error) {
+      if (isLikelyBrowserNetworkOrCorsError(error)) {
+        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+      }
+      throwMappedMatrixError(error, 'Could not start direct message')
+    }
+  }
+
+  function buildDirectMessageShareLink(rawUserId: string): string {
+    const matrixClient = client.value
+    const selfId = matrixClient?.getUserId()
+    const domain = selfId ? homeserverFromUserId(selfId) : ''
+    const peerUserId = normalizeMatrixUserId(rawUserId, domain)
+    return buildMatrixToUserLink(peerUserId)
+  }
+
+  function buildOwnMatrixToLink(): string {
+    const matrixClient = client.value
+    const selfId = matrixClient?.getUserId()
+    if (!selfId) {
+      return MATRIX_TO_BASE
+    }
+    return buildMatrixToUserLink(selfId)
+  }
+
+  async function createGroupRoom(
+    input: CreateGroupRoomInput
+  ): Promise<string> {
+    const matrixClient = requireClient()
+    const trimmedName = input.name.trim()
+    if (!trimmedName) {
+      throw new Error('Room name is required')
+    }
+    const topic = input.topic?.trim()
+    const isPublic = input.visibility === 'public'
+    const encryptionReady = await ensureCryptoReady()
+    const encryptionState = encryptionReady
+      ? [
+          {
+            type: EventType.RoomEncryption,
+            state_key: '',
+            content: { algorithm: 'm.megolm.v1.aes-sha2' }
+          }
+        ]
+      : []
+    const createOpts: sdk.ICreateRoomOpts = {
+      name: trimmedName,
+      ...(topic ? { topic } : {}),
+      visibility: isPublic ? Visibility.Public : Visibility.Private,
+      ...(isPublic ? { preset: Preset.PublicChat } : {}),
+      initial_state: [
+        {
+          type: EventType.RoomJoinRules,
+          state_key: '',
+          content: {
+            join_rule: isPublic ? JoinRule.Public : JoinRule.Invite
+          }
+        },
+        {
+          type: EventType.RoomHistoryVisibility,
+          state_key: '',
+          content: {
+            history_visibility: isPublic ? 'world_readable' : 'invited'
+          }
+        },
+        ...encryptionState
+      ]
+    }
+    try {
+      const { room_id: roomId } = await matrixClient.createRoom(createOpts)
+      return roomId
+    } catch (error) {
+      if (isLikelyBrowserNetworkOrCorsError(error)) {
+        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+      }
+      throwMappedMatrixError(error, 'Could not create room')
+    }
+  }
+
+  async function joinRoomByIdOrAlias(roomIdOrAlias: string): Promise<string> {
+    const matrixClient = requireClient()
+    const trimmed = roomIdOrAlias.trim()
+    if (!trimmed) {
+      throw new Error('Room id or alias is required')
+    }
+    try {
+      const room = await matrixClient.joinRoom(trimmed, {})
+      return room.roomId
+    } catch (error) {
+      if (isLikelyBrowserNetworkOrCorsError(error)) {
+        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+      }
+      throwMappedMatrixError(error, 'Could not join room')
+    }
+  }
+
+  async function searchPublicRooms(options: {
+    searchTerm?: string
+    limit?: number
+    since?: string
+    server?: string
+  }): Promise<SearchPublicRoomsResult> {
+    const matrixClient = requireClient()
+    const limit = options.limit ?? 30
+    const term = options.searchTerm?.trim()
+    try {
+      if (term) {
+        const response = await matrixClient.publicRooms({
+          server: options.server,
+          limit,
+          since: options.since,
+          filter: { generic_search_term: term }
+        })
+        return {
+          rooms: mapPublicRoomsChunk(
+            (response.chunk ?? []) as unknown as Array<
+              Record<string, unknown>
+            >
+          ),
+          nextBatch: response.next_batch,
+          prevBatch: response.prev_batch,
+          totalRoomCountEstimate: response.total_room_count_estimate
+        }
+      }
+      const response = await matrixClient.publicRooms({
+        server: options.server,
+        limit,
+        since: options.since
+      })
+      return {
+        rooms: mapPublicRoomsChunk(
+          (response.chunk ?? []) as unknown as Array<
+            Record<string, unknown>
+          >
+        ),
+        nextBatch: response.next_batch,
+        prevBatch: response.prev_batch,
+        totalRoomCountEstimate: response.total_room_count_estimate
+      }
+    } catch (error) {
+      if (isLikelyBrowserNetworkOrCorsError(error)) {
+        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+      }
+      throwMappedMatrixError(
+        error,
+        'Could not load public rooms from this homeserver'
+      )
+    }
+  }
+
+  async function searchUsersDirectory(options: {
+    term: string
+    limit?: number
+  }): Promise<UserDirectoryResultItem[]> {
+    const matrixClient = requireClient()
+    const term = options.term.trim()
+    if (term.length < 2) {
+      return []
+    }
+    try {
+      const response = await matrixClient.searchUserDirectory({
+        term,
+        limit: options.limit ?? 20
+      })
+      return (response.results ?? []).map((row) => ({
+        userId: row.user_id,
+        displayName: row.display_name,
+        avatarUrl: row.avatar_url
+      }))
+    } catch (error) {
+      if (isLikelyBrowserNetworkOrCorsError(error)) {
+        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+      }
+      throwMappedMatrixError(
+        error,
+        'User directory search is not available'
+      )
+    }
+  }
+
   return {
     client,
     isLoggedIn,
@@ -991,6 +1365,15 @@ export function useMatrixClient() {
     redactEvent,
     toggleReaction,
     loadOlderMessages,
-    ensureCryptoReady
+    ensureCryptoReady,
+    normalizeMatrixUserId,
+    buildMatrixToUserLink,
+    buildDirectMessageShareLink,
+    buildOwnMatrixToLink,
+    getOrCreateDirectMessageRoom,
+    createGroupRoom,
+    joinRoomByIdOrAlias,
+    searchPublicRooms,
+    searchUsersDirectory
   }
 }
