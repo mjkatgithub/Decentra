@@ -56,8 +56,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dedicated landing logo background assets (`logoBg.svg`) for the root route
 - Unit tests for root-page restore and redirect behavior in
   `tests/unit/pages/index.spec.ts`
+- Onboarding panel on empty chat state with entry points for starting a
+  direct message, creating a group room, and exploring public rooms (#59)
+- Direct message start panel with user-id input, user directory search,
+  and shareable `matrix.to` links for the own account and invited users
+- Public room discovery panel with homeserver directory search and
+  distinct loading, empty, and error states
+- Dedicated room creation page at `/rooms/new` for single group rooms
+  with visibility and topic controls
+- Matrix client wrappers for direct-message lookup and reuse via
+  `m.direct` account data, group room creation, id/alias joining,
+  public room directory search, and user directory search
+- Unit coverage for the new Matrix client wrappers, the room creation
+  page, and the `/rooms` auth middleware protection
 
 ### Changed
+
+- Direct message resolution now consults `m.direct` account data before
+  falling back to two-member heuristics for existing rooms
+- Global auth middleware now also protects the `/rooms` route prefix
 
 - Chat timeline now opens with a bounded initial message window to reduce
   startup scroll depth and perceived room-load latency

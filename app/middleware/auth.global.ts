@@ -1,7 +1,8 @@
 const protectedPathPrefixes = [
   '/chat',
   '/settings',
-  '/spaces/new'
+  '/spaces/new',
+  '/rooms'
 ]
 
 export default defineNuxtRouteMiddleware(async (to) => {

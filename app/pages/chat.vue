@@ -1,7 +1,15 @@
 <script setup lang="ts">
-import { ClientEvent, MatrixEventEvent, RoomEvent } from "matrix-js-sdk";
+import {
+  ClientEvent,
+  EventType,
+  MatrixEventEvent,
+  RoomEvent,
+} from "matrix-js-sdk";
 import { useAppI18n } from "~/composables/useAppI18n";
 import { useChatMedia } from "~/composables/useChatMedia";
+import ChatOnboardingPanel from "~/components/Chat/Onboarding/ChatOnboardingPanel.vue";
+import ChatDmStartPanel from "~/components/Chat/Onboarding/ChatDmStartPanel.vue";
+import ChatPublicRoomsPanel from "~/components/Chat/Onboarding/ChatPublicRoomsPanel.vue";
 import {
   buildReactionSummaryByEventId,
   mapTimelineEventsToMessages,
@@ -100,6 +108,9 @@ const {
   resolveMediaBlobUrl,
 } = useChatMedia(client as any);
 
+const route = useRoute();
+const onboardingSubView = ref<null | "dm" | "public">(null);
+
 const selectedRoomId = ref<string | null>(null);
 const selectedSpaceId = ref<string | null>(null);
 const allMessages = ref<ChatMessage[]>([]);
@@ -192,6 +203,15 @@ const visibleRooms = computed(() => {
       return activeSpaceId === HOME_SPACE_ID;
     }
     return activeSpaceId ? room.parentSpaceIds.includes(activeSpaceId) : false;
+  });
+});
+
+const hasJoinedNonSpaceRooms = computed(() => {
+  return matrixRooms.value.some((room) => {
+    if (getRoomType(room) === "m.space") {
+      return false;
+    }
+    return room.getMyMembership?.() === "join";
   });
 });
 
@@ -392,6 +412,21 @@ function normalizePresence(rawPresence: string | undefined): PresenceStatus {
   return "unknown";
 }
 
+function roomIsListedInDirectAccountData(roomId: string): boolean {
+  const matrixClient = client.value;
+  if (!matrixClient) {
+    return false;
+  }
+  const directEvent = matrixClient.getAccountData(EventType.Direct);
+  const content = directEvent?.getContent() as
+    | Record<string, string[]>
+    | undefined;
+  if (!content) {
+    return false;
+  }
+  return Object.values(content).some((ids) => ids?.includes(roomId));
+}
+
 function isDirectRoom(room: RoomItem): boolean {
   const matrixRoom = matrixRooms.value.find(
     (entry) => entry.roomId === room.roomId,
@@ -399,8 +434,14 @@ function isDirectRoom(room: RoomItem): boolean {
   if (!matrixRoom) {
     return false;
   }
+  if (room.parentSpaceIds.length !== 0) {
+    return false;
+  }
+  if (roomIsListedInDirectAccountData(room.roomId)) {
+    return true;
+  }
   const joinedMemberCount = Number(matrixRoom.getJoinedMemberCount?.() ?? 0);
-  return room.parentSpaceIds.length === 0 && joinedMemberCount === 2;
+  return joinedMemberCount === 2;
 }
 
 function getOwnReadAnchorEventId(room: Record<string, any>): string | undefined {
@@ -728,6 +769,30 @@ function openCreateSpaceStub() {
   navigateTo("/spaces/new");
 }
 
+function onDirectMessageStarted(roomId: string) {
+  onboardingSubView.value = null;
+  selectedSpaceId.value = HOME_SPACE_ID;
+  selectedRoomId.value = roomId;
+  refreshRooms();
+}
+
+function onPublicRoomJoined(roomId: string) {
+  onboardingSubView.value = null;
+  selectedSpaceId.value = HOME_SPACE_ID;
+  selectedRoomId.value = roomId;
+  refreshRooms();
+}
+
+function applyRoomIdFromRouteQuery() {
+  const raw = route.query.room;
+  const roomQuery = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof roomQuery === "string" && roomQuery.length > 0) {
+    selectedSpaceId.value = HOME_SPACE_ID;
+    selectedRoomId.value = roomQuery;
+    void navigateTo({ path: "/chat", query: {} }, { replace: true });
+  }
+}
+
 function closeMobileOverlays() {
   if (!isMobile.value) {
     return;
@@ -754,6 +819,14 @@ function syncViewport(force = false) {
 
   viewportInitialized.value = true;
 }
+
+watch(
+  () => route.query.room,
+  () => {
+    applyRoomIdFromRouteQuery();
+  },
+  { immediate: true },
+);
 
 onMounted(() => {
   syncViewport(true);
@@ -923,9 +996,30 @@ watch(
 
       <div
         v-if="!selectedRoomId"
-        class="flex flex-1 items-center justify-center"
+        class="flex flex-1 items-center justify-center overflow-auto p-4"
       >
-        <p class="text-sm text-gray-500 dark:text-gray-400">
+        <template v-if="!hasJoinedNonSpaceRooms">
+          <ChatOnboardingPanel
+            v-if="!onboardingSubView"
+            @open-dm="onboardingSubView = 'dm'"
+            @open-create-room="navigateTo('/rooms/new')"
+            @open-public-rooms="onboardingSubView = 'public'"
+          />
+          <ChatDmStartPanel
+            v-else-if="onboardingSubView === 'dm'"
+            @back="onboardingSubView = null"
+            @started="onDirectMessageStarted"
+          />
+          <ChatPublicRoomsPanel
+            v-else-if="onboardingSubView === 'public'"
+            @back="onboardingSubView = null"
+            @joined="onPublicRoomJoined"
+          />
+        </template>
+        <p
+          v-else
+          class="text-sm text-gray-500 dark:text-gray-400"
+        >
           {{ translateText("chat.selectRoom") }}
         </p>
       </div>

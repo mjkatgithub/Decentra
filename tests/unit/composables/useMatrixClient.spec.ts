@@ -7,9 +7,18 @@ const initCryptoWasm = vi.fn(async () => undefined)
 vi.mock('matrix-js-sdk', () => {
   return {
     createClient,
-    EventType: { RoomMessage: 'm.room.message' },
+    EventType: {
+      RoomMessage: 'm.room.message',
+      Direct: 'm.direct',
+      RoomEncryption: 'm.room.encryption',
+      RoomJoinRules: 'm.room.join_rules',
+      RoomHistoryVisibility: 'm.room.history_visibility'
+    },
     MsgType: { Text: 'm.text', Image: 'm.image' },
-    ClientEvent: {}
+    ClientEvent: {},
+    Preset: { PrivateChat: 'private_chat', PublicChat: 'public_chat' },
+    JoinRule: { Invite: 'invite', Public: 'public' },
+    Visibility: { Private: 'private', Public: 'public' }
   }
 })
 
@@ -884,5 +893,109 @@ describe('resolveHomeserverBaseUrlForClient', () => {
     expect(resolveHomeserverBaseUrlForClient('matrix.org')).toBe(
       'https://matrix.org'
     )
+  })
+})
+
+describe('normalizeMatrixUserId / matrix.to helpers', () => {
+  it('normalizes localpart with default domain', async () => {
+    const { normalizeMatrixUserId } =
+      await import('~/composables/useMatrixClient')
+    expect(normalizeMatrixUserId('bob', 'example.org')).toBe(
+      '@bob:example.org'
+    )
+    expect(normalizeMatrixUserId('@bob:example.org', 'x')).toBe(
+      '@bob:example.org'
+    )
+  })
+
+  it('throws when domain is missing for localpart-only input', async () => {
+    const { normalizeMatrixUserId } =
+      await import('~/composables/useMatrixClient')
+    expect(() => normalizeMatrixUserId('bob', '')).toThrow()
+  })
+
+  it('builds matrix.to link for a user id', async () => {
+    const { buildMatrixToUserLink } =
+      await import('~/composables/useMatrixClient')
+    const link = buildMatrixToUserLink('@alice:example.org')
+    expect(link).toContain('matrix.to')
+    expect(link).toContain(encodeURIComponent('@alice:example.org'))
+  })
+})
+
+describe('getOrCreateDirectMessageRoom', () => {
+  it('reuses joined room from m.direct map', async () => {
+    const createRoom = vi.fn()
+    const matrixClient = {
+      getUserId: () => '@alice:example.org',
+      getAccountData: vi.fn(() => ({
+        getContent: () => ({
+          '@bob:example.org': ['!old:example.org']
+        })
+      })),
+      getRoom: vi.fn((id: string) => {
+        if (id !== '!old:example.org') {
+          return null
+        }
+        return { getMyMembership: () => 'join' }
+      }),
+      createRoom,
+      setAccountData: vi.fn(),
+      startClient: vi.fn(),
+      initRustCrypto: vi.fn(async () => undefined),
+      getCrypto: () => null,
+      getDeviceId: () => 'DEV'
+    }
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 't',
+        user_id: '@alice:example.org',
+        device_id: 'DEV'
+      }))
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, getOrCreateDirectMessageRoom } = useMatrixClient()
+    await login('https://example.org', 'alice', 'pw')
+    const roomId = await getOrCreateDirectMessageRoom('@bob:example.org')
+    expect(roomId).toBe('!old:example.org')
+    expect(createRoom).not.toHaveBeenCalled()
+  })
+
+  it('creates room and merges m.direct when none exists', async () => {
+    const createRoom = vi.fn(async () => ({ room_id: '!new:example.org' }))
+    const setAccountData = vi.fn(async () => undefined)
+    const matrixClient = {
+      getUserId: () => '@alice:example.org',
+      getAccountData: vi.fn(() => undefined),
+      getRoom: vi.fn(() => null),
+      createRoom,
+      setAccountData,
+      startClient: vi.fn(),
+      initRustCrypto: vi.fn(async () => undefined),
+      getCrypto: () => ({}),
+      getDeviceId: () => 'DEV'
+    }
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 't',
+        user_id: '@alice:example.org',
+        device_id: 'DEV'
+      }))
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, getOrCreateDirectMessageRoom } = useMatrixClient()
+    await login('https://example.org', 'alice', 'pw')
+    const roomId = await getOrCreateDirectMessageRoom('@bob:example.org')
+    expect(roomId).toBe('!new:example.org')
+    expect(createRoom).toHaveBeenCalled()
+    expect(setAccountData).toHaveBeenCalled()
   })
 })
