@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { loadE2EEnv, parseBoolean } from './runtime-e2e-env.mjs'
 
 const command = process.argv[2]
 const currentFilePath = fileURLToPath(import.meta.url)
@@ -37,39 +38,84 @@ function ensureDirectory(directoryPath) {
   }
 }
 
-function ensureSynapseConfigOverrides() {
-  if (!existsSync(homeserverConfigPath)) {
-    throw new Error(`Missing Synapse config at ${homeserverConfigPath}`)
-  }
-  const currentConfig = readFileSync(homeserverConfigPath, 'utf8')
-  const overrideBlock = [
+const rateLimitOverrideLines = [
+  'rc_registration:',
+  '  per_second: 1000',
+  '  burst_count: 1000',
+  'rc_login:',
+  '  address:',
+  '    per_second: 1000',
+  '    burst_count: 1000',
+  '  account:',
+  '    per_second: 1000',
+  '    burst_count: 1000',
+  '  failed_attempts:',
+  '    per_second: 1000',
+  '    burst_count: 1000',
+  'rc_message:',
+  '  per_second: 1000',
+  '  burst_count: 1000'
+]
+
+function buildDefaultOverrideBlock() {
+  return [
     overrideStart,
     'enable_registration: true',
     'enable_registration_without_verification: true',
     'registration_shared_secret: "decentra-e2e-shared-secret"',
     'allow_public_rooms_without_auth: true',
     'allow_public_rooms_over_federation: false',
-    'rc_registration:',
-    '  per_second: 1000',
-    '  burst_count: 1000',
-    'rc_login:',
-    '  address:',
-    '    per_second: 1000',
-    '    burst_count: 1000',
-    '  account:',
-    '    per_second: 1000',
-    '    burst_count: 1000',
-    '  failed_attempts:',
-    '    per_second: 1000',
-    '    burst_count: 1000',
-    'rc_message:',
-    '  per_second: 1000',
-    '  burst_count: 1000',
+    ...rateLimitOverrideLines,
     overrideEnd
   ].join('\n')
-  const overrideRegex = new RegExp(`${overrideStart}[\\s\\S]*${overrideEnd}`, 'm')
+}
+
+function buildEmail3pidOverrideBlock() {
+  return [
+    overrideStart,
+    'enable_registration: true',
+    'enable_registration_without_verification: false',
+    'registrations_require_3pid:',
+    '  - email',
+    'registration_shared_secret: "decentra-e2e-shared-secret"',
+    'allow_public_rooms_without_auth: true',
+    'allow_public_rooms_over_federation: false',
+    'email:',
+    '  smtp_host: mailhog',
+    '  smtp_port: 1025',
+    '  notif_from: "Decentra E2E <synapse@localhost>"',
+    '  enable_notifs: false',
+    ...rateLimitOverrideLines,
+    overrideEnd
+  ].join('\n')
+}
+
+function ensureSynapseConfigOverrides() {
+  if (!existsSync(homeserverConfigPath)) {
+    throw new Error(`Missing Synapse config at ${homeserverConfigPath}`)
+  }
+  const currentConfig = readFileSync(homeserverConfigPath, 'utf8')
+  const useEmail3pid = parseBoolean(
+    process.env.DECENTRA_E2E_SIGNUP_EMAIL
+  )
+  const overrideBlock = useEmail3pid
+    ? buildEmail3pidOverrideBlock()
+    : buildDefaultOverrideBlock()
+  const overrideRegex = new RegExp(
+    `${overrideStart}[\\s\\S]*${overrideEnd}`,
+    'm'
+  )
   const baseConfig = currentConfig.replace(overrideRegex, '').trimEnd()
-  writeFileSync(homeserverConfigPath, `${baseConfig}\n\n${overrideBlock}\n`, 'utf8')
+  writeFileSync(
+    homeserverConfigPath,
+    `${baseConfig}\n\n${overrideBlock}\n`,
+    'utf8'
+  )
+  if (useEmail3pid) {
+    console.log(
+      'Synapse E2E: email+3pid overrides (DECENTRA_E2E_SIGNUP_EMAIL=1)'
+    )
+  }
 }
 
 async function waitForSynapse() {
@@ -123,6 +169,8 @@ async function main() {
   if (!existsSync(composeFile)) {
     throw new Error(`Missing compose file at ${composeFile}`)
   }
+
+  loadE2EEnv(workspaceRoot)
 
   await runCommand('docker', ['--version'])
 

@@ -16,6 +16,27 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpUnavailable': 'Sign-up is not available on this homeserver',
     'auth.signUpEmailVerificationRequired': 'Sign-up requires email verification on this homeserver',
     'auth.signUpSuccess': 'Account created. Please sign in.',
+    'auth.signUpEmailSentTitle': 'Check your email',
+    'auth.signUpEmailSentBody':
+      'We sent a verification link to {email}. Open it to finish ' +
+      'sign-up, then you can return here or sign in.',
+    'auth.signUpEmailKeepTabOpen':
+      'You can keep this tab open. After you use the link, this app ' +
+      'can finish the flow automatically on the next page.',
+    'auth.signUpCancel': 'Start over',
+    'auth.signUpEmailVerifyingTitle': 'Confirming your email…',
+    'auth.signUpEmailNotConfirmedYet':
+      'The link in your email is not valid yet, or the mail was not ' +
+      'opened. Open the link from the message, then try again.',
+    'auth.signUpPendingMissing':
+      'No sign-up in progress. Start from the sign-up form.',
+    'auth.signUpSessionExpired':
+      'The sign-up session expired. Please start again from the form.',
+    'auth.signUpUnsupportedAuthStage':
+      'This homeserver needs an additional sign-up step that Decentra ' +
+      'does not support yet.',
+    'auth.signUpRetry': 'Try again',
+    'auth.signUpBackToForm': 'Back to sign-up',
     'auth.homeserverConnectionHint':
       'Cannot reach the homeserver from the browser. For public ' +
       'servers use https:// (not http://) so a redirect does not break ' +
@@ -169,6 +190,31 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpUnavailable': 'Registrierung ist auf diesem Homeserver nicht verfuegbar',
     'auth.signUpEmailVerificationRequired': 'Registrierung erfordert E-Mail-Verifizierung auf diesem Homeserver',
     'auth.signUpSuccess': 'Account erstellt. Bitte melde dich an.',
+    'auth.signUpEmailSentTitle': 'E-Mail pruefen',
+    'auth.signUpEmailSentBody':
+      'Wir haben einen Bestaetigungslink an {email} geschickt. Oeffne ' +
+      'ihn, um die Registrierung abzuschliessen, danach kannst du ' +
+      'hier fortfahren oder dich anmelden.',
+    'auth.signUpEmailKeepTabOpen':
+      'Du kannst diesen Tab offen lassen. Nach dem Klick im Link ' +
+      'schliessen wir den Vorgang auf der naechsten Seite automatisch ' +
+      'ab, wenn es geht.',
+    'auth.signUpCancel': 'Von vorn',
+    'auth.signUpEmailVerifyingTitle': 'E-Mail wird bestaetigt…',
+    'auth.signUpEmailNotConfirmedYet':
+      'Der Link in der E-Mail ist noch nicht gueltig, oder die Mail ' +
+      'wurde nicht geoeffnet. Nutze den Link aus der Nachricht, dann ' +
+      'erst erneut versuchen.',
+    'auth.signUpPendingMissing':
+      'Keine laufende Registrierung. Bitte im Formular neu starten.',
+    'auth.signUpSessionExpired':
+      'Die Registrierungs-Sitzung ist abgelaufen. Bitte im Formular ' +
+      'neu starten.',
+    'auth.signUpUnsupportedAuthStage':
+      'Dieser Homeserver verlangt einen weiteren Registrierungs-Schritt, ' +
+      'den Decentra noch nicht unterstuetzt.',
+    'auth.signUpRetry': 'Erneut versuchen',
+    'auth.signUpBackToForm': 'Zurueck zur Registrierung',
     'auth.homeserverConnectionHint':
       'Homeserver aus dem Browser nicht erreichbar. Oeffentliche ' +
       'Server: https:// statt http:// (sonst bricht CORS-Preflight). Synapse ' +

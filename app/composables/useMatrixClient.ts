@@ -10,6 +10,43 @@ import {
 } from 'matrix-js-sdk'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
 
+import {
+  extractUserLocalpart,
+  isLikelyBrowserNetworkOrCorsError,
+  isSameHomeserver,
+  readMatrixErrorCode,
+  readMatrixErrorMessage,
+  isSignupUnsupported,
+  resolveHomeserverBaseUrlForClient
+} from './matrix/matrixClientShared'
+export { HOMESERVER_CONNECTION_HINT_ERROR, isSameHomeserver, resolveHomeserverBaseUrlForClient } from './matrix/matrixClientShared'
+import {
+  clearSignupPending,
+  finalizeEmailRegistration,
+  registerWithDummy,
+  startEmailRegistration,
+  SIGNUP_EMAIL_NOT_CONFIRMED_YET,
+  SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
+  SIGNUP_PENDING_MISSING,
+  SIGNUP_PENDING_STORAGE_KEY,
+  SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
+  SIGNUP_SESSION_EXPIRED,
+  SIGNUP_UNAVAILABLE_ERROR
+} from './matrix/matrixRegistrationUia'
+export {
+  clearSignupPending,
+  finalizeEmailRegistration,
+  registerWithDummy,
+  startEmailRegistration,
+  SIGNUP_EMAIL_NOT_CONFIRMED_YET,
+  SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
+  SIGNUP_PENDING_MISSING,
+  SIGNUP_PENDING_STORAGE_KEY,
+  SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
+  SIGNUP_SESSION_EXPIRED,
+  SIGNUP_UNAVAILABLE_ERROR
+}
+
 interface StoredMatrixSession {
   baseUrl: string
   accessToken: string
@@ -58,25 +95,6 @@ interface MessageReplyOptions {
 interface ReactionToggleOptions {
   ownReactionEventIds?: string[]
 }
-
-interface MatrixApiErrorShape {
-  errcode?: string
-  error?: string
-  flows?: Array<{ stages?: string[] }>
-  data?: {
-    errcode?: string
-    error?: string
-    flows?: Array<{ stages?: string[] }>
-  }
-  httpStatus?: number
-  statusCode?: number
-}
-
-export const SIGNUP_UNAVAILABLE_ERROR = 'SIGNUP_UNAVAILABLE'
-export const SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR =
-  'SIGNUP_EMAIL_VERIFICATION_REQUIRED'
-export const HOMESERVER_CONNECTION_HINT_ERROR =
-  'HOMESERVER_CONNECTION_HINT'
 
 export interface PublicRoomListItem {
   roomId: string
@@ -188,85 +206,6 @@ function throwMappedMatrixError(error: unknown, fallback: string): never {
   throw new Error(fallback)
 }
 
-function isPrivateOrLocalIPv4(hostname: string): boolean {
-  if (hostname === 'localhost') {
-    return true
-  }
-  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname)
-  if (!match) {
-    return false
-  }
-  const octets = [match[1], match[2], match[3], match[4]].map((value) => {
-    return Number(value)
-  })
-  if (octets.some((value) => value > 255)) {
-    return false
-  }
-  const firstOctet = octets[0] ?? 0
-  const secondOctet = octets[1] ?? 0
-  if (firstOctet === 10) {
-    return true
-  }
-  if (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) {
-    return true
-  }
-  if (firstOctet === 192 && secondOctet === 168) {
-    return true
-  }
-  if (firstOctet === 127) {
-    return true
-  }
-  return false
-}
-
-/**
- * Normalizes homeserver URL for browser requests. Upgrades http→https for
- * public hostnames so CORS preflight is not broken by HTTP→TLS redirects.
- */
-export function resolveHomeserverBaseUrlForClient(input: string): string {
-  const trimmed = input.trim()
-  if (!trimmed) {
-    return ''
-  }
-  const withScheme = trimmed.includes('://') ? trimmed : `https://${trimmed}`
-  try {
-    const url = new URL(withScheme)
-    const hostLower = url.hostname.toLowerCase()
-    const keepHttp = (
-      url.protocol === 'http:' &&
-      (hostLower === 'localhost' || isPrivateOrLocalIPv4(hostLower))
-    )
-    if (url.protocol === 'http:' && !keepHttp) {
-      url.protocol = 'https:'
-    }
-    return url.origin
-  } catch {
-    return normalizeHomeserver(trimmed)
-  }
-}
-
-function isLikelyBrowserNetworkOrCorsError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false
-  }
-  const message = error.message.toLowerCase()
-  return (
-    message.includes('failed to fetch') ||
-    message.includes('networkerror') ||
-    message.includes('load failed') ||
-    message.includes('network request failed') ||
-    message.includes('cors')
-  )
-}
-
-function extractUserLocalpart(userIdOrUsername: string): string {
-  const normalized = userIdOrUsername.trim().toLowerCase()
-  const withoutAtPrefix = normalized.startsWith('@')
-    ? normalized.slice(1)
-    : normalized
-  return withoutAtPrefix.split(':')[0] ?? withoutAtPrefix
-}
-
 function shouldReuseStoredDeviceId(
   storedSession: StoredMatrixSession | null,
   storedDevice: StoredMatrixDevice | null,
@@ -297,22 +236,6 @@ function shouldReuseStoredDeviceId(
     extractUserLocalpart(normalizedUsername)
 }
 
-function normalizeHomeserver(input: string): string {
-  const trimmed = input.trim().toLowerCase()
-  if (!trimmed) {
-    return ''
-  }
-  try {
-    return new URL(trimmed).origin
-  } catch {
-    return trimmed.replace(/\/+$/g, '')
-  }
-}
-
-function isSameHomeserver(left: string, right: string): boolean {
-  return normalizeHomeserver(left) === normalizeHomeserver(right)
-}
-
 function isCryptoStoreAccountMismatch(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false
@@ -320,70 +243,6 @@ function isCryptoStoreAccountMismatch(error: unknown): boolean {
   const message = error.message.toLowerCase()
   return message.includes('account in the store doesn\'t match') ||
     message.includes("account in the store doesn't match")
-}
-
-function readMatrixErrorCode(error: unknown): string {
-  if (!error || typeof error !== 'object') {
-    return ''
-  }
-  const matrixError = error as MatrixApiErrorShape
-  return (
-    matrixError.errcode ||
-    matrixError.data?.errcode ||
-    ''
-  )
-}
-
-function readMatrixErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message
-  }
-  if (!error || typeof error !== 'object') {
-    return ''
-  }
-  const matrixError = error as MatrixApiErrorShape
-  return (
-    matrixError.error ||
-    matrixError.data?.error ||
-    ''
-  )
-}
-
-function isSignupUnsupported(error: unknown): boolean {
-  const matrixErrorCode = readMatrixErrorCode(error)
-  if (
-    matrixErrorCode === 'M_UNRECOGNIZED' ||
-    matrixErrorCode === 'M_UNSUPPORTED' ||
-    matrixErrorCode === 'M_FORBIDDEN'
-  ) {
-    return true
-  }
-  const matrixErrorMessage = readMatrixErrorMessage(error).toLowerCase()
-  return (
-    matrixErrorMessage.includes('registration has been disabled') ||
-    matrixErrorMessage.includes('registration is disabled') ||
-    matrixErrorMessage.includes('registration not supported') ||
-    matrixErrorMessage.includes('registration is not available')
-  )
-}
-
-function supportsEmailVerificationStage(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
-    return false
-  }
-  const matrixError = error as MatrixApiErrorShape
-  const flows = matrixError.flows || matrixError.data?.flows || []
-  return flows.some((flow) => {
-    const stages = flow.stages || []
-    return stages.includes('m.login.email.identity')
-  })
-}
-
-function createRegisterEmailClientSecret(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `decentra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function deleteIndexedDb(databaseName: string): Promise<void> {
@@ -820,81 +679,17 @@ export function useMatrixClient() {
     password: string,
     email?: string
   ): Promise<void> {
-    const resolvedBaseUrl = resolveHomeserverBaseUrlForClient(baseUrl)
-    const authClient = sdk.createClient({ baseUrl: resolvedBaseUrl })
-    const normalizedUsername = extractUserLocalpart(username)
     const trimmedEmail = email?.trim() || ''
-    const authApiClient = authClient as MatrixClient & {
-      registerRequest?: (payload: Record<string, unknown>) => Promise<unknown>
-      register?: (
-        username: string,
-        password: string,
-        sessionId?: string,
-        auth?: Record<string, unknown>,
-        bindThreepids?: boolean,
-        guestAccessToken?: string,
-        inhibitLogin?: boolean
-      ) => Promise<unknown>
-      requestRegisterEmailToken?: (
-        email: string,
-        clientSecret: string,
-        sendAttempt: number,
-        nextLink?: string
-      ) => Promise<unknown>
-    }
-    try {
-      if (typeof authApiClient.registerRequest === 'function') {
-        const registerPayload: Record<string, unknown> = {
-          username: normalizedUsername,
-          password,
-          auth: { type: 'm.login.dummy' },
-          inhibit_login: true
-        }
-        await authApiClient.registerRequest(registerPayload)
-        return
-      }
-      if (typeof authApiClient.register === 'function') {
-        await authApiClient.register(
-          normalizedUsername,
-          password,
-          undefined,
-          { type: 'm.login.dummy' },
-          undefined,
-          undefined,
-          true
-        )
-        return
-      }
-      throw new Error(SIGNUP_UNAVAILABLE_ERROR)
-    } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
-        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
-      }
-      const requiresEmailVerification = supportsEmailVerificationStage(error)
-      const matrixErrorMessage = readMatrixErrorMessage(error)
-      const hasSdkEmailHttpError = (
-        trimmedEmail &&
-        matrixErrorMessage.includes("reading 'http'")
+    if (trimmedEmail) {
+      await startEmailRegistration(
+        baseUrl,
+        username,
+        password,
+        trimmedEmail
       )
-      if (trimmedEmail && (requiresEmailVerification || hasSdkEmailHttpError)) {
-        if (typeof authApiClient.requestRegisterEmailToken === 'function') {
-          const clientSecret = createRegisterEmailClientSecret()
-          await authApiClient.requestRegisterEmailToken(
-            trimmedEmail,
-            clientSecret,
-            1
-          )
-        }
-        throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
-      }
-      if (isSignupUnsupported(error)) {
-        throw new Error(SIGNUP_UNAVAILABLE_ERROR)
-      }
-      if (matrixErrorMessage) {
-        throw new Error(matrixErrorMessage)
-      }
-      throw new Error('Sign up failed')
+      return
     }
+    await registerWithDummy(baseUrl, username, password)
   }
 
   function logout(): void {
@@ -1356,6 +1151,9 @@ export function useMatrixClient() {
     ensureSessionRestoreCompleted,
     login,
     register,
+    startEmailRegistration,
+    finalizeEmailRegistration,
+    clearSignupPending,
     logout,
     getRooms,
     getRoom,
