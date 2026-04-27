@@ -69,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   public room directory search, and user directory search
 - Unit coverage for the new Matrix client wrappers, the room creation
   page, and the `/rooms` auth middleware protection
+- Matrix email sign-up (UIA): pending state in session storage, dedicated
+  registration helpers, two-step `/signup` with an email-confirmation step,
+  `/signup/verify-email` auto-finalize page, and matching i18n keys (#56)
+- E2E stack: MailHog beside Synapse in `tests/e2e/synapse` Docker Compose,
+  optional `DECENTRA_E2E_SIGNUP_EMAIL` homeserver overrides (3pid email +
+  SMTP to MailHog), Cucumber scenarios tagged `@email_signup`, helper
+  runners to exclude that tag in default E2E, `test:e2e:signup-email` full
+  pipeline script, and `tests/e2e/EMAIL-SIGNUP.md` notes
 
 ### Changed
 
@@ -94,6 +102,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   component and reusable `ChatMessageActionBar`
 - Full CI lane now runs E2E against local Dockerized Synapse instead of
   requiring repository Matrix credential secrets
+- Default `test:e2e:run` Cucumber invocation now skips `@email_signup`
+  scenarios; use `test:e2e:run:email` or `test:e2e:signup-email` for the
+  MailHog-backed email registration path
 - Synapse-specific E2E step definitions were consolidated into existing
   `login.steps.mjs` and `chat.steps.mjs`
 - Synapse environment validation moved from scenario-level Given setup into
