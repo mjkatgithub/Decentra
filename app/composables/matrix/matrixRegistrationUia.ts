@@ -23,10 +23,26 @@ export const SIGNUP_REGISTRATION_UNSUPPORTED_STAGE =
 export const SIGNUP_RECAPTCHA_TOKEN_REQUIRED =
   'SIGNUP_RECAPTCHA_TOKEN_REQUIRED'
 export const SIGNUP_RECAPTCHA_FAILED = 'SIGNUP_RECAPTCHA_FAILED'
+export const SIGNUP_SSO_USE_WEB_CLIENT = 'SIGNUP_SSO_USE_WEB_CLIENT'
+export const SIGNUP_MSISDN_NOT_SUPPORTED = 'SIGNUP_MSISDN_NOT_SUPPORTED'
+export const SIGNUP_REGISTRATION_TOKEN_REQUIRED =
+  'SIGNUP_REGISTRATION_TOKEN_REQUIRED'
+export const SIGNUP_REGISTRATION_TOKEN_REJECTED =
+  'SIGNUP_REGISTRATION_TOKEN_REJECTED'
+export const SIGNUP_TERMS_ACCEPTANCE_REQUIRED =
+  'SIGNUP_TERMS_ACCEPTANCE_REQUIRED'
 
 export const SIGNUP_PENDING_STORAGE_KEY = 'decentra.signup.pending.v1'
 
 const SIGNUP_PENDING_V = 1
+
+/** Matrix ToS links for signup (serializable subset). */
+export type SignupTermsPolicyItem = {
+  policyId: string
+  version: string
+  name: string
+  url: string
+}
 
 export type SignupPendingStateV1 = {
   v: 1
@@ -35,7 +51,7 @@ export type SignupPendingStateV1 = {
   password: string
   email: string
   clientSecret: string
-  /** Present after Homeserver issued registration email token sid */
+  /** Present after HS issued registration email token sid */
   sid: string
   session: string
   initialSession: string
@@ -45,6 +61,16 @@ export type SignupPendingStateV1 = {
   recaptchaVersion?: 'v2' | 'v3'
   /** True while user must solve captcha before email token request */
   needsRecaptchaBeforeEmail?: boolean
+  /** True while user must enter registration token before email token */
+  needsRegistrationTokenBeforeEmail?: boolean
+  /** True until user accepts ToS/policy links */
+  needsTermsAcceptanceBeforeEmail?: boolean
+  /** Snapshot for terms UI while {@link needsTermsAcceptanceBeforeEmail} */
+  termsPoliciesSnapshot?: SignupTermsPolicyItem[]
+  /** User-supplied opaque token when required mid-flow */
+  registrationTokenDraft?: string
+  /** Server `completed` UIA rounds (latest known snapshot) */
+  completedStagesSnapshot?: string[]
 }
 
 function createRegisterEmailClientSecret(): string {
@@ -61,6 +87,11 @@ function createRegisterEmailClientSecret(): string {
 const EMAIL_IDENTITY_STAGE = 'm.login.email.identity'
 const DUMMY_STAGE = 'm.login.dummy'
 export const RECAPTCHA_STAGE = 'm.login.recaptcha'
+
+export const REGISTRATION_TOKEN_STAGE = 'm.login.registration_token'
+export const TERMS_STAGE = 'm.login.terms'
+const SSO_STAGE = 'm.login.sso'
+const MSISDN_STAGE = 'm.login.msisdn'
 
 interface MatrixUiaData {
   session?: string
@@ -89,6 +120,101 @@ function readMatrixUiaData(error: unknown): MatrixUiaData | null {
   }
 }
 
+/** Registration token MSC stage aliases (homeserver-provided literal). */
+export function isRegistrationTokenStage(stage: string): boolean {
+  if (!stage.trim()) {
+    return false
+  }
+  if (stage === REGISTRATION_TOKEN_STAGE) {
+    return true
+  }
+  const lower = stage.toLowerCase()
+  return lower.endsWith('.login.registration_token')
+}
+
+/** Terms stage identifiers (usually stable identifier). */
+export function isTermsStage(stage: string): boolean {
+  if (!stage.trim()) {
+    return false
+  }
+  if (stage === TERMS_STAGE) {
+    return true
+  }
+  return stage.toLowerCase().endsWith('.login.terms')
+}
+
+function isSsoStage(stage: string): boolean {
+  if (!stage.trim()) {
+    return false
+  }
+  if (stage === SSO_STAGE) {
+    return true
+  }
+  const lower = stage.toLowerCase()
+  return lower.includes('.login.sso') || lower === 'm.login.oauth2'
+}
+
+function isMsisdnStage(stage: string): boolean {
+  return stage === MSISDN_STAGE ||
+    stage.toLowerCase().endsWith('.login.msisdn')
+}
+
+function isCompleterSupportedUiStage(stage: string): boolean {
+  if (stage === EMAIL_IDENTITY_STAGE) {
+    return true
+  }
+  if (
+    stage === DUMMY_STAGE ||
+    stage === RECAPTCHA_STAGE ||
+    isTermsStage(stage) ||
+    isRegistrationTokenStage(stage)
+  ) {
+    return true
+  }
+  if (isSsoStage(stage) || isMsisdnStage(stage)) {
+    return false
+  }
+  return false
+}
+
+/**
+ * Finds a signup flow containing email.identity where Decentra can complete
+ * every stage (excluding SSO/OIDC phone-only paths).
+ */
+export function pickCompletableEmailSignupFlow(
+  flows: Array<{ stages?: string[] }> | undefined
+):
+  | { ok: true; stages: string[] }
+  | { ok: false; reason: 'no_email' | 'sso_only' | 'msisdn_block' |
+      'unsupported' }
+{
+  if (!Array.isArray(flows)) {
+    return { ok: false, reason: 'no_email' }
+  }
+  const emailFlows = flows
+    .map((flowEntry) => flowEntry.stages || [])
+    .filter((stages) => stages.includes(EMAIL_IDENTITY_STAGE))
+  if (emailFlows.length === 0) {
+    return { ok: false, reason: 'no_email' }
+  }
+  const completable = emailFlows.filter((stageList) =>
+    stageList.every((stage) => isCompleterSupportedUiStage(stage))
+  )
+  if (completable.length > 0) {
+    completable.sort(
+      (a, b) => a.length - b.length || a.join().localeCompare(b.join())
+    )
+    return { ok: true, stages: completable[0] as string[] }
+  }
+  if (emailFlows.every((stageList) => stageList.some(isSsoStage))) {
+    return { ok: false, reason: 'sso_only' }
+  }
+  if (emailFlows.every((stageList) => stageList.some(isMsisdnStage))) {
+    return { ok: false, reason: 'msisdn_block' }
+  }
+  return { ok: false, reason: 'unsupported' }
+}
+
 /**
  * Parses Synapse/Matrix UIA params for {@link RECAPTCHA_STAGE}.
  */
@@ -115,28 +241,221 @@ export function extractRecaptchaFromParams(
   return { siteKey: publicKey.trim(), version }
 }
 
+/** Collects docs from `params` for matrix `m.login.terms`. */
+export function extractTermsPoliciesFromParams(
+  params: Record<string, unknown> | undefined,
+  preferredLocales: readonly string[]
+): SignupTermsPolicyItem[] {
+  if (!params || typeof params !== 'object') {
+    return []
+  }
+  let policiesBlock: Record<string, unknown> | null = null
+  const direct = params[TERMS_STAGE]
+  if (
+    direct &&
+    typeof direct === 'object' &&
+    !Array.isArray(direct)
+  ) {
+    policiesBlock =
+      extractPoliciesMap(direct as Record<string, unknown>)
+  }
+  if (!policiesBlock) {
+    for (const [, valueUnknown] of Object.entries(params)) {
+      if (
+        valueUnknown &&
+        typeof valueUnknown === 'object' &&
+        !Array.isArray(valueUnknown)
+      ) {
+        const trial = extractPoliciesMap(
+          valueUnknown as Record<string, unknown>
+        )
+        if (trial) {
+          policiesBlock = trial
+          break
+        }
+      }
+    }
+  }
+  if (!policiesBlock) {
+    return []
+  }
+  const locales = preferredLocales
+    .filter((locale) => typeof locale === 'string' && locale.trim())
+    .map((locale) => locale.trim().replace(/_/g, '-'))
+  const out: SignupTermsPolicyItem[] = []
+  for (const [policyId, defUnknown] of Object.entries(policiesBlock)) {
+    if (
+      typeof defUnknown !== 'object' ||
+      defUnknown === null ||
+      Array.isArray(defUnknown)
+    ) {
+      continue
+    }
+    const defRecord = defUnknown as Record<string, unknown>
+    const version =
+      typeof defRecord.version === 'string'
+        ? defRecord.version.trim()
+        : ''
+    let chosenName = ''
+    let chosenUrl = ''
+    for (const locale of locales) {
+      const tryShort = locale.split('-')[0] ?? locale
+      const candidates =
+        locale === tryShort
+          ? [locale]
+          : [locale, tryShort].filter(Boolean) as string[]
+      for (const cand of candidates) {
+        const tr = pickPolicyTranslation(defRecord, cand)
+        if (tr) {
+          chosenName = tr.name
+          chosenUrl = tr.url
+          break
+        }
+      }
+      if (chosenUrl) {
+        break
+      }
+    }
+    if (!chosenUrl) {
+      for (const [, valueMaybe] of Object.entries(defRecord)) {
+        if (valueMaybe === version) {
+          continue
+        }
+        if (
+          valueMaybe &&
+          typeof valueMaybe === 'object' &&
+          !Array.isArray(valueMaybe)
+        ) {
+          const trMaybe = valueMaybe as Record<string, unknown>
+          const n = trMaybe.name
+          const u = trMaybe.url
+          if (typeof u === 'string' && u.trim()) {
+            chosenName = typeof n === 'string' && n.trim()
+              ? n.trim()
+              : policyId
+            chosenUrl = u.trim()
+            break
+          }
+        }
+      }
+    }
+    if (chosenUrl) {
+      out.push({
+        policyId,
+        version: version || '—',
+        name: chosenName || policyId,
+        url: chosenUrl
+      })
+    }
+  }
+  return out
+}
+
+function extractPoliciesMap(
+  block: Record<string, unknown>
+): Record<string, unknown> | null {
+  const direct = block.policies
+  if (
+    direct &&
+    typeof direct === 'object' &&
+    !Array.isArray(direct)
+  ) {
+    return direct as Record<string, unknown>
+  }
+  const keysTop = Object.keys(block)
+  if (
+    keysTop.some((attributeKey) => attributeKey === 'policies')
+  ) {
+    return null
+  }
+  if (keysTop.length > 0) {
+    return block
+  }
+  return null
+}
+
+function pickPolicyTranslation(
+  defRecord: Record<string, unknown>,
+  localeTag: string
+): { name: string; url: string } | null {
+  const trUnknown = defRecord[localeTag]
+  if (
+    trUnknown &&
+    typeof trUnknown === 'object' &&
+    !Array.isArray(trUnknown)
+  ) {
+    const trRecord = trUnknown as Record<string, unknown>
+    const name = typeof trRecord.name === 'string'
+      ? trRecord.name.trim()
+      : ''
+    const url = typeof trRecord.url === 'string'
+      ? trRecord.url.trim()
+      : ''
+    if (url) {
+      return { name: name || localeTag, url }
+    }
+  }
+  const altLocale = localeTag.replace(/-/g, '_')
+  if (altLocale !== localeTag) {
+    return pickPolicyTranslation(defRecord, altLocale)
+  }
+  return null
+}
+
+function preferredSignupLocales(): string[] {
+  if (typeof navigator === 'undefined' || !navigator.language) {
+    return ['en']
+  }
+  const primary = navigator.language
+  const list = navigator.languages?.length
+    ? [...navigator.languages]
+    : [primary]
+  const uniq: string[] = []
+  const seenLower = new Set<string>()
+  for (const locale of list) {
+    const trimmed = locale.trim()
+    const low = trimmed.toLowerCase()
+    if (trimmed && !seenLower.has(low)) {
+      seenLower.add(low)
+      uniq.push(trimmed)
+    }
+  }
+  if (!uniq.includes('en')) {
+    uniq.push('en')
+  }
+  return uniq
+}
+
 export function signupPendingNeedsRecaptchaBeforeEmail(): boolean {
   const pending = readSignupPending()
   return pending?.needsRecaptchaBeforeEmail === true
+}
+
+export function signupPendingNeedsRegistrationTokenBeforeEmail(): boolean {
+  const pending = readSignupPending()
+  return pending?.needsRegistrationTokenBeforeEmail === true
+}
+
+export function signupPendingNeedsTermsBeforeEmail(): boolean {
+  const pending = readSignupPending()
+  return pending?.needsTermsAcceptanceBeforeEmail === true
 }
 
 export function readSignupPendingPublic(): SignupPendingStateV1 | null {
   return readSignupPending()
 }
 
-function pickFlowWithEmail(
-  flows: Array<{ stages?: string[] }> | undefined
-): string[] | null {
-  if (!Array.isArray(flows)) {
-    return null
+export function hydrateTermsPoliciesForPending(): SignupTermsPolicyItem[] {
+  const pending = readSignupPending()
+  const params = pending?.paramsSnapshot
+  const existing = pending?.termsPoliciesSnapshot
+  if (existing?.length) {
+    return existing
   }
-  for (const flow of flows) {
-    const stages = flow.stages || []
-    if (stages.includes(EMAIL_IDENTITY_STAGE)) {
-      return stages
-    }
-  }
-  return null
+  return extractTermsPoliciesFromParams(
+    params,
+    preferredSignupLocales()
+  )
 }
 
 function getNextAuthStage(
@@ -150,6 +469,120 @@ function getNextAuthStage(
     }
   }
   return null
+}
+
+function mergeParamsIntoPending(
+  pending: SignupPendingStateV1,
+  params: Record<string, unknown> | undefined
+): void {
+  if (
+    params &&
+    typeof params === 'object' &&
+    !Array.isArray(params)
+  ) {
+    pending.paramsSnapshot = {
+      ...(pending.paramsSnapshot ?? {}),
+      ...params
+    }
+    const recMeta = extractRecaptchaFromParams(pending.paramsSnapshot)
+    if (recMeta) {
+      pending.recaptchaSiteKey = recMeta.siteKey
+      pending.recaptchaVersion = recMeta.version
+    }
+  }
+}
+
+function clearSignupBlockingFlags(
+  pending: SignupPendingStateV1
+): void {
+  pending.needsRecaptchaBeforeEmail = false
+  pending.needsRegistrationTokenBeforeEmail = false
+  pending.needsTermsAcceptanceBeforeEmail = false
+}
+
+function refreshTermsSnapshot(pending: SignupPendingStateV1): void {
+  pending.termsPoliciesSnapshot = extractTermsPoliciesFromParams(
+    pending.paramsSnapshot,
+    preferredSignupLocales()
+  )
+  writeSignupPending(pending)
+}
+
+/**
+ * After a successful interim `registerRequest`, decide next blocker or loop.
+ */
+async function resumeSignupPipeline(
+  pending: SignupPendingStateV1,
+  authClient: RegisterAuthClient,
+  uia: MatrixUiaData
+): Promise<void> {
+  clearSignupBlockingFlags(pending)
+  if (uia.session) {
+    pending.session = uia.session
+  }
+  mergeParamsIntoPending(
+    pending,
+    uia.params &&
+      typeof uia.params === 'object' &&
+      !Array.isArray(uia.params)
+      ? (uia.params as Record<string, unknown>)
+      : undefined
+  )
+  const completedList = uia.completed || []
+  pending.completedStagesSnapshot = [...completedList]
+  const nextStageRaw = getNextAuthStage(pending.flowStages, completedList)
+  if (!nextStageRaw) {
+    throw new Error(SIGNUP_REGISTRATION_UNSUPPORTED_STAGE)
+  }
+  if (isSsoStage(nextStageRaw)) {
+    throw new Error(SIGNUP_SSO_USE_WEB_CLIENT)
+  }
+  if (isMsisdnStage(nextStageRaw)) {
+    throw new Error(SIGNUP_MSISDN_NOT_SUPPORTED)
+  }
+  writeSignupPending(pending)
+
+  if (isRegistrationTokenStage(nextStageRaw)) {
+    pending.needsRegistrationTokenBeforeEmail = true
+    writeSignupPending(pending)
+    return
+  }
+  if (isTermsStage(nextStageRaw)) {
+    pending.needsTermsAcceptanceBeforeEmail = true
+    refreshTermsSnapshot(pending)
+    writeSignupPending(pending)
+    return
+  }
+  if (nextStageRaw === RECAPTCHA_STAGE) {
+    pending.needsRecaptchaBeforeEmail = true
+    writeSignupPending(pending)
+    return
+  }
+
+  const nextLink = `${window.location.origin}/signup/verify-email`
+  if (nextStageRaw === EMAIL_IDENTITY_STAGE && !pending.sid) {
+    if (typeof authClient.requestRegisterEmailToken !== 'function') {
+      throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
+    }
+    const tokenSid = await authClient.requestRegisterEmailToken(
+      pending.email,
+      pending.clientSecret,
+      1,
+      nextLink
+    ) as { sid?: string }
+    const sid = tokenSid.sid
+    if (!sid) {
+      throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
+    }
+    pending.sid = sid
+    writeSignupPending(pending)
+    return
+  }
+
+  await runSignupFinalizeLoop(pending, authClient, {
+    initialCompleted: completedList,
+    initialSession: pending.session
+  })
 }
 
 function isEmailNotVerifiedError(error: unknown): boolean {
@@ -173,6 +606,22 @@ function isEmailNotVerifiedError(error: unknown): boolean {
     return true
   }
   return false
+}
+
+function isLikelyRegistrationTokenRejected(error: unknown): boolean {
+  const code = readMatrixErrorCode(error).toUpperCase()
+  const message = readMatrixErrorMessage(error).toLowerCase()
+  return (
+    code.includes('TOKEN') ||
+    message.includes('registration token') ||
+    message.includes('invalid token') ||
+    message.includes('token is not valid')
+  )
+}
+
+function isLikelyTermsRejected(error: unknown): boolean {
+  const msg = readMatrixErrorMessage(error).toLowerCase()
+  return msg.includes('terms') || msg.includes('policy')
 }
 
 type RegisterAuthClient = MatrixClient & {
@@ -238,6 +687,28 @@ export function buildRecaptchaAuthPayload(
     type: RECAPTCHA_STAGE,
     session: sessionId,
     response: responseToken
+  }
+}
+
+export function buildRegistrationTokenAuthPayload(
+  sessionId: string,
+  opaqueToken: string,
+  matrixStageIdentifier: string
+): Record<string, unknown> {
+  return {
+    type: matrixStageIdentifier,
+    session: sessionId,
+    token: opaqueToken.trim()
+  }
+}
+
+export function buildTermsAuthPayload(
+  sessionId: string,
+  matrixStageIdentifier: string
+): Record<string, unknown> {
+  return {
+    type: matrixStageIdentifier,
+    session: sessionId
   }
 }
 
@@ -362,13 +833,23 @@ export async function startEmailRegistration(
       }
       throw error
     }
-    const flowStages = pickFlowWithEmail(uia.flows)
-    if (!flowStages) {
+    const picked = pickCompletableEmailSignupFlow(uia.flows)
+    if (!picked.ok) {
       if (isSignupUnsupported(error)) {
         throw new Error(SIGNUP_UNAVAILABLE_ERROR)
       }
+      if (picked.reason === 'sso_only') {
+        throw new Error(SIGNUP_SSO_USE_WEB_CLIENT)
+      }
+      if (picked.reason === 'msisdn_block') {
+        throw new Error(SIGNUP_MSISDN_NOT_SUPPORTED)
+      }
+      if (picked.reason === 'unsupported') {
+        throw new Error(SIGNUP_REGISTRATION_UNSUPPORTED_STAGE)
+      }
       throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
     }
+    const flowStages = picked.stages
     const paramsRaw = uia.params
     const params: Record<string, unknown> =
       paramsRaw &&
@@ -377,11 +858,12 @@ export async function startEmailRegistration(
         ? (paramsRaw as Record<string, unknown>)
         : {}
     const completedInitial = uia.completed || []
-    const firstStage = getNextAuthStage(flowStages, completedInitial)
+    const firstStageRaw = getNextAuthStage(flowStages, completedInitial)
     const recMeta = extractRecaptchaFromParams(params)
 
-    if (firstStage === RECAPTCHA_STAGE) {
-      const pendingCaptchaFirst: SignupPendingStateV1 = {
+    function buildBasePending(part: Partial<SignupPendingStateV1>):
+      SignupPendingStateV1 {
+      return {
         v: SIGNUP_PENDING_V,
         baseUrl: resolved,
         username: normUser,
@@ -389,84 +871,121 @@ export async function startEmailRegistration(
         email: trimmed,
         clientSecret,
         sid: '',
-        session: uia.session,
-        initialSession: uia.session,
+        session: uia.session ?? '',
+        initialSession: uia.session ?? '',
         flowStages,
-        paramsSnapshot: params,
+        paramsSnapshot: Object.keys(params).length > 0 ? params : undefined,
         recaptchaSiteKey: recMeta?.siteKey,
         recaptchaVersion: recMeta?.version ?? 'v2',
-        needsRecaptchaBeforeEmail: true
+        completedStagesSnapshot: [...completedInitial],
+        ...part
       }
-      writeSignupPending(pendingCaptchaFirst)
+    }
+
+    if (!firstStageRaw) {
+      throw new Error(SIGNUP_REGISTRATION_UNSUPPORTED_STAGE)
+    }
+    if (isSsoStage(firstStageRaw)) {
+      throw new Error(SIGNUP_SSO_USE_WEB_CLIENT)
+    }
+    if (isMsisdnStage(firstStageRaw)) {
+      throw new Error(SIGNUP_MSISDN_NOT_SUPPORTED)
+    }
+    if (isRegistrationTokenStage(firstStageRaw)) {
+      const pendingToken: SignupPendingStateV1 =
+        buildBasePending({ needsRegistrationTokenBeforeEmail: true })
+      writeSignupPending(pendingToken)
+      return
+    }
+    if (isTermsStage(firstStageRaw)) {
+      const pendingTerms = buildBasePending({
+        needsTermsAcceptanceBeforeEmail: true
+      })
+      writeSignupPending(pendingTerms)
+      refreshTermsSnapshot(pendingTerms)
+      writeSignupPending(pendingTerms)
+      return
+    }
+    if (firstStageRaw === RECAPTCHA_STAGE) {
+      writeSignupPending(
+        buildBasePending({
+          needsRecaptchaBeforeEmail: true
+        })
+      )
       return
     }
 
     if (typeof authClient.requestRegisterEmailToken !== 'function') {
       throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
     }
-    const token = await authClient.requestRegisterEmailToken(
+    const sidResponse = await authClient.requestRegisterEmailToken(
       trimmed,
       clientSecret,
       1,
       nextLink
     ) as { sid?: string }
-    const sid = token.sid
+    const sid = sidResponse.sid
     if (!sid) {
       throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
     }
-    const pending: SignupPendingStateV1 = {
-      v: SIGNUP_PENDING_V,
-      baseUrl: resolved,
-      username: normUser,
-      password,
-      email: trimmed,
-      clientSecret,
+    const pendingRegular: SignupPendingStateV1 = buildBasePending({
       sid,
-      session: uia.session,
-      initialSession: uia.session,
-      flowStages,
-      paramsSnapshot: Object.keys(params).length > 0 ? params : undefined,
-      recaptchaSiteKey: recMeta?.siteKey,
-      recaptchaVersion: recMeta?.version,
       needsRecaptchaBeforeEmail: false
-    }
-    writeSignupPending(pending)
+    })
+    writeSignupPending(pendingRegular)
   }
 }
 
 type FinalizeLoopOptions = {
   recaptchaResponse?: string | null
+  registrationTokenOverride?: string | null
   initialCompleted?: string[]
   initialSession?: string | null
 }
 
 async function runSignupFinalizeLoop(
-  pending: SignupPendingStateV1,
+  pendingArg: SignupPendingStateV1,
   authClient: RegisterAuthClient,
   loopOptions?: FinalizeLoopOptions
 ): Promise<void> {
+  const pendingLocal: SignupPendingStateV1 = pendingArg
+
   let session =
     loopOptions?.initialSession != null &&
       loopOptions.initialSession !== ''
       ? loopOptions.initialSession
-      : pending.session
-  let completedList = [...(loopOptions?.initialCompleted ?? [])]
+      : pendingLocal.session
+  let completedList: string[]
+  if (loopOptions?.initialCompleted != null) {
+    completedList = [...loopOptions.initialCompleted]
+  } else {
+    completedList = [...(pendingLocal.completedStagesSnapshot ?? [])]
+  }
+  pendingLocal.completedStagesSnapshot = [...completedList]
   let pendingRecaptchaToken =
     loopOptions?.recaptchaResponse?.trim() ?? ''
+  let pendingOpaqueToken =
+    loopOptions?.registrationTokenOverride?.trim() ?? ''
 
   for (let round = 0; round < 12; round++) {
     const nextStage = getNextAuthStage(
-      pending.flowStages,
+      pendingLocal.flowStages,
       completedList
     )
     if (!nextStage) {
       throw new Error('Sign up failed')
     }
+    if (isSsoStage(nextStage)) {
+      throw new Error(SIGNUP_SSO_USE_WEB_CLIENT)
+    }
+    if (isMsisdnStage(nextStage)) {
+      throw new Error(SIGNUP_MSISDN_NOT_SUPPORTED)
+    }
     let authPayload: Record<string, unknown>
     if (nextStage === EMAIL_IDENTITY_STAGE) {
       authPayload = buildEmailAuthPayload(
         authClient,
-        pending,
+        pendingLocal,
         session
       )
     } else if (nextStage === DUMMY_STAGE) {
@@ -478,13 +997,34 @@ async function runSignupFinalizeLoop(
       }
       pendingRecaptchaToken = ''
       authPayload = buildRecaptchaAuthPayload(session, tokenToSend)
+    } else if (isRegistrationTokenStage(nextStage)) {
+      const opaque = pendingOpaqueToken.trim() ||
+        (pendingLocal.registrationTokenDraft || '').trim()
+      if (!opaque) {
+        pendingLocal.needsRegistrationTokenBeforeEmail = true
+        writeSignupPending(pendingLocal)
+        throw new Error(SIGNUP_REGISTRATION_TOKEN_REQUIRED)
+      }
+      pendingOpaqueToken = ''
+      pendingLocal.registrationTokenDraft = opaque
+      writeSignupPending(pendingLocal)
+      authPayload = buildRegistrationTokenAuthPayload(
+        session,
+        opaque,
+        nextStage
+      )
+    } else if (isTermsStage(nextStage)) {
+      pendingLocal.needsTermsAcceptanceBeforeEmail = true
+      refreshTermsSnapshot(pendingLocal)
+      writeSignupPending(pendingLocal)
+      throw new Error(SIGNUP_TERMS_ACCEPTANCE_REQUIRED)
     } else {
       throw new Error(SIGNUP_REGISTRATION_UNSUPPORTED_STAGE)
     }
     try {
       await authClient.registerRequest({
-        username: pending.username,
-        password: pending.password,
+        username: pendingLocal.username,
+        password: pendingLocal.password,
         inhibit_login: true,
         auth: authPayload
       })
@@ -509,13 +1049,25 @@ async function runSignupFinalizeLoop(
       ) {
         throw new Error(SIGNUP_RECAPTCHA_FAILED)
       }
+      if (
+        isRegistrationTokenStage(nextStage) &&
+        isLikelyRegistrationTokenRejected(error)
+      ) {
+        throw new Error(SIGNUP_REGISTRATION_TOKEN_REJECTED)
+      }
+      if (
+        isTermsStage(nextStage) &&
+        isLikelyTermsRejected(error)
+      ) {
+        throw new Error(SIGNUP_TERMS_ACCEPTANCE_REQUIRED)
+      }
       const uia = readMatrixUiaData(error)
       if (uia) {
         if (
           round === 0 &&
           nextStage === EMAIL_IDENTITY_STAGE &&
           uia.session &&
-          uia.session !== pending.session &&
+          uia.session !== pendingLocal.session &&
           !(uia.completed || []).includes(EMAIL_IDENTITY_STAGE) &&
           !isEmailNotVerifiedError(error)
         ) {
@@ -525,8 +1077,17 @@ async function runSignupFinalizeLoop(
           round === 0 &&
           nextStage === RECAPTCHA_STAGE &&
           uia.session &&
-          uia.session !== pending.session &&
+          uia.session !== pendingLocal.session &&
           !(uia.completed || []).includes(RECAPTCHA_STAGE)
+        ) {
+          throw new Error(SIGNUP_SESSION_EXPIRED)
+        }
+        if (
+          round === 0 &&
+          isRegistrationTokenStage(nextStage) &&
+          uia.session &&
+          uia.session !== pendingLocal.session &&
+          !(uia.completed || []).includes(nextStage)
         ) {
           throw new Error(SIGNUP_SESSION_EXPIRED)
         }
@@ -536,27 +1097,17 @@ async function runSignupFinalizeLoop(
         if (Array.isArray(uia.completed)) {
           completedList = [...(uia.completed as string[])]
         }
-        const mergedParams =
+        mergeParamsIntoPending(
+          pendingLocal,
           uia.params &&
-          typeof uia.params === 'object' &&
-          !Array.isArray(uia.params)
+            typeof uia.params === 'object' &&
+            !Array.isArray(uia.params)
             ? (uia.params as Record<string, unknown>)
             : undefined
-        if (mergedParams) {
-          pending.paramsSnapshot = {
-            ...(pending.paramsSnapshot ?? {}),
-            ...mergedParams
-          }
-          const recMeta = extractRecaptchaFromParams(
-            pending.paramsSnapshot
-          )
-          if (recMeta) {
-            pending.recaptchaSiteKey = recMeta.siteKey
-            pending.recaptchaVersion = recMeta.version
-          }
-        }
-        pending.session = session
-        writeSignupPending(pending)
+        )
+        pendingLocal.completedStagesSnapshot = [...completedList]
+        pendingLocal.session = session
+        writeSignupPending(pendingLocal)
         continue
       }
       if (
@@ -631,63 +1182,182 @@ export async function submitSignupRecaptcha(
     if (uia.session) {
       pending.session = uia.session
     }
-    const mergedParamsSubmit =
+    mergeParamsIntoPending(
+      pending,
       uia.params &&
-      typeof uia.params === 'object' &&
-      !Array.isArray(uia.params)
+        typeof uia.params === 'object' &&
+        !Array.isArray(uia.params)
         ? (uia.params as Record<string, unknown>)
         : undefined
-    if (mergedParamsSubmit) {
-      pending.paramsSnapshot = {
-        ...(pending.paramsSnapshot ?? {}),
-        ...mergedParamsSubmit
-      }
-      const recMetaSubmit = extractRecaptchaFromParams(
-        pending.paramsSnapshot
-      )
-      if (recMetaSubmit) {
-        pending.recaptchaSiteKey = recMetaSubmit.siteKey
-        pending.recaptchaVersion = recMetaSubmit.version
-      }
-    }
-    pending.needsRecaptchaBeforeEmail = false
-    writeSignupPending(pending)
-
-    const completedList = uia.completed || []
-    const nextStage = getNextAuthStage(
-      pending.flowStages,
-      completedList
     )
-    const nextLink = `${window.location.origin}/signup/verify-email`
+    await resumeSignupPipeline(pending, authClient, uia)
+  }
+}
 
-    if (nextStage === EMAIL_IDENTITY_STAGE && !pending.sid) {
-      if (typeof authClient.requestRegisterEmailToken !== 'function') {
-        throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
-      }
-      const token = await authClient.requestRegisterEmailToken(
-        pending.email,
-        pending.clientSecret,
-        1,
-        nextLink
-      ) as { sid?: string }
-      const sid = token.sid
-      if (!sid) {
-        throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
-      }
-      pending.sid = sid
-      writeSignupPending(pending)
-      return
-    }
+export async function submitSignupRegistrationToken(
+  opaqueToken: string
+): Promise<void> {
+  if (typeof window === 'undefined') {
+    throw new Error(SIGNUP_PENDING_MISSING)
+  }
+  const trimmed = opaqueToken.trim()
+  if (!trimmed) {
+    throw new Error(SIGNUP_REGISTRATION_TOKEN_REQUIRED)
+  }
+  const pendingSnapshot = readSignupPending()
+  if (!pendingSnapshot) {
+    throw new Error(SIGNUP_PENDING_MISSING)
+  }
+  const snapshotTok = pendingSnapshot.completedStagesSnapshot ?? []
+  const litTok = getNextAuthStage(pendingSnapshot.flowStages, snapshotTok)
+  const awaitingTokenUx =
+    pendingSnapshot.needsRegistrationTokenBeforeEmail === true ||
+    isRegistrationTokenStage(litTok ?? '')
+  if (!awaitingTokenUx) {
+    throw new Error(SIGNUP_REGISTRATION_TOKEN_REJECTED)
+  }
+  pendingSnapshot.registrationTokenDraft = trimmed
+  writeSignupPending(pendingSnapshot)
+  const authClient = sdk.createClient({
+    baseUrl: resolveHomeserverBaseUrlForClient(pendingSnapshot.baseUrl)
+  }) as RegisterAuthClient
+  if (typeof authClient.registerRequest !== 'function') {
+    throw new Error(SIGNUP_UNAVAILABLE_ERROR)
+  }
 
-    await runSignupFinalizeLoop(pending, authClient, {
-      initialCompleted: completedList,
-      initialSession: pending.session
+  const nextStageLit = litTok
+  const registrationStageId =
+    typeof nextStageLit === 'string' &&
+      isRegistrationTokenStage(nextStageLit)
+      ? nextStageLit
+      : REGISTRATION_TOKEN_STAGE
+
+  try {
+    await authClient.registerRequest({
+      username: pendingSnapshot.username,
+      password: pendingSnapshot.password,
+      inhibit_login: true,
+      auth: buildRegistrationTokenAuthPayload(
+        pendingSnapshot.session,
+        trimmed,
+        registrationStageId
+      )
     })
+    clearSignupPending()
+    return
+  } catch (error) {
+    if (isLikelyBrowserNetworkOrCorsError(error)) {
+      throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+    }
+    if (isLikelyRegistrationTokenRejected(error)) {
+      throw new Error(SIGNUP_REGISTRATION_TOKEN_REJECTED)
+    }
+    const uia = readMatrixUiaData(error)
+    if (!uia) {
+      if (isSignupUnsupported(error)) {
+        throw new Error(SIGNUP_UNAVAILABLE_ERROR)
+      }
+      const matrixMessage = readMatrixErrorMessage(error)
+      if (matrixMessage) {
+        throw new Error(matrixMessage)
+      }
+      throw error
+    }
+    if (uia.session) {
+      pendingSnapshot.session = uia.session
+    }
+    mergeParamsIntoPending(
+      pendingSnapshot,
+      uia.params &&
+        typeof uia.params === 'object' &&
+        !Array.isArray(uia.params)
+        ? (uia.params as Record<string, unknown>)
+        : undefined
+    )
+    await resumeSignupPipeline(pendingSnapshot, authClient, uia)
+  }
+}
+
+export async function submitSignupTermsAcceptance(): Promise<void> {
+  if (typeof window === 'undefined') {
+    throw new Error(SIGNUP_PENDING_MISSING)
+  }
+  const pending = readSignupPending()
+  if (!pending) {
+    throw new Error(SIGNUP_PENDING_MISSING)
+  }
+  const snapshotTerms = pending.completedStagesSnapshot ?? []
+  const litTerms = getNextAuthStage(pending.flowStages, snapshotTerms)
+  const awaitingTermsUx =
+    pending.needsTermsAcceptanceBeforeEmail === true ||
+    isTermsStage(litTerms ?? '')
+  if (!awaitingTermsUx) {
+    throw new Error(SIGNUP_TERMS_ACCEPTANCE_REQUIRED)
+  }
+  const authClient = sdk.createClient({
+    baseUrl: resolveHomeserverBaseUrlForClient(pending.baseUrl)
+  }) as RegisterAuthClient
+  if (typeof authClient.registerRequest !== 'function') {
+    throw new Error(SIGNUP_UNAVAILABLE_ERROR)
+  }
+
+  const nextLit = getNextAuthStage(
+    pending.flowStages,
+    snapshotTerms
+  )
+  const stageType =
+    typeof nextLit === 'string' &&
+      isTermsStage(nextLit)
+      ? nextLit
+      : TERMS_STAGE
+
+  try {
+    await authClient.registerRequest({
+      username: pending.username,
+      password: pending.password,
+      inhibit_login: true,
+      auth: buildTermsAuthPayload(pending.session, stageType)
+    })
+    clearSignupPending()
+    return
+  } catch (error) {
+    if (isLikelyBrowserNetworkOrCorsError(error)) {
+      throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+    }
+    if (isLikelyTermsRejected(error)) {
+      throw new Error(SIGNUP_TERMS_ACCEPTANCE_REQUIRED)
+    }
+    const uia = readMatrixUiaData(error)
+    if (!uia) {
+      if (isSignupUnsupported(error)) {
+        throw new Error(SIGNUP_UNAVAILABLE_ERROR)
+      }
+      const matrixMessage = readMatrixErrorMessage(error)
+      if (matrixMessage) {
+        throw new Error(matrixMessage)
+      }
+      throw error
+    }
+    if (uia.session) {
+      pending.session = uia.session
+    }
+    mergeParamsIntoPending(
+      pending,
+      uia.params &&
+        typeof uia.params === 'object' &&
+        !Array.isArray(uia.params)
+        ? (uia.params as Record<string, unknown>)
+        : undefined
+    )
+    await resumeSignupPipeline(pending, authClient, uia)
   }
 }
 
 export async function finalizeEmailRegistration(
-  options?: { recaptchaResponse?: string | null }
+  options?: {
+    recaptchaResponse?: string | null
+    registrationToken?: string | null
+  }
 ): Promise<void> {
   if (typeof window === 'undefined') {
     throw new Error(SIGNUP_PENDING_MISSING)
@@ -702,8 +1372,10 @@ export async function finalizeEmailRegistration(
   if (typeof authClient.registerRequest !== 'function') {
     throw new Error(SIGNUP_UNAVAILABLE_ERROR)
   }
+
   await runSignupFinalizeLoop(pending, authClient, {
-    recaptchaResponse: options?.recaptchaResponse
+    recaptchaResponse: options?.recaptchaResponse,
+    registrationTokenOverride: options?.registrationToken
   })
 }
 

@@ -35,6 +35,28 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpUnsupportedAuthStage':
       'This homeserver needs an additional sign-up step that Decentra ' +
       'does not support yet.',
+    'auth.signUpSsoUseWebClient':
+      'This homeserver only allows SSO sign-up. Please use the official ' +
+      'Element web client in a browser, then continue in Decentra after ' +
+      'your account exists.',
+    'auth.signUpMsisdnUnsupported':
+      'This homeserver expects phone-number (SMS) confirmation. Decentra ' +
+      'does not support SMS sign-up yet.',
+    'auth.signUpRegistrationTokenTitle': 'Registration token',
+    'auth.signUpRegistrationTokenPlaceholder':
+      'Paste token from homeserver admins',
+    'auth.signUpRegistrationTokenSubmit': 'Continue',
+    'auth.signUpRegistrationTokenRequired':
+      'Homeserver requires a registration token. Enter it below.',
+    'auth.signUpRegistrationTokenRejected':
+      'This registration token was rejected. Check with your homeserver ' +
+      'and try another token.',
+    'auth.signUpTermsTitle': 'Accept policies',
+    'auth.signUpTermsAcceptCheckbox':
+      'I have read and agree to all policies linked above.',
+    'auth.signUpTermsContinue': 'Continue',
+    'auth.signUpTermsEmptyPolicies':
+      'This homeserver did not send usable policy URLs. Cannot continue.',
     'auth.signUpRetry': 'Try again',
     'auth.signUpBackToForm': 'Back to sign-up',
     'auth.signUpCaptchaTitle': 'Verify you are human',
@@ -230,6 +252,31 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpUnsupportedAuthStage':
       'Dieser Homeserver verlangt einen weiteren Registrierungs-Schritt, ' +
       'den Decentra noch nicht unterstuetzt.',
+    'auth.signUpSsoUseWebClient':
+      'Dieser Homeserver erlaubt die Registrierung nur ueber SSO. Bitte ' +
+      'die offizielle Element-Web-App im Browser nutzen, danach kannst du ' +
+      'hier fortfahren, sobald ein Account besteht.',
+    'auth.signUpMsisdnUnsupported':
+      'Dieser Homeserver erwartet Bestaetigung per Mobilnummer/SMS. ' +
+      'Decentra unterstuetzt diese SMS-Registrierung noch nicht.',
+    'auth.signUpRegistrationTokenTitle':
+      'Registrierungs-Token',
+    'auth.signUpRegistrationTokenPlaceholder':
+      'Token von den Homeserver-Admins einfuegen',
+    'auth.signUpRegistrationTokenSubmit': 'Fortfahren',
+    'auth.signUpRegistrationTokenRequired':
+      'Der Homeserver braucht ein Registrierungs-Token.' +
+      ' Bitte gib es unten ein.',
+    'auth.signUpRegistrationTokenRejected':
+      'Das Token wird vom Homeserver nicht akzeptiert. Bitte pruefen ' +
+      'oder ein gueltiges Token verwenden.',
+    'auth.signUpTermsTitle': 'Richtlinien akzeptieren',
+    'auth.signUpTermsAcceptCheckbox':
+      'Ich habe die verlinkten Richtlinien gelesen und stimme allen zu.',
+    'auth.signUpTermsContinue': 'Fortfahren',
+    'auth.signUpTermsEmptyPolicies':
+      'Nutzbare Links zu Richtlinien fehlen. Fortsetzen ist nicht ' +
+      'moeglich.',
     'auth.signUpRetry': 'Erneut versuchen',
     'auth.signUpBackToForm': 'Zurueck zur Registrierung',
     'auth.signUpCaptchaTitle': 'Bestaetigung gegen Bots',

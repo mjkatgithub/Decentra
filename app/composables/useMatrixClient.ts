@@ -26,8 +26,13 @@ import {
   readSignupPendingPublic,
   registerWithDummy,
   signupPendingNeedsRecaptchaBeforeEmail,
+  signupPendingNeedsRegistrationTokenBeforeEmail,
+  signupPendingNeedsTermsBeforeEmail,
+  hydrateTermsPoliciesForPending,
   startEmailRegistration,
   submitSignupRecaptcha,
+  submitSignupRegistrationToken,
+  submitSignupTermsAcceptance,
   SIGNUP_EMAIL_NOT_CONFIRMED_YET,
   SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
   SIGNUP_PENDING_MISSING,
@@ -35,17 +40,27 @@ import {
   SIGNUP_RECAPTCHA_FAILED,
   SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
+  SIGNUP_REGISTRATION_TOKEN_REJECTED,
+  SIGNUP_REGISTRATION_TOKEN_REQUIRED,
+  SIGNUP_TERMS_ACCEPTANCE_REQUIRED,
+  SIGNUP_MSISDN_NOT_SUPPORTED,
+  SIGNUP_SSO_USE_WEB_CLIENT,
   SIGNUP_SESSION_EXPIRED,
   SIGNUP_UNAVAILABLE_ERROR
 } from './matrix/matrixRegistrationUia'
 export {
   clearSignupPending,
   finalizeEmailRegistration,
+  hydrateTermsPoliciesForPending,
   readSignupPendingPublic,
   registerWithDummy,
   signupPendingNeedsRecaptchaBeforeEmail,
+  signupPendingNeedsRegistrationTokenBeforeEmail,
+  signupPendingNeedsTermsBeforeEmail,
   startEmailRegistration,
   submitSignupRecaptcha,
+  submitSignupRegistrationToken,
+  submitSignupTermsAcceptance,
   SIGNUP_EMAIL_NOT_CONFIRMED_YET,
   SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
   SIGNUP_PENDING_MISSING,
@@ -53,14 +68,28 @@ export {
   SIGNUP_RECAPTCHA_FAILED,
   SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
+  SIGNUP_REGISTRATION_TOKEN_REJECTED,
+  SIGNUP_REGISTRATION_TOKEN_REQUIRED,
+  SIGNUP_TERMS_ACCEPTANCE_REQUIRED,
+  SIGNUP_MSISDN_NOT_SUPPORTED,
+  SIGNUP_SSO_USE_WEB_CLIENT,
   SIGNUP_SESSION_EXPIRED,
   SIGNUP_UNAVAILABLE_ERROR
 }
 export type { SignupPendingStateV1 } from './matrix/matrixRegistrationUia'
+export type { SignupTermsPolicyItem } from './matrix/matrixRegistrationUia'
 export {
   buildRecaptchaAuthPayload,
+  buildRegistrationTokenAuthPayload,
+  buildTermsAuthPayload,
   extractRecaptchaFromParams,
-  RECAPTCHA_STAGE
+  extractTermsPoliciesFromParams,
+  pickCompletableEmailSignupFlow,
+  RECAPTCHA_STAGE,
+  REGISTRATION_TOKEN_STAGE,
+  TERMS_STAGE,
+  isRegistrationTokenStage,
+  isTermsStage
 } from './matrix/matrixRegistrationUia'
 
 interface StoredMatrixSession {

@@ -2,7 +2,7 @@
 
 Matrix-based chat client with Spaces, Categories, and Rooms.
 
-**Status:** Alpha (v0.1.0) – Phase 2 completed, Phase 3 in planning.
+**Status:** Alpha (v0.1.0). Priorities follow GitHub Issues for this repo.
 
 ## Tech Stack
 
@@ -115,9 +115,12 @@ tests (`setupTest()`, plugin/runtime integration, Nitro route tests).
 
 ```
 app/
-├── composables/useMatrixClient.ts   # Matrix login, sync, rooms, messages
+├── composables/useMatrixClient.ts           # Login, crypto, sync, messaging
+├── composables/matrix/matrixRegistrationUia.ts
+│                                              # Email signup UIA loop
 ├── pages/
-│   ├── login.vue
+│   ├── login.vue / signup.vue
+│   ├── signup/verify-email.vue
 │   ├── chat.vue
 │   └── index.vue
 └── components/Chat/
@@ -126,13 +129,37 @@ app/
     └── MessageInput.vue
 ```
 
-## Roadmap
+## Matrix registration (UIA)
 
-- **Phase 1:** Login, Rooms, Chat, Messages
-- **Phase 2:** Four-column layout (Spaces | Categories/Rooms | Chat | Members)
-- **Phase 3 (current):** Voice, E2E encryption, favorites, and space grouping
-- **Phase 4:** Design system and selectable themes
-- **Phase 5:** Native clients (Windows, Linux, Android)
+Signup uses Matrix **User-Interactive Authentication** against
+`/register`: first request may return **401** with `session`, `flows`,
+and `params`; the client keeps the session and completes stages in order.
+
+**Supported stages today**
+
+| Stage | Notes |
+| --- | --- |
+| `m.login.email.identity` | Email verification link; continuation on `/signup/verify-email` |
+| `m.login.recaptcha` | reCAPTCHA v2/v3 from homeserver params |
+| `m.login.registration_token` | Opaque token; unstable ids ending in `.login.registration_token` treated the same |
+| `m.login.terms` | Policy links from `params`; user accepts before continuing |
+| `m.login.dummy` | Included in finalize loop when required by the server |
+
+**Explicit non-support**
+
+- **`m.login.sso`** – SSO/OIDC signup is not implemented in-app. Users see a
+  message to complete registration via a Matrix web client (e.g. Element),
+  then sign in here.
+- **`m.login.msisdn`** – Phone/SMS registration is not implemented; users get
+  a clear “not supported” message instead of failing silently.
+
+When several flows include email verification, Decentra picks a **shortest**
+flow whose stages are all supported.
+
+**Locations:** `matrixRegistrationUia.ts` (logic), `signup.vue` /
+`signup/verify-email.vue` + `SignupTermsStep.vue` (UI).  
+**Regression tests:** `npm run test:unit` (see `tests/unit/composables/matrixRegistrationUia.spec.ts`
+and signup page specs).
 
 ## License
 
