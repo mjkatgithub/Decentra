@@ -3,10 +3,25 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { ref } from 'vue'
 import VerifyPage from '~/pages/signup/verify-email.vue'
 
-const { navigateToMock, finalizeMock } = vi.hoisted(() => {
+const {
+  navigateToMock,
+  finalizeMock,
+  readSignupPendingPublicMock,
+  extractRecaptchaFromParamsMock,
+  PENDING_KEY
+} = vi.hoisted(() => {
   return {
     navigateToMock: vi.fn(async () => undefined),
-    finalizeMock: vi.fn(async () => undefined)
+    finalizeMock: vi.fn(async () => undefined),
+    readSignupPendingPublicMock: vi.fn(() => null as Record<
+      string,
+      unknown
+    > | null),
+    extractRecaptchaFromParamsMock: vi.fn(() => null as {
+      siteKey: string
+      version: 'v2' | 'v3'
+    } | null),
+    PENDING_KEY: 'decentra.signup.pending.v1'
   }
 })
 
@@ -26,7 +41,11 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.signUpUnavailable': 'Unavailable',
           'auth.homeserverConnectionHint': 'Hint',
           'auth.signUpUnsupportedAuthStage': 'Unsupported',
-          'auth.signUpSessionExpired': 'Expired'
+          'auth.signUpSessionExpired': 'Expired',
+          'auth.signUpCaptchaTitle': 'Verify you are human',
+          'auth.signUpRecaptchaFailed': 'reCAPTCHA failed',
+          'auth.signUpRecaptchaRequired': 'reCAPTCHA required',
+          'auth.signUpRecaptchaMissingSiteKey': 'Missing site key'
         }
         return messages[key] ?? key
       }
@@ -45,6 +64,11 @@ vi.mock('~/composables/useMatrixClient', () => {
     HOMESERVER_CONNECTION_HINT_ERROR: 'HOMESERVER_CONNECTION_HINT',
     SIGNUP_REGISTRATION_UNSUPPORTED_STAGE:
       'SIGNUP_REGISTRATION_UNSUPPORTED_STAGE',
+    SIGNUP_RECAPTCHA_FAILED: 'SIGNUP_RECAPTCHA_FAILED',
+    SIGNUP_RECAPTCHA_TOKEN_REQUIRED: 'SIGNUP_RECAPTCHA_TOKEN_REQUIRED',
+    SIGNUP_PENDING_STORAGE_KEY: PENDING_KEY,
+    readSignupPendingPublic: readSignupPendingPublicMock,
+    extractRecaptchaFromParams: extractRecaptchaFromParamsMock,
     useMatrixClient: () => ({ isLoggedIn: ref(false) }),
     finalizeEmailRegistration: finalizeMock
   }
@@ -73,10 +97,19 @@ const NuxtLinkStub = {
   template: '<a><slot /></a>'
 }
 
+const SignupRecaptchaStepStub = {
+  props: ['siteKey', 'version'],
+  emits: ['verified'],
+  template:
+    '<button type="button" class="mock-verify" @click="$emit(\'verified\', \'tok\')">Verify captcha</button>'
+}
+
 describe('signup verify-email page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     finalizeMock.mockResolvedValue(undefined)
+    readSignupPendingPublicMock.mockReturnValue(null)
+    extractRecaptchaFromParamsMock.mockReturnValue(null)
     ;(globalThis as Record<string, unknown>).navigateTo = navigateToMock
   })
 
@@ -87,7 +120,8 @@ describe('signup verify-email page', () => {
           UCard: UCardStub,
           UAlert: UAlertStub,
           UButton: UButtonStub,
-          NuxtLink: NuxtLinkStub
+          NuxtLink: NuxtLinkStub,
+          SignupRecaptchaStep: SignupRecaptchaStepStub
         }
       }
     })
@@ -110,7 +144,9 @@ describe('signup verify-email page', () => {
     const wrapper = mountVerify()
     await flushPromises()
     expect(wrapper.text().includes('Not confirmed yet')).toBe(true)
-    const retry = wrapper.findAll('button').find((b) => b.text().includes('Retry'))
+    const retry = wrapper
+      .findAll('button')
+      .find((b) => b.text().includes('Retry'))
     expect(retry).toBeDefined()
     const beforeRetry = finalizeMock.mock.calls.length
     await retry!.trigger('click')
@@ -127,5 +163,41 @@ describe('signup verify-email page', () => {
     const wrapper = mountVerify()
     await flushPromises()
     expect(wrapper.text().includes('No pending')).toBe(true)
+  })
+
+  it('shows captcha when finalize requires token', async () => {
+    readSignupPendingPublicMock.mockReturnValue({
+      recaptchaSiteKey: 'site-x',
+      recaptchaVersion: 'v2'
+    })
+    finalizeMock.mockRejectedValueOnce(
+      new Error('SIGNUP_RECAPTCHA_TOKEN_REQUIRED')
+    )
+    const wrapper = mountVerify()
+    await flushPromises()
+    expect(wrapper.text().includes('Verify you are human')).toBe(true)
+    const captchaBtn = wrapper.find('.mock-verify')
+    expect(captchaBtn.exists()).toBe(true)
+    finalizeMock.mockResolvedValueOnce(undefined)
+    await captchaBtn.trigger('click')
+    await flushPromises()
+    expect(finalizeMock).toHaveBeenLastCalledWith({
+      recaptchaResponse: 'tok'
+    })
+    expect(navigateToMock).toHaveBeenCalledWith({
+      path: '/login',
+      query: { signup: 'success' }
+    })
+  })
+
+  it('shows error when captcha needed but site key missing', async () => {
+    readSignupPendingPublicMock.mockReturnValue({})
+    extractRecaptchaFromParamsMock.mockReturnValue(null)
+    finalizeMock.mockRejectedValueOnce(
+      new Error('SIGNUP_RECAPTCHA_TOKEN_REQUIRED')
+    )
+    const wrapper = mountVerify()
+    await flushPromises()
+    expect(wrapper.text().includes('Missing site key')).toBe(true)
   })
 })

@@ -57,7 +57,8 @@ const rateLimitOverrideLines = [
   '  burst_count: 1000'
 ]
 
-function buildDefaultOverrideBlock() {
+/** @param {string[]} recaptchaLines */
+function buildDefaultOverrideBlock(recaptchaLines) {
   return [
     overrideStart,
     'enable_registration: true',
@@ -65,12 +66,14 @@ function buildDefaultOverrideBlock() {
     'registration_shared_secret: "decentra-e2e-shared-secret"',
     'allow_public_rooms_without_auth: true',
     'allow_public_rooms_over_federation: false',
+    ...recaptchaLines,
     ...rateLimitOverrideLines,
     overrideEnd
   ].join('\n')
 }
 
-function buildEmail3pidOverrideBlock() {
+/** @param {string[]} recaptchaLines */
+function buildEmail3pidOverrideBlock(recaptchaLines) {
   return [
     overrideStart,
     'enable_registration: true',
@@ -85,6 +88,7 @@ function buildEmail3pidOverrideBlock() {
     '  smtp_port: 1025',
     '  notif_from: "Decentra E2E <synapse@localhost>"',
     '  enable_notifs: false',
+    ...recaptchaLines,
     ...rateLimitOverrideLines,
     overrideEnd
   ].join('\n')
@@ -98,9 +102,20 @@ function ensureSynapseConfigOverrides() {
   const useEmail3pid = parseBoolean(
     process.env.DECENTRA_E2E_SIGNUP_EMAIL
   )
+  const useRecaptcha = parseBoolean(
+    process.env.DECENTRA_E2E_SIGNUP_RECAPTCHA
+  )
+  const recaptchaLines = useRecaptcha
+    ? [
+      'enable_registration_captcha: true',
+      // Google's documented always-pass test keys (dev only).
+      'recaptcha_public_key: "6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"',
+      'recaptcha_private_key: "6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe"'
+    ]
+    : []
   const overrideBlock = useEmail3pid
-    ? buildEmail3pidOverrideBlock()
-    : buildDefaultOverrideBlock()
+    ? buildEmail3pidOverrideBlock(recaptchaLines)
+    : buildDefaultOverrideBlock(recaptchaLines)
   const overrideRegex = new RegExp(
     `${overrideStart}[\\s\\S]*${overrideEnd}`,
     'm'
@@ -114,6 +129,12 @@ function ensureSynapseConfigOverrides() {
   if (useEmail3pid) {
     console.log(
       'Synapse E2E: email+3pid overrides (DECENTRA_E2E_SIGNUP_EMAIL=1)'
+    )
+  }
+  if (useRecaptcha) {
+    console.log(
+      'Synapse E2E: registration captcha ' +
+      '(DECENTRA_E2E_SIGNUP_RECAPTCHA=1)'
     )
   }
 }

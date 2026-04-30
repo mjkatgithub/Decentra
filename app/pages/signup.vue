@@ -2,15 +2,19 @@
 import { ref } from 'vue'
 import {
   clearSignupPending,
+  extractRecaptchaFromParams,
   HOMESERVER_CONNECTION_HINT_ERROR,
+  readSignupPendingPublic,
   SIGNUP_EMAIL_NOT_CONFIRMED_YET,
   SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
   SIGNUP_PENDING_MISSING,
   SIGNUP_PENDING_STORAGE_KEY,
+  SIGNUP_RECAPTCHA_FAILED,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
   SIGNUP_SESSION_EXPIRED,
   SIGNUP_UNAVAILABLE_ERROR,
   startEmailRegistration,
+  submitSignupRecaptcha,
   useMatrixClient
 } from '~/composables/useMatrixClient'
 import { useAppI18n } from '~/composables/useAppI18n'
@@ -21,7 +25,10 @@ const username = ref('')
 const password = ref('')
 const error = ref('')
 const loading = ref(false)
-const step = ref<'form' | 'emailSent'>('form')
+const step = ref<'form' | 'emailSent' | 'captcha'>('form')
+
+const captchaSiteKey = ref('')
+const captchaVersion = ref<'v2' | 'v3'>('v2')
 
 const { isLoggedIn } = useMatrixClient()
 const { translateText } = useAppI18n()
@@ -56,6 +63,9 @@ function mapSignupError(thrown: unknown): string {
   if (m === SIGNUP_REGISTRATION_UNSUPPORTED_STAGE) {
     return translateText('auth.signUpUnsupportedAuthStage')
   }
+  if (m === SIGNUP_RECAPTCHA_FAILED) {
+    return translateText('auth.signUpRecaptchaFailed')
+  }
   return translateText('auth.signUpFailed')
 }
 
@@ -65,6 +75,23 @@ function emailSentBodyText(): string {
     '{email}',
     email.value.trim() || '—'
   )
+}
+
+function hydrateCaptchaFromPending(): void {
+  const pending = readSignupPendingPublic()
+  if (!pending) {
+    captchaSiteKey.value = ''
+    return
+  }
+  const fromParams = extractRecaptchaFromParams(pending.paramsSnapshot)
+  captchaSiteKey.value =
+    pending.recaptchaSiteKey?.trim() ||
+    fromParams?.siteKey ||
+    ''
+  captchaVersion.value =
+    pending.recaptchaVersion ||
+    fromParams?.version ||
+    'v2'
 }
 
 async function handleSignup() {
@@ -81,7 +108,28 @@ async function handleSignup() {
     const isBrowserClient = typeof window !== 'undefined' &&
       (import.meta as { client?: boolean }).client !== false
     if (isBrowserClient) {
-      if (sessionStorage.getItem(SIGNUP_PENDING_STORAGE_KEY)) {
+      const rawPending = sessionStorage.getItem(SIGNUP_PENDING_STORAGE_KEY)
+      if (rawPending) {
+        try {
+          const parsed = JSON.parse(rawPending) as {
+            needsRecaptchaBeforeEmail?: boolean
+          }
+          if (parsed.needsRecaptchaBeforeEmail === true) {
+            hydrateCaptchaFromPending()
+            if (!captchaSiteKey.value.trim()) {
+              error.value = translateText(
+                'auth.signUpRecaptchaMissingSiteKey'
+              )
+              step.value = 'form'
+              return
+            }
+            step.value = 'captcha'
+            return
+          }
+        } catch {
+          step.value = 'emailSent'
+          return
+        }
         step.value = 'emailSent'
         return
       }
@@ -97,10 +145,36 @@ async function handleSignup() {
   }
 }
 
+async function handleCaptchaVerified(token: string) {
+  error.value = ''
+  loading.value = true
+  try {
+    await submitSignupRecaptcha(token)
+    const pendingAfter = readSignupPendingPublic()
+    if (!pendingAfter) {
+      await navigateTo({
+        path: '/login',
+        query: { signup: 'success' }
+      })
+      return
+    }
+    if (pendingAfter.sid) {
+      step.value = 'emailSent'
+      return
+    }
+    error.value = translateText('auth.signUpFailed')
+  } catch (thrownError) {
+    error.value = mapSignupError(thrownError)
+  } finally {
+    loading.value = false
+  }
+}
+
 function resetToForm() {
   clearSignupPending()
   step.value = 'form'
   error.value = ''
+  captchaSiteKey.value = ''
 }
 
 function clearForm() {
@@ -111,6 +185,7 @@ function clearForm() {
   error.value = ''
   clearSignupPending()
   step.value = 'form'
+  captchaSiteKey.value = ''
 }
 </script>
 
@@ -225,6 +300,40 @@ function clearForm() {
             </UButton>
           </div>
         </form>
+      </UCard>
+
+      <UCard
+        v-else-if="step === 'captcha'"
+        class="w-full max-w-md"
+      >
+        <template #header>
+          <h1 class="text-xl font-semibold">
+            {{ translateText('auth.signUpCaptchaTitle') }}
+          </h1>
+        </template>
+        <div class="space-y-4">
+          <UAlert
+            v-if="error"
+            color="error"
+            :title="error"
+            class="mb-2"
+          />
+          <SignupRecaptchaStep
+            :site-key="captchaSiteKey"
+            :version="captchaVersion"
+            @verified="handleCaptchaVerified"
+          />
+          <UButton
+            type="button"
+            color="neutral"
+            variant="outline"
+            class="w-full justify-center"
+            :disabled="loading"
+            @click="resetToForm"
+          >
+            {{ translateText('auth.signUpCancel') }}
+          </UButton>
+        </div>
       </UCard>
 
       <UCard

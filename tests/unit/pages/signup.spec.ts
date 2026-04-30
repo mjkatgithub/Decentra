@@ -6,14 +6,54 @@ import SignupPage from '~/pages/signup.vue'
 const {
   navigateToMock,
   startEmailRegistrationMock,
+  submitSignupRecaptchaMock,
   PENDING_KEY
 } = vi.hoisted(() => {
   return {
     navigateToMock: vi.fn(async () => undefined),
     startEmailRegistrationMock: vi.fn(async () => undefined),
+    submitSignupRecaptchaMock: vi.fn(async () => undefined),
     PENDING_KEY: 'decentra.signup.pending.v1'
   }
 })
+
+function mockExtractRecaptchaFromParams(
+  params?: Record<string, unknown>
+): { siteKey: string; version: 'v2' | 'v3' } | null {
+  if (!params || typeof params !== 'object') {
+    return null
+  }
+  const blockUnknown = params['m.login.recaptcha']
+  if (!blockUnknown || typeof blockUnknown !== 'object') {
+    return null
+  }
+  const block = blockUnknown as Record<string, unknown>
+  const publicKey = block.public_key
+  if (typeof publicKey !== 'string' || !publicKey.trim()) {
+    return null
+  }
+  let version: 'v2' | 'v3' = 'v2'
+  const rawVersion = block.version
+  if (rawVersion === 'v3' || rawVersion === 3) {
+    version = 'v3'
+  }
+  return { siteKey: publicKey.trim(), version }
+}
+
+function mockReadSignupPendingPublic(): Record<string, unknown> | null {
+  if (typeof sessionStorage === 'undefined') {
+    return null
+  }
+  const raw = sessionStorage.getItem(PENDING_KEY)
+  if (!raw) {
+    return null
+  }
+  try {
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
 
 vi.mock('~/composables/useAppI18n', () => {
   return {
@@ -27,7 +67,8 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.username': 'Username',
           'auth.password': 'Password',
           'auth.signUpFailed': 'Sign up failed',
-          'auth.signUpUnavailable': 'Sign-up is not available on this homeserver',
+          'auth.signUpUnavailable':
+            'Sign-up is not available on this homeserver',
           'auth.signUpEmailVerificationRequired':
             'Sign-up requires email verification on this homeserver',
           'auth.homeserverConnectionHint': 'Connection hint',
@@ -38,7 +79,16 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.signUpEmailNotConfirmedYet': 'Not confirmed',
           'auth.signUpPendingMissing': 'No pending',
           'auth.signUpSessionExpired': 'Session expired',
-          'auth.signUpUnsupportedAuthStage': 'Unsupported'
+          'auth.signUpUnsupportedAuthStage': 'Unsupported',
+          'auth.signUpCaptchaTitle': 'Verify you are human',
+          'auth.signUpRecaptchaMissingSiteKey': 'Missing site key',
+          'auth.signUpRecaptchaFailed': 'reCAPTCHA failed',
+          'auth.signUpCaptchaConsentLead': 'Consent lead',
+          'auth.signUpHomeserverPrivacyNotice': 'Homeserver notice',
+          'auth.signUpPrivacyPolicyLink': 'Privacy',
+          'auth.signUpCookieSettings': 'Cookies',
+          'auth.signUpAgreeLoadRecaptcha': 'Agree load',
+          'auth.signUpRunRecaptchaCheck': 'Run check'
         }
         return messages[key] ?? key
       }
@@ -51,7 +101,16 @@ vi.mock('~/composables/useMatrixClient', () => {
     SIGNUP_UNAVAILABLE_ERROR: 'SIGNUP_UNAVAILABLE',
     SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR:
       'SIGNUP_EMAIL_VERIFICATION_REQUIRED',
+    SIGNUP_PENDING_MISSING: 'SIGNUP_PENDING_MISSING',
+    SIGNUP_RECAPTCHA_FAILED: 'SIGNUP_RECAPTCHA_FAILED',
     SIGNUP_PENDING_STORAGE_KEY: PENDING_KEY,
+    HOMESERVER_CONNECTION_HINT_ERROR: 'HOMESERVER_CONNECTION_HINT',
+    SIGNUP_EMAIL_NOT_CONFIRMED_YET: 'SIGNUP_EMAIL_NOT_CONFIRMED_YET',
+    SIGNUP_REGISTRATION_UNSUPPORTED_STAGE:
+      'SIGNUP_REGISTRATION_UNSUPPORTED_STAGE',
+    SIGNUP_SESSION_EXPIRED: 'SIGNUP_SESSION_EXPIRED',
+    extractRecaptchaFromParams: mockExtractRecaptchaFromParams,
+    readSignupPendingPublic: mockReadSignupPendingPublic,
     clearSignupPending: vi.fn(() => {
       if (typeof sessionStorage !== 'undefined') {
         sessionStorage.removeItem(PENDING_KEY)
@@ -60,7 +119,8 @@ vi.mock('~/composables/useMatrixClient', () => {
     useMatrixClient: () => ({
       isLoggedIn: ref(false)
     }),
-    startEmailRegistration: startEmailRegistrationMock
+    startEmailRegistration: startEmailRegistrationMock,
+    submitSignupRecaptcha: submitSignupRecaptchaMock
   }
 })
 
@@ -89,9 +149,9 @@ const UAlertStub = {
 }
 
 const UButtonStub = {
-  props: ['type'],
+  props: ['type', 'disabled', 'loading', 'to'],
   template: `
-    <button :type="type || 'button'">
+    <button :type="type || 'button'" :disabled="disabled">
       <slot />
     </button>
   `
@@ -101,6 +161,15 @@ const NuxtLinkStub = {
   template: '<a><slot /></a>'
 }
 
+const ClientOnlyStub = {
+  template: '<span><slot /></span>'
+}
+
+const SignupRecaptchaStepStub = {
+  props: ['siteKey', 'version'],
+  template: '<div class="recaptcha-stub">stub</div>'
+}
+
 describe('signup page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -108,6 +177,7 @@ describe('signup page', () => {
       sessionStorage.clear()
     }
     startEmailRegistrationMock.mockImplementation(async () => undefined)
+    submitSignupRecaptchaMock.mockImplementation(async () => undefined)
     ;(globalThis as Record<string, unknown>).navigateTo = navigateToMock
   })
 
@@ -120,7 +190,9 @@ describe('signup page', () => {
           UInput: UInputStub,
           UAlert: UAlertStub,
           UButton: UButtonStub,
-          NuxtLink: NuxtLinkStub
+          NuxtLink: NuxtLinkStub,
+          ClientOnly: ClientOnlyStub,
+          SignupRecaptchaStep: SignupRecaptchaStepStub
         }
       }
     })
@@ -176,6 +248,37 @@ describe('signup page', () => {
     await passwordInput!.setValue('secret')
     await wrapper.find('form').trigger('submit.prevent')
     expect(wrapper.text().includes('Check your email'))
+      .toBe(true)
+    expect(navigateToMock).not.toHaveBeenCalled()
+  })
+
+  it('shows captcha panel when homeserver requires captcha before email', async () => {
+    startEmailRegistrationMock.mockImplementation(async () => {
+      sessionStorage.setItem(
+        PENDING_KEY,
+        JSON.stringify({
+          v: 1,
+          baseUrl: 'https://matrix.example.org',
+          needsRecaptchaBeforeEmail: true,
+          recaptchaSiteKey: 'test-site-key',
+          recaptchaVersion: 'v2'
+        })
+      )
+    })
+    const wrapper = mountSignupPage()
+    const inputElements = wrapper.findAll('input')
+    const [
+      emailInput,
+      homeserverInput,
+      usernameInput,
+      passwordInput
+    ] = inputElements
+    await emailInput!.setValue('alice@example.org')
+    await homeserverInput!.setValue('https://matrix.example.org')
+    await usernameInput!.setValue('alice')
+    await passwordInput!.setValue('secret')
+    await wrapper.find('form').trigger('submit.prevent')
+    expect(wrapper.text().includes('Verify you are human'))
       .toBe(true)
     expect(navigateToMock).not.toHaveBeenCalled()
   })

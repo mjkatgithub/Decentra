@@ -13,7 +13,7 @@ function run() {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(
       'npx',
-      ['cucumber-js', '--tags', 'not @email_signup and not @recaptcha_signup'],
+      ['cucumber-js', '--tags', '@recaptcha_signup'],
       {
         cwd: workspaceRoot,
         stdio: 'inherit',

@@ -37,6 +37,23 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'does not support yet.',
     'auth.signUpRetry': 'Try again',
     'auth.signUpBackToForm': 'Back to sign-up',
+    'auth.signUpCaptchaTitle': 'Verify you are human',
+    'auth.signUpCaptchaConsentLead':
+      'Google reCAPTCHA loads only after you agree. Google may process ' +
+      'technical data (also outside the EU).',
+    'auth.signUpHomeserverPrivacyNotice':
+      'Your chosen Matrix homeserver operator processes signup data under ' +
+      'their own rules; Decentra cannot describe every homeserver.',
+    'auth.signUpPrivacyPolicyLink': 'Privacy policy',
+    'auth.signUpCookieSettings': 'Cookie settings',
+    'auth.signUpAgreeLoadRecaptcha': 'Agree and load reCAPTCHA',
+    'auth.signUpRunRecaptchaCheck': 'Run automatic check',
+    'auth.signUpRecaptchaMissingSiteKey':
+      'The homeserver did not send a reCAPTCHA site key.',
+    'auth.signUpRecaptchaFailed':
+      'reCAPTCHA verification failed. Please try again.',
+    'auth.signUpRecaptchaRequired':
+      'Complete reCAPTCHA to continue.',
     'auth.homeserverConnectionHint':
       'Cannot reach the homeserver from the browser. For public ' +
       'servers use https:// (not http://) so a redirect does not break ' +
@@ -215,6 +232,24 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'den Decentra noch nicht unterstuetzt.',
     'auth.signUpRetry': 'Erneut versuchen',
     'auth.signUpBackToForm': 'Zurueck zur Registrierung',
+    'auth.signUpCaptchaTitle': 'Bestaetigung gegen Bots',
+    'auth.signUpCaptchaConsentLead':
+      'Google reCAPTCHA wird erst nach Zustimmung geladen. Google kann ' +
+      'technische Daten verarbeiten (auch ausserhalb der EU).',
+    'auth.signUpHomeserverPrivacyNotice':
+      'Der Betreiber deines gewaehlten Matrix-Homeservers verarbeitet ' +
+      'Registrierungsdaten nach eigener Datenschutzerklaerung; Decentra ' +
+      'kann nicht jeden Homeserver beschreiben.',
+    'auth.signUpPrivacyPolicyLink': 'Datenschutzerklaerung',
+    'auth.signUpCookieSettings': 'Cookie-Einstellungen',
+    'auth.signUpAgreeLoadRecaptcha': 'Zustimmen und reCAPTCHA laden',
+    'auth.signUpRunRecaptchaCheck': 'Automatische Pruefung starten',
+    'auth.signUpRecaptchaMissingSiteKey':
+      'Der Homeserver hat keinen reCAPTCHA-Site-Key gesendet.',
+    'auth.signUpRecaptchaFailed':
+      'reCAPTCHA-Verifikation fehlgeschlagen. Bitte erneut versuchen.',
+    'auth.signUpRecaptchaRequired':
+      'Bitte reCAPTCHA abschliessen, um fortzufahren.',
     'auth.homeserverConnectionHint':
       'Homeserver aus dem Browser nicht erreichbar. Oeffentliche ' +
       'Server: https:// statt http:// (sonst bricht CORS-Preflight). Synapse ' +

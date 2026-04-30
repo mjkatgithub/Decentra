@@ -14,8 +14,10 @@
     "test:e2e": "node tests/e2e/scripts/run-synapse-e2e.mjs",
     "test:e2e:run": "nuxt build && start-server-and-test preview 3000 node tests/e2e/scripts/run-cucumber-exclude-email.mjs",
     "test:e2e:run:email": "nuxt build && start-server-and-test preview 3000 node tests/e2e/scripts/run-cucumber-email-only.mjs",
+    "test:e2e:run:recaptcha": "nuxt build && start-server-and-test preview 3000 node tests/e2e/scripts/run-cucumber-recaptcha-only.mjs",
     "test:e2e:smoke": "nuxt build && start-server-and-test preview 3000 \"cucumber-js --tags @smoke\"",
     "test:e2e:signup-email": "cross-env DECENTRA_E2E_SIGNUP_EMAIL=1 node tests/e2e/scripts/run-synapse-e2e-signup-email.mjs",
+    "test:e2e:signup-recaptcha": "cross-env DECENTRA_E2E_SIGNUP_RECAPTCHA=1 node tests/e2e/scripts/run-synapse-e2e-signup-recaptcha.mjs",
     "test:coverage": "vitest run --coverage",
     "test:ci:fast": "npm run test:unit && npm run test:integration && npm run test:e2e:smoke",
     "test:ci:full": "npm run test:unit && npm run test:integration && npm run test:coverage && npm run test:e2e",
@@ -27,7 +29,8 @@
     "matrix-js-sdk": "^37.5.0",
     "nuxt": "^4.3.1",
     "vue": "^3.5.28",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "vue3-recaptcha-v2": "^2.1.0"
   },
   "devDependencies": {
     "@cucumber/cucumber": "^11.0.0",

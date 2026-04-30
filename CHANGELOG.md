@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- reCAPTCHA UIA stage (`m.login.recaptcha`) in signup with consent-gated
+  script load and optional iubenda hooks (#57)
+- Optional Synapse-backed E2E for registration captcha (`@recaptcha_signup`);
+  see `tests/e2e/RECAPTCHA-SIGNUP.md`
 - Dedicated GitHub Bug issue template at `.github/ISSUE_TEMPLATE/bug.md`
   with `bug/<bugfix>` branch guidance and bug-focused planning/test sections
 - MVP signup page with Matrix registration and user-facing error feedback (#52)

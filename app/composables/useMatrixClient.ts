@@ -23,12 +23,17 @@ export { HOMESERVER_CONNECTION_HINT_ERROR, isSameHomeserver, resolveHomeserverBa
 import {
   clearSignupPending,
   finalizeEmailRegistration,
+  readSignupPendingPublic,
   registerWithDummy,
+  signupPendingNeedsRecaptchaBeforeEmail,
   startEmailRegistration,
+  submitSignupRecaptcha,
   SIGNUP_EMAIL_NOT_CONFIRMED_YET,
   SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
   SIGNUP_PENDING_MISSING,
   SIGNUP_PENDING_STORAGE_KEY,
+  SIGNUP_RECAPTCHA_FAILED,
+  SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
   SIGNUP_SESSION_EXPIRED,
   SIGNUP_UNAVAILABLE_ERROR
@@ -36,16 +41,27 @@ import {
 export {
   clearSignupPending,
   finalizeEmailRegistration,
+  readSignupPendingPublic,
   registerWithDummy,
+  signupPendingNeedsRecaptchaBeforeEmail,
   startEmailRegistration,
+  submitSignupRecaptcha,
   SIGNUP_EMAIL_NOT_CONFIRMED_YET,
   SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
   SIGNUP_PENDING_MISSING,
   SIGNUP_PENDING_STORAGE_KEY,
+  SIGNUP_RECAPTCHA_FAILED,
+  SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
   SIGNUP_SESSION_EXPIRED,
   SIGNUP_UNAVAILABLE_ERROR
 }
+export type { SignupPendingStateV1 } from './matrix/matrixRegistrationUia'
+export {
+  buildRecaptchaAuthPayload,
+  extractRecaptchaFromParams,
+  RECAPTCHA_STAGE
+} from './matrix/matrixRegistrationUia'
 
 interface StoredMatrixSession {
   baseUrl: string
@@ -1154,6 +1170,9 @@ export function useMatrixClient() {
     startEmailRegistration,
     finalizeEmailRegistration,
     clearSignupPending,
+    submitSignupRecaptcha,
+    signupPendingNeedsRecaptchaBeforeEmail,
+    readSignupPendingPublic,
     logout,
     getRooms,
     getRoom,

@@ -4,6 +4,15 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: ['@nuxt/ui'],
   css: ['~/assets/css/main.css'],
+  runtimeConfig: {
+    public: {
+      iubendaSiteId: '',
+      iubendaCookiePolicyId: '',
+      iubendaLang: 'de',
+      iubendaRecaptchaPurposeIds: '',
+      iubendaPrivacyPolicyUrl: ''
+    }
+  },
   app: {
     head: {
       title: 'Decentra',
