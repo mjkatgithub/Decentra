@@ -81,6 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SMTP to MailHog), Cucumber scenarios tagged `@email_signup`, helper
   runners to exclude that tag in default E2E, `test:e2e:signup-email` full
   pipeline script, and `tests/e2e/EMAIL-SIGNUP.md` notes
+- Extended Matrix signup UIA (#58): `m.login.registration_token`
+  (including `*.login.registration_token` ids), `m.login.terms` with
+  `SignupTermsStep.vue`, shortest completable email-flow selection, chained
+  pre-email stages on `/signup` and `/signup/verify-email`
+- User-facing SSO-only registration hint (`SIGNUP_SSO_USE_WEB_CLIENT`)
+  and explicit SMS signup non-support (`SIGNUP_MSISDN_NOT_SUPPORTED`)
+  (#58)
+- Additional unit coverage for registration UIA helpers and signup pages
+  (`matrixRegistrationUia.spec.ts`, page specs)
 
 ### Changed
 
@@ -101,7 +110,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Room navigation supports home categories for personal/unassigned rooms
 - Chat shell styling refined with distinct visual background accents
 - Read receipts now show smaller avatars on each reader's last-read message
-- README extended with CI and E2E credential setup documentation
+- README: CI/E2E credential setup; Matrix registration (UIA) section and
+  signup-related structure paths; phased roadmap bullets removed—priorities
+  in GitHub Issues; status line shortened
 - Message list rendering was modularized with a dedicated `ChatMessageItem`
   component and reusable `ChatMessageActionBar`
 - Full CI lane now runs E2E against local Dockerized Synapse instead of
