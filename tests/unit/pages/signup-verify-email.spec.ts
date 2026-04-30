@@ -45,7 +45,15 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.signUpCaptchaTitle': 'Verify you are human',
           'auth.signUpRecaptchaFailed': 'reCAPTCHA failed',
           'auth.signUpRecaptchaRequired': 'reCAPTCHA required',
-          'auth.signUpRecaptchaMissingSiteKey': 'Missing site key'
+          'auth.signUpRecaptchaMissingSiteKey': 'Missing site key',
+          'auth.signUpRegistrationTokenRequired': 'Token needed',
+          'auth.signUpRegistrationTokenPlaceholder': 'Token placeholder',
+          'auth.signUpRegistrationTokenSubmit': 'Continue token',
+          'auth.signUpRegistrationTokenTitle': 'Token title',
+          'auth.signUpTermsTitle': 'Terms title',
+          'auth.signUpTermsAcceptCheckbox': 'Terms accept',
+          'auth.signUpTermsContinue': 'Terms go',
+          'auth.signUpTermsEmptyPolicies': 'No policy links'
         }
         return messages[key] ?? key
       }
@@ -66,9 +74,20 @@ vi.mock('~/composables/useMatrixClient', () => {
       'SIGNUP_REGISTRATION_UNSUPPORTED_STAGE',
     SIGNUP_RECAPTCHA_FAILED: 'SIGNUP_RECAPTCHA_FAILED',
     SIGNUP_RECAPTCHA_TOKEN_REQUIRED: 'SIGNUP_RECAPTCHA_TOKEN_REQUIRED',
+    SIGNUP_REGISTRATION_TOKEN_REQUIRED:
+      'SIGNUP_REGISTRATION_TOKEN_REQUIRED',
+    SIGNUP_REGISTRATION_TOKEN_REJECTED:
+      'SIGNUP_REGISTRATION_TOKEN_REJECTED',
+    SIGNUP_TERMS_ACCEPTANCE_REQUIRED:
+      'SIGNUP_TERMS_ACCEPTANCE_REQUIRED',
+    SIGNUP_MSISDN_NOT_SUPPORTED: 'SIGNUP_MSISDN_NOT_SUPPORTED',
+    SIGNUP_SSO_USE_WEB_CLIENT: 'SIGNUP_SSO_USE_WEB_CLIENT',
     SIGNUP_PENDING_STORAGE_KEY: PENDING_KEY,
     readSignupPendingPublic: readSignupPendingPublicMock,
     extractRecaptchaFromParams: extractRecaptchaFromParamsMock,
+    hydrateTermsPoliciesForPending: vi.fn(() => []),
+    submitSignupRegistrationToken: vi.fn(async () => undefined),
+    submitSignupTermsAcceptance: vi.fn(async () => undefined),
     useMatrixClient: () => ({ isLoggedIn: ref(false) }),
     finalizeEmailRegistration: finalizeMock
   }
@@ -104,6 +123,30 @@ const SignupRecaptchaStepStub = {
     '<button type="button" class="mock-verify" @click="$emit(\'verified\', \'tok\')">Verify captcha</button>'
 }
 
+const SignupTermsStepStub = {
+  props: ['policies'],
+  emits: ['continue'],
+  template:
+    '<button type="button" class="mock-terms" @click="$emit(\'continue\')">' +
+    'Accept terms</button>'
+}
+
+const UInputStub = {
+  props: ['modelValue'],
+  emits: ['update:modelValue'],
+  template: `
+    <input
+      class="mock-reg-input"
+      :value="modelValue"
+      @input="$emit('update:modelValue', $event.target.value)"
+    >
+  `
+}
+
+const UFormFieldStub = {
+  template: '<div><slot /></div>'
+}
+
 describe('signup verify-email page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -121,7 +164,10 @@ describe('signup verify-email page', () => {
           UAlert: UAlertStub,
           UButton: UButtonStub,
           NuxtLink: NuxtLinkStub,
-          SignupRecaptchaStep: SignupRecaptchaStepStub
+          UInput: UInputStub,
+          UFormField: UFormFieldStub,
+          SignupRecaptchaStep: SignupRecaptchaStepStub,
+          SignupTermsStep: SignupTermsStepStub
         }
       }
     })
@@ -182,7 +228,8 @@ describe('signup verify-email page', () => {
     await captchaBtn.trigger('click')
     await flushPromises()
     expect(finalizeMock).toHaveBeenLastCalledWith({
-      recaptchaResponse: 'tok'
+      recaptchaResponse: 'tok',
+      registrationToken: null
     })
     expect(navigateToMock).toHaveBeenCalledWith({
       path: '/login',

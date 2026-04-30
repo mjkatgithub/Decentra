@@ -88,7 +88,16 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.signUpPrivacyPolicyLink': 'Privacy',
           'auth.signUpCookieSettings': 'Cookies',
           'auth.signUpAgreeLoadRecaptcha': 'Agree load',
-          'auth.signUpRunRecaptchaCheck': 'Run check'
+          'auth.signUpRunRecaptchaCheck': 'Run check',
+          'cancel': 'Cancel',
+          'auth.signUpRegistrationTokenRequired': 'Registration token hint',
+          'auth.signUpRegistrationTokenPlaceholder':
+            'Paste registration token',
+          'auth.signUpRegistrationTokenSubmit': 'Continue',
+          'auth.signUpRegistrationTokenTitle': 'Registration token',
+          'auth.signUpTermsTitle': 'Policies',
+          'auth.signUpSsoUseWebClient': 'Use Element web SSO',
+          'auth.signUpMsisdnUnsupported': 'SMS signup unsupported'
         }
         return messages[key] ?? key
       }
@@ -103,11 +112,20 @@ vi.mock('~/composables/useMatrixClient', () => {
       'SIGNUP_EMAIL_VERIFICATION_REQUIRED',
     SIGNUP_PENDING_MISSING: 'SIGNUP_PENDING_MISSING',
     SIGNUP_RECAPTCHA_FAILED: 'SIGNUP_RECAPTCHA_FAILED',
+    SIGNUP_RECAPTCHA_TOKEN_REQUIRED: 'SIGNUP_RECAPTCHA_TOKEN_REQUIRED',
     SIGNUP_PENDING_STORAGE_KEY: PENDING_KEY,
     HOMESERVER_CONNECTION_HINT_ERROR: 'HOMESERVER_CONNECTION_HINT',
     SIGNUP_EMAIL_NOT_CONFIRMED_YET: 'SIGNUP_EMAIL_NOT_CONFIRMED_YET',
     SIGNUP_REGISTRATION_UNSUPPORTED_STAGE:
       'SIGNUP_REGISTRATION_UNSUPPORTED_STAGE',
+    SIGNUP_REGISTRATION_TOKEN_REJECTED:
+      'SIGNUP_REGISTRATION_TOKEN_REJECTED',
+    SIGNUP_REGISTRATION_TOKEN_REQUIRED:
+      'SIGNUP_REGISTRATION_TOKEN_REQUIRED',
+    SIGNUP_TERMS_ACCEPTANCE_REQUIRED:
+      'SIGNUP_TERMS_ACCEPTANCE_REQUIRED',
+    SIGNUP_MSISDN_NOT_SUPPORTED: 'SIGNUP_MSISDN_NOT_SUPPORTED',
+    SIGNUP_SSO_USE_WEB_CLIENT: 'SIGNUP_SSO_USE_WEB_CLIENT',
     SIGNUP_SESSION_EXPIRED: 'SIGNUP_SESSION_EXPIRED',
     extractRecaptchaFromParams: mockExtractRecaptchaFromParams,
     readSignupPendingPublic: mockReadSignupPendingPublic,
@@ -120,7 +138,10 @@ vi.mock('~/composables/useMatrixClient', () => {
       isLoggedIn: ref(false)
     }),
     startEmailRegistration: startEmailRegistrationMock,
-    submitSignupRecaptcha: submitSignupRecaptchaMock
+    submitSignupRecaptcha: submitSignupRecaptchaMock,
+    submitSignupRegistrationToken: vi.fn(async () => undefined),
+    submitSignupTermsAcceptance: vi.fn(async () => undefined),
+    hydrateTermsPoliciesForPending: vi.fn(() => [])
   }
 })
 
@@ -170,6 +191,10 @@ const SignupRecaptchaStepStub = {
   template: '<div class="recaptcha-stub">stub</div>'
 }
 
+const SignupTermsStepStub = {
+  template: '<div class="terms-stub"></div>'
+}
+
 describe('signup page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -192,7 +217,8 @@ describe('signup page', () => {
           UButton: UButtonStub,
           NuxtLink: NuxtLinkStub,
           ClientOnly: ClientOnlyStub,
-          SignupRecaptchaStep: SignupRecaptchaStepStub
+          SignupRecaptchaStep: SignupRecaptchaStepStub,
+          SignupTermsStep: SignupTermsStepStub
         }
       }
     })

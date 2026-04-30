@@ -1,34 +1,53 @@
 <script setup lang="ts">
+import type { SignupTermsPolicyItem } from '~/composables/matrix/matrixRegistrationUia'
 import { ref } from 'vue'
 import {
   clearSignupPending,
   extractRecaptchaFromParams,
   HOMESERVER_CONNECTION_HINT_ERROR,
+  hydrateTermsPoliciesForPending,
   readSignupPendingPublic,
   SIGNUP_EMAIL_NOT_CONFIRMED_YET,
   SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
+  SIGNUP_MSISDN_NOT_SUPPORTED,
   SIGNUP_PENDING_MISSING,
   SIGNUP_PENDING_STORAGE_KEY,
   SIGNUP_RECAPTCHA_FAILED,
+  SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
+  SIGNUP_REGISTRATION_TOKEN_REJECTED,
+  SIGNUP_REGISTRATION_TOKEN_REQUIRED,
   SIGNUP_SESSION_EXPIRED,
+  SIGNUP_SSO_USE_WEB_CLIENT,
+  SIGNUP_TERMS_ACCEPTANCE_REQUIRED,
   SIGNUP_UNAVAILABLE_ERROR,
   startEmailRegistration,
   submitSignupRecaptcha,
+  submitSignupRegistrationToken,
+  submitSignupTermsAcceptance,
   useMatrixClient
 } from '~/composables/useMatrixClient'
 import { useAppI18n } from '~/composables/useAppI18n'
+
+type SignupStep =
+  | 'form'
+  | 'registrationToken'
+  | 'terms'
+  | 'emailSent'
+  | 'captcha'
 
 const baseUrl = ref('https://matrix.org')
 const email = ref('')
 const username = ref('')
 const password = ref('')
+const registrationTokenInput = ref('')
 const error = ref('')
 const loading = ref(false)
-const step = ref<'form' | 'emailSent' | 'captcha'>('form')
+const step = ref<SignupStep>('form')
 
 const captchaSiteKey = ref('')
 const captchaVersion = ref<'v2' | 'v3'>('v2')
+const termsPolicies = ref<SignupTermsPolicyItem[]>([])
 
 const { isLoggedIn } = useMatrixClient()
 const { translateText } = useAppI18n()
@@ -41,30 +60,48 @@ function mapSignupError(thrown: unknown): string {
   if (!(thrown instanceof Error) || !thrown.message) {
     return translateText('auth.signUpFailed')
   }
-  const m = thrown.message
-  if (m === SIGNUP_UNAVAILABLE_ERROR) {
+  const message = thrown.message
+  if (message === SIGNUP_UNAVAILABLE_ERROR) {
     return translateText('auth.signUpUnavailable')
   }
-  if (m === SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR) {
+  if (message === SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR) {
     return translateText('auth.signUpEmailVerificationRequired')
   }
-  if (m === HOMESERVER_CONNECTION_HINT_ERROR) {
+  if (message === HOMESERVER_CONNECTION_HINT_ERROR) {
     return translateText('auth.homeserverConnectionHint')
   }
-  if (m === SIGNUP_EMAIL_NOT_CONFIRMED_YET) {
+  if (message === SIGNUP_EMAIL_NOT_CONFIRMED_YET) {
     return translateText('auth.signUpEmailNotConfirmedYet')
   }
-  if (m === SIGNUP_PENDING_MISSING) {
+  if (message === SIGNUP_PENDING_MISSING) {
     return translateText('auth.signUpPendingMissing')
   }
-  if (m === SIGNUP_SESSION_EXPIRED) {
+  if (message === SIGNUP_SESSION_EXPIRED) {
     return translateText('auth.signUpSessionExpired')
   }
-  if (m === SIGNUP_REGISTRATION_UNSUPPORTED_STAGE) {
+  if (message === SIGNUP_REGISTRATION_UNSUPPORTED_STAGE) {
     return translateText('auth.signUpUnsupportedAuthStage')
   }
-  if (m === SIGNUP_RECAPTCHA_FAILED) {
+  if (message === SIGNUP_SSO_USE_WEB_CLIENT) {
+    return translateText('auth.signUpSsoUseWebClient')
+  }
+  if (message === SIGNUP_MSISDN_NOT_SUPPORTED) {
+    return translateText('auth.signUpMsisdnUnsupported')
+  }
+  if (message === SIGNUP_RECAPTCHA_FAILED) {
     return translateText('auth.signUpRecaptchaFailed')
+  }
+  if (message === SIGNUP_RECAPTCHA_TOKEN_REQUIRED) {
+    return translateText('auth.signUpRecaptchaRequired')
+  }
+  if (message === SIGNUP_REGISTRATION_TOKEN_REQUIRED) {
+    return translateText('auth.signUpRegistrationTokenRequired')
+  }
+  if (message === SIGNUP_REGISTRATION_TOKEN_REJECTED) {
+    return translateText('auth.signUpRegistrationTokenRejected')
+  }
+  if (message === SIGNUP_TERMS_ACCEPTANCE_REQUIRED) {
+    return translateText('auth.signUpTermsTitle')
   }
   return translateText('auth.signUpFailed')
 }
@@ -94,6 +131,43 @@ function hydrateCaptchaFromPending(): void {
     'v2'
 }
 
+/**
+ * Advances UI after server stored sign-up intermediate state (sessionStorage).
+ */
+function applySignupStepFromPending(): void {
+  const pending = readSignupPendingPublic()
+  error.value = ''
+  if (!pending) {
+    step.value = 'emailSent'
+    return
+  }
+  if (pending.needsRegistrationTokenBeforeEmail) {
+    step.value = 'registrationToken'
+    return
+  }
+  if (pending.needsTermsAcceptanceBeforeEmail) {
+    termsPolicies.value = hydrateTermsPoliciesForPending()
+    step.value = 'terms'
+    return
+  }
+  if (pending.needsRecaptchaBeforeEmail) {
+    hydrateCaptchaFromPending()
+    if (!captchaSiteKey.value.trim()) {
+      error.value =
+        translateText('auth.signUpRecaptchaMissingSiteKey')
+      step.value = 'form'
+      return
+    }
+    step.value = 'captcha'
+    return
+  }
+  if (pending.sid) {
+    step.value = 'emailSent'
+    return
+  }
+  step.value = 'emailSent'
+}
+
 async function handleSignup() {
   error.value = ''
   loading.value = true
@@ -105,34 +179,15 @@ async function handleSignup() {
       password.value,
       email.value
     )
-    const isBrowserClient = typeof window !== 'undefined' &&
+    const isBrowserClient =
+      typeof window !== 'undefined' &&
       (import.meta as { client?: boolean }).client !== false
-    if (isBrowserClient) {
-      const rawPending = sessionStorage.getItem(SIGNUP_PENDING_STORAGE_KEY)
-      if (rawPending) {
-        try {
-          const parsed = JSON.parse(rawPending) as {
-            needsRecaptchaBeforeEmail?: boolean
-          }
-          if (parsed.needsRecaptchaBeforeEmail === true) {
-            hydrateCaptchaFromPending()
-            if (!captchaSiteKey.value.trim()) {
-              error.value = translateText(
-                'auth.signUpRecaptchaMissingSiteKey'
-              )
-              step.value = 'form'
-              return
-            }
-            step.value = 'captcha'
-            return
-          }
-        } catch {
-          step.value = 'emailSent'
-          return
-        }
-        step.value = 'emailSent'
-        return
-      }
+    const hasStoredPending =
+      isBrowserClient &&
+      Boolean(sessionStorage.getItem(SIGNUP_PENDING_STORAGE_KEY))
+    if (hasStoredPending) {
+      applySignupStepFromPending()
+      return
     }
     await navigateTo({
       path: '/login',
@@ -145,24 +200,64 @@ async function handleSignup() {
   }
 }
 
-async function handleCaptchaVerified(token: string) {
+async function handleRegistrationTokenContinue() {
   error.value = ''
   loading.value = true
   try {
-    await submitSignupRecaptcha(token)
-    const pendingAfter = readSignupPendingPublic()
-    if (!pendingAfter) {
+    await submitSignupRegistrationToken(registrationTokenInput.value)
+    registrationTokenInput.value = ''
+    if (!readSignupPendingPublic()) {
       await navigateTo({
         path: '/login',
         query: { signup: 'success' }
       })
       return
     }
-    if (pendingAfter.sid) {
-      step.value = 'emailSent'
+    applySignupStepFromPending()
+  } catch (thrownError) {
+    error.value = mapSignupError(thrownError)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleTermsContinue() {
+  error.value = ''
+  loading.value = true
+  try {
+    await submitSignupTermsAcceptance()
+    if (!readSignupPendingPublic()) {
+      await navigateTo({
+        path: '/login',
+        query: { signup: 'success' }
+      })
       return
     }
-    error.value = translateText('auth.signUpFailed')
+    applySignupStepFromPending()
+  } catch (thrownError) {
+    error.value = mapSignupError(thrownError)
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleCaptchaVerified(token: string) {
+  error.value = ''
+  loading.value = true
+  try {
+    await submitSignupRecaptcha(token)
+    if (!readSignupPendingPublic()) {
+      await navigateTo({
+        path: '/login',
+        query: { signup: 'success' }
+      })
+      return
+    }
+    applySignupStepFromPending()
+    const lingering = readSignupPendingPublic()
+    if (lingering && !lingering.sid) {
+      error.value = translateText('auth.signUpFailed')
+    }
   } catch (thrownError) {
     error.value = mapSignupError(thrownError)
   } finally {
@@ -175,17 +270,16 @@ function resetToForm() {
   step.value = 'form'
   error.value = ''
   captchaSiteKey.value = ''
+  termsPolicies.value = []
+  registrationTokenInput.value = ''
 }
 
 function clearForm() {
+  resetToForm()
   baseUrl.value = 'https://matrix.org'
   email.value = ''
   username.value = ''
   password.value = ''
-  error.value = ''
-  clearSignupPending()
-  step.value = 'form'
-  captchaSiteKey.value = ''
 }
 </script>
 
@@ -273,6 +367,10 @@ function clearForm() {
             />
           </UFormField>
 
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ translateText('auth.signUpHomeserverPrivacyNotice') }}
+          </p>
+
           <UAlert
             v-if="error"
             color="error"
@@ -300,6 +398,90 @@ function clearForm() {
             </UButton>
           </div>
         </form>
+      </UCard>
+
+      <UCard
+        v-else-if="step === 'registrationToken'"
+        class="w-full max-w-md"
+      >
+        <template #header>
+          <h1 class="text-xl font-semibold">
+            {{ translateText('auth.signUpRegistrationTokenTitle') }}
+          </h1>
+        </template>
+        <div class="space-y-4">
+          <p class="text-sm text-gray-300">
+            {{ translateText('auth.signUpRegistrationTokenRequired') }}
+          </p>
+          <UAlert
+            v-if="error"
+            color="error"
+            :title="error"
+            class="mb-2"
+          />
+          <UFormField
+            :label="translateText(
+              'auth.signUpRegistrationTokenPlaceholder'
+            )"
+          >
+            <UInput
+              v-model="registrationTokenInput"
+              type="password"
+              autocomplete="off"
+            />
+          </UFormField>
+          <UButton
+            class="w-full justify-center"
+            :loading="loading"
+            :disabled="!registrationTokenInput.trim()"
+            @click="handleRegistrationTokenContinue"
+          >
+            {{ translateText('auth.signUpRegistrationTokenSubmit') }}
+          </UButton>
+          <UButton
+            type="button"
+            color="neutral"
+            variant="outline"
+            class="w-full justify-center"
+            :disabled="loading"
+            @click="resetToForm"
+          >
+            {{ translateText('auth.signUpCancel') }}
+          </UButton>
+        </div>
+      </UCard>
+
+      <UCard
+        v-else-if="step === 'terms'"
+        class="w-full max-w-md"
+      >
+        <template #header>
+          <h1 class="text-xl font-semibold">
+            {{ translateText('auth.signUpTermsTitle') }}
+          </h1>
+        </template>
+        <div class="space-y-4">
+          <UAlert
+            v-if="error"
+            color="error"
+            :title="error"
+            class="mb-2"
+          />
+          <SignupTermsStep
+            :policies="termsPolicies"
+            @continue="handleTermsContinue"
+          />
+          <UButton
+            type="button"
+            color="neutral"
+            variant="outline"
+            class="w-full justify-center"
+            :disabled="loading"
+            @click="resetToForm"
+          >
+            {{ translateText('auth.signUpCancel') }}
+          </UButton>
+        </div>
       </UCard>
 
       <UCard
