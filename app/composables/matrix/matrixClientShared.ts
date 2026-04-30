@@ -14,6 +14,7 @@ export interface MatrixApiErrorShape {
     session?: string
     completed?: string[]
     flows?: Array<{ stages?: string[] }>
+    params?: Record<string, unknown>
   }
   httpStatus?: number
   statusCode?: number

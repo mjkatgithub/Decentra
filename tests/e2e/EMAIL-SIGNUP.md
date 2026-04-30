@@ -26,9 +26,13 @@ Cucumber scenarios tagged `@email_signup`. Synapse is configured with
    `http://127.0.0.1:8025`, use the link in the message, then finish at
    `/signup/verify-email` in the same browser session.
 
-## Default E2E vs email E2E
+## Default E2E vs optional signup suites
 
-- `npm run test:e2e` uses `cucumber-js` with `--tags "not @email_signup"`
-  so MailHog scenarios are excluded.
-- Email flows are only run via `test:e2e:signup-email` or
-  `test:e2e:run:email` (with Synapse already up and configured for email).
+- `npm run test:e2e` uses `cucumber-js` with
+  `--tags "not @email_signup and not @recaptcha_signup"` so MailHog and
+  optional captcha-heavy scenarios stay out of the default lane.
+- Email flows run via `test:e2e:signup-email` or `test:e2e:run:email`
+  (Synapse configured for 3pid email).
+- reCAPTCHA flows run via `test:e2e:signup-recaptcha` or
+  `test:e2e:run:recaptcha` (Synapse `enable_registration_captcha` with
+  Google test keys); see `tests/e2e/RECAPTCHA-SIGNUP.md`.
