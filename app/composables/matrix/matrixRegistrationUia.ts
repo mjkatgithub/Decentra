@@ -5,6 +5,7 @@ import {
   HOMESERVER_CONNECTION_HINT_ERROR,
   extractUserLocalpart,
   isLikelyBrowserNetworkOrCorsError,
+  isPublicRegisterEndpointDisabled,
   isSignupUnsupported,
   readMatrixErrorCode,
   readMatrixErrorMessage,
@@ -13,6 +14,8 @@ import {
 } from '~/composables/matrix/matrixClientShared'
 
 export const SIGNUP_UNAVAILABLE_ERROR = 'SIGNUP_UNAVAILABLE'
+/** POST /register closed for normal clients (e.g. matrix.org API policy). */
+export const SIGNUP_REGISTER_API_CLOSED_ERROR = 'SIGNUP_REGISTER_API_CLOSED'
 export const SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR =
   'SIGNUP_EMAIL_VERIFICATION_REQUIRED'
 export const SIGNUP_EMAIL_NOT_CONFIRMED_YET = 'SIGNUP_EMAIL_NOT_CONFIRMED_YET'
@@ -117,6 +120,13 @@ function readMatrixUiaData(error: unknown): MatrixUiaData | null {
     flows: data.flows,
     completed: data.completed,
     params: data.params
+  }
+}
+
+/** Synapse/matrix.org-style “register endpoint closed” detection. */
+function throwIfPublicRegisterDisabled(error: unknown): void {
+  if (isPublicRegisterEndpointDisabled(error)) {
+    throw new Error(SIGNUP_REGISTER_API_CLOSED_ERROR)
   }
 }
 
@@ -807,7 +817,8 @@ export async function startEmailRegistration(
       throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
     }
     const uia = readMatrixUiaData(error)
-    if (!uia?.session) {
+    if (!uia || !uia.session) {
+      throwIfPublicRegisterDisabled(error)
       if (isSignupUnsupported(error)) {
         throw new Error(SIGNUP_UNAVAILABLE_ERROR)
       }
@@ -833,8 +844,10 @@ export async function startEmailRegistration(
       }
       throw error
     }
-    const picked = pickCompletableEmailSignupFlow(uia.flows)
+    const signupUiaSnapshot = uia
+    const picked = pickCompletableEmailSignupFlow(signupUiaSnapshot.flows)
     if (!picked.ok) {
+      throwIfPublicRegisterDisabled(error)
       if (isSignupUnsupported(error)) {
         throw new Error(SIGNUP_UNAVAILABLE_ERROR)
       }
@@ -850,14 +863,14 @@ export async function startEmailRegistration(
       throw new Error(SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR)
     }
     const flowStages = picked.stages
-    const paramsRaw = uia.params
+    const paramsRaw = signupUiaSnapshot.params
     const params: Record<string, unknown> =
       paramsRaw &&
       typeof paramsRaw === 'object' &&
       !Array.isArray(paramsRaw)
         ? (paramsRaw as Record<string, unknown>)
         : {}
-    const completedInitial = uia.completed || []
+    const completedInitial = signupUiaSnapshot.completed || []
     const firstStageRaw = getNextAuthStage(flowStages, completedInitial)
     const recMeta = extractRecaptchaFromParams(params)
 
@@ -871,8 +884,8 @@ export async function startEmailRegistration(
         email: trimmed,
         clientSecret,
         sid: '',
-        session: uia.session ?? '',
-        initialSession: uia.session ?? '',
+        session: signupUiaSnapshot.session ?? '',
+        initialSession: signupUiaSnapshot.session ?? '',
         flowStages,
         paramsSnapshot: Object.keys(params).length > 0 ? params : undefined,
         recaptchaSiteKey: recMeta?.siteKey,
@@ -1116,6 +1129,7 @@ async function runSignupFinalizeLoop(
       ) {
         throw new Error(SIGNUP_EMAIL_NOT_CONFIRMED_YET)
       }
+      throwIfPublicRegisterDisabled(error)
       if (isSignupUnsupported(error)) {
         throw new Error(SIGNUP_UNAVAILABLE_ERROR)
       }
@@ -1170,6 +1184,7 @@ export async function submitSignupRecaptcha(
     }
     const uia = readMatrixUiaData(error)
     if (!uia) {
+      throwIfPublicRegisterDisabled(error)
       if (isSignupUnsupported(error)) {
         throw new Error(SIGNUP_UNAVAILABLE_ERROR)
       }
@@ -1254,6 +1269,7 @@ export async function submitSignupRegistrationToken(
     }
     const uia = readMatrixUiaData(error)
     if (!uia) {
+      throwIfPublicRegisterDisabled(error)
       if (isSignupUnsupported(error)) {
         throw new Error(SIGNUP_UNAVAILABLE_ERROR)
       }
@@ -1329,6 +1345,7 @@ export async function submitSignupTermsAcceptance(): Promise<void> {
     }
     const uia = readMatrixUiaData(error)
     if (!uia) {
+      throwIfPublicRegisterDisabled(error)
       if (isSignupUnsupported(error)) {
         throw new Error(SIGNUP_UNAVAILABLE_ERROR)
       }
@@ -1419,6 +1436,7 @@ export async function registerWithDummy(
     if (isLikelyBrowserNetworkOrCorsError(error)) {
       throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
     }
+    throwIfPublicRegisterDisabled(error)
     if (isSignupUnsupported(error)) {
       throw new Error(SIGNUP_UNAVAILABLE_ERROR)
     }

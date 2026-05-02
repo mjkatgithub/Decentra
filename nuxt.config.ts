@@ -10,7 +10,13 @@ export default defineNuxtConfig({
       iubendaCookiePolicyId: '',
       iubendaLang: 'de',
       iubendaRecaptchaPurposeIds: '',
-      iubendaPrivacyPolicyUrl: ''
+      iubendaPrivacyPolicyUrl: '',
+      /**
+       * Public HTTPS origin without path (delegated OAuth / MAS redirects).
+       * Example: https://YOUR-NGROK.app — required for matrix.org OAuth.
+       */
+      siteUrl: '',
+      matrixOidcClientId: ''
     }
   },
   app: {

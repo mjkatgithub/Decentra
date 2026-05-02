@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   HOMESERVER_CONNECTION_HINT_ERROR,
+  MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR,
   useMatrixClient
 } from '~/composables/useMatrixClient'
+import {
+  fetchMatrixDelegatedClientHints,
+  resolveTrustedAppHttpsOrigin
+} from '~/composables/matrix/matrixOidcNative'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 const baseUrl = ref('https://matrix.org')
@@ -14,11 +19,69 @@ const loading = ref(false)
 const route = useRoute()
 const signupSuccess = computed(() => route.query.signup === 'success')
 
-const { login, isLoggedIn } = useMatrixClient()
+const delegatedOidcForHomeserver = ref(false)
+const runtimeConfig = useRuntimeConfig()
+const trustedHttpsOriginReady = computed(() => {
+  return !!resolveTrustedAppHttpsOrigin(
+    String(runtimeConfig.public.siteUrl ?? '').trim()
+  )
+})
+
+const {
+  login,
+  isLoggedIn,
+  startDelegatedMatrixNativeOidcAuth
+} = useMatrixClient()
 const { translateText } = useAppI18n()
 
 if (isLoggedIn.value) {
   navigateTo('/chat')
+}
+
+async function refreshDelegatedBanner(): Promise<void> {
+  delegatedOidcForHomeserver.value = false
+  const hs = baseUrl.value.trim()
+  if (!hs) return
+  try {
+    await fetchMatrixDelegatedClientHints(hs)
+    delegatedOidcForHomeserver.value = true
+  } catch {
+    delegatedOidcForHomeserver.value = false
+  }
+}
+
+watch(baseUrl, () => {
+  void refreshDelegatedBanner()
+})
+
+onMounted(() => {
+  void refreshDelegatedBanner()
+})
+
+async function handleOidcLoginViaMas(): Promise<void> {
+  error.value = ''
+  if (!trustedHttpsOriginReady.value) {
+    error.value = translateText('auth.matrixOidcNeedsHttpsSiteUrl')
+    return
+  }
+  try {
+    await startDelegatedMatrixNativeOidcAuth({
+      homeserverUrlInput: baseUrl.value.trim() || 'https://matrix.org',
+      intent: 'login'
+    })
+  } catch (thrownError) {
+    if (
+      thrownError instanceof Error &&
+      thrownError.message === MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR
+    ) {
+      error.value = translateText('auth.matrixOidcNeedsHttpsSiteUrl')
+      return
+    }
+    error.value =
+      thrownError instanceof Error
+        ? thrownError.message
+        : translateText('auth.signInFailed')
+  }
 }
 
 async function handleLogin() {
@@ -84,13 +147,13 @@ function clearForm() {
           </h1>
         </template>
 
-        <form class="space-y-4" @submit.prevent="handleLogin">
+        <div class="space-y-4">
           <UAlert
             v-if="signupSuccess"
             color="success"
             :title="translateText('auth.signUpSuccess')"
-            class="mb-4"
           />
+
           <UFormField :label="translateText('auth.homeserver')">
             <UInput
               v-model="baseUrl"
@@ -100,50 +163,82 @@ function clearForm() {
             />
           </UFormField>
 
-          <UFormField :label="translateText('auth.username')">
-            <UInput
-              v-model="username"
-              placeholder="@user:matrix.org"
-              required
+          <div
+            v-if="delegatedOidcForHomeserver"
+            class="space-y-3 rounded-lg border border-primary-500/30 bg-gray-900/60 p-3"
+          >
+            <p class="text-sm text-gray-300">
+              {{ translateText('auth.matrixOidcLoginIntro') }}
+            </p>
+            <UAlert
+              v-if="!trustedHttpsOriginReady"
+              color="warning"
+              :title="translateText('auth.matrixOidcNeedsHttpsSiteUrl')"
             />
-          </UFormField>
+            <UButton
+              type="button"
+              color="primary"
+              variant="outline"
+              class="w-full justify-center"
+              :disabled="loading || !trustedHttpsOriginReady"
+              @click="handleOidcLoginViaMas()"
+            >
+              {{ translateText('auth.matrixOidcLoginButton') }}
+            </UButton>
+          </div>
 
-          <UFormField :label="translateText('auth.password')">
-            <UInput
-              v-model="password"
-              type="password"
-              placeholder="••••••••"
-              required
-            />
-          </UFormField>
+          <p
+            v-if="delegatedOidcForHomeserver"
+            class="text-xs font-medium text-gray-500"
+          >
+            {{ translateText('auth.signInPasswordDivider') }}
+          </p>
 
           <UAlert
             v-if="error"
             color="error"
             :title="error"
-            class="mb-4"
           />
 
-          <div class="grid grid-cols-2 gap-3">
-            <UButton
-              type="button"
-              color="neutral"
-              variant="outline"
-              class="w-full justify-center"
-              :disabled="loading"
-              @click="clearForm"
-            >
-              {{ translateText('cancel') }}
-            </UButton>
-            <UButton
-              type="submit"
-              class="w-full justify-center"
-              :loading="loading"
-            >
-              {{ translateText('auth.signIn') }}
-            </UButton>
-          </div>
-        </form>
+          <form class="space-y-4" @submit.prevent="handleLogin">
+            <UFormField :label="translateText('auth.username')">
+              <UInput
+                v-model="username"
+                placeholder="@user:matrix.org"
+                required
+              />
+            </UFormField>
+
+            <UFormField :label="translateText('auth.password')">
+              <UInput
+                v-model="password"
+                type="password"
+                placeholder="••••••••"
+                required
+              />
+            </UFormField>
+
+            <div class="grid grid-cols-2 gap-3">
+              <UButton
+                type="button"
+                color="neutral"
+                variant="outline"
+                class="w-full justify-center"
+                :disabled="loading"
+                @click="clearForm"
+              >
+                {{ translateText('cancel') }}
+              </UButton>
+              <UButton
+                type="submit"
+                class="w-full justify-center"
+                :loading="loading"
+              >
+                {{ translateText('auth.signIn') }}
+              </UButton>
+            </div>
+          </form>
+        </div>
       </UCard>
     </main>
   </div>

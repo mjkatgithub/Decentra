@@ -19,6 +19,7 @@ import {
   SIGNUP_SESSION_EXPIRED,
   SIGNUP_SSO_USE_WEB_CLIENT,
   SIGNUP_TERMS_ACCEPTANCE_REQUIRED,
+  SIGNUP_REGISTER_API_CLOSED_ERROR,
   SIGNUP_UNAVAILABLE_ERROR,
   submitSignupRegistrationToken,
   submitSignupTermsAcceptance,
@@ -92,6 +93,9 @@ function mapError(thrown: unknown): string {
   }
   if (messageCode === SIGNUP_UNAVAILABLE_ERROR) {
     return translateText('auth.signUpUnavailable')
+  }
+  if (messageCode === SIGNUP_REGISTER_API_CLOSED_ERROR) {
+    return translateText('auth.signUpRegisterApiClosed')
   }
   if (messageCode === HOMESERVER_CONNECTION_HINT_ERROR) {
     return translateText('auth.homeserverConnectionHint')

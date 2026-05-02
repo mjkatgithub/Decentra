@@ -415,7 +415,7 @@ describe('useMatrixClient', () => {
     })
   })
 
-  it('maps disabled registration errors to signup unavailable', async () => {
+  it('maps homeserver-disabled register API errors to REGISTER_API_CLOSED', async () => {
     const authClient = {
       registerRequest: vi.fn(async () => {
         throw new Error('Registration has been disabled')
@@ -424,14 +424,14 @@ describe('useMatrixClient', () => {
     createClient.mockReturnValueOnce(authClient)
 
     const {
-      SIGNUP_UNAVAILABLE_ERROR,
+      SIGNUP_REGISTER_API_CLOSED_ERROR,
       useMatrixClient
     } = await import('~/composables/useMatrixClient')
     const { register } = useMatrixClient()
 
     await expect(
       register('https://matrix.example.org', 'alice', 'secret')
-    ).rejects.toThrow(SIGNUP_UNAVAILABLE_ERROR)
+    ).rejects.toThrow(SIGNUP_REGISTER_API_CLOSED_ERROR)
   })
 
   it('persists UIA email signup state after 401 with session and email flow', async () => {

@@ -14,6 +14,11 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signInFailed': 'Sign in failed',
     'auth.signUpFailed': 'Sign up failed',
     'auth.signUpUnavailable': 'Sign-up is not available on this homeserver',
+    'auth.signUpRegisterApiClosed':
+      'This homeserver does not allow creating new accounts through the ' +
+      'Matrix Client-Server API—the method Decentra uses for sign-up. ' +
+      'You may still be able to register through the operator\'s website ' +
+      'or another Matrix client, then sign in here.',
     'auth.signUpEmailVerificationRequired': 'Sign-up requires email verification on this homeserver',
     'auth.signUpSuccess': 'Account created. Please sign in.',
     'auth.signUpEmailSentTitle': 'Check your email',
@@ -76,6 +81,34 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'reCAPTCHA verification failed. Please try again.',
     'auth.signUpRecaptchaRequired':
       'Complete reCAPTCHA to continue.',
+    'auth.signUpRecaptchaTransferAck':
+      'I understand that loading reCAPTCHA sends data ' +
+      '(including IP-related telemetry if applicable) ' +
+      'to Google.',
+    'auth.signUpClassicRegistrationDivider':
+      'Classic sign-up via homeserver registration API',
+    'auth.matrixOidcSignupIntro':
+      'On this homeserver new accounts use the Matrix login service ' +
+      '(MAS / OAuth), like Element—not the legacy /register form.',
+    'auth.matrixOidcSignupButton': 'Continue Matrix sign-up in browser…',
+    'auth.matrixOidcSignupFinePrint':
+      'After you confirm in the Matrix window, Decentra continues here.',
+    'auth.matrixOidcLoginIntro':
+      'Delegated Matrix login (OAuth)—same mechanism many Element users ' +
+      'use here.',
+    'auth.matrixOidcLoginButton': 'Continue Matrix sign-in in browser…',
+    'auth.signInPasswordDivider': 'Or sign in with password',
+    'auth.matrixOidcNeedsHttpsSiteUrl':
+      'Set NUXT_PUBLIC_SITE_URL to your public HTTPS app origin so OAuth ' +
+      'redirects work (e.g. HTTPS preview URL—not plain http localhost).',
+    'auth.matrixOidcCallbackTitle': 'Completing Matrix sign-in',
+    'auth.matrixOidcCallbackBusy': 'Finishing delegated login…',
+    'auth.matrixOidcMissingCodeState':
+      'OAuth callback was missing authorization code or state.',
+    'auth.matrixOidcCallbackInvalid':
+      'Delegated login expired or tampered—start OAuth again.',
+    'auth.matrixOidcCallbackFailedRaw': '{detail}',
+    'auth.matrixOidcBackToLogin': 'Return to login',
     'auth.homeserverConnectionHint':
       'Cannot reach the homeserver from the browser. For public ' +
       'servers use https:// (not http://) so a redirect does not break ' +
@@ -227,6 +260,12 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signInFailed': 'Anmeldung fehlgeschlagen',
     'auth.signUpFailed': 'Registrierung fehlgeschlagen',
     'auth.signUpUnavailable': 'Registrierung ist auf diesem Homeserver nicht verfuegbar',
+    'auth.signUpRegisterApiClosed':
+      'Dieser Homeserver erlaubt keine Neuregistrierung ueber die ' +
+      'Matrix Client-Server-API - genau diese Schnittstelle nutzt Decentra ' +
+      'fuer die Registrierung. Evtl. kannst du den Account bei der ' +
+      'Betreibenden oder in einem anderen Client anlegen und dich hier ' +
+      'danach anmelden.',
     'auth.signUpEmailVerificationRequired': 'Registrierung erfordert E-Mail-Verifizierung auf diesem Homeserver',
     'auth.signUpSuccess': 'Account erstellt. Bitte melde dich an.',
     'auth.signUpEmailSentTitle': 'E-Mail pruefen',
@@ -297,6 +336,38 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'reCAPTCHA-Verifikation fehlgeschlagen. Bitte erneut versuchen.',
     'auth.signUpRecaptchaRequired':
       'Bitte reCAPTCHA abschliessen, um fortzufahren.',
+    'auth.signUpRecaptchaTransferAck':
+      'Mir ist klar: Beim Laden von reCAPTCHA werden Daten unter ' +
+      'Umstaenden an Google uebermittelt.',
+    'auth.signUpClassicRegistrationDivider':
+      'Klassische Registrierung ueber die Legacy-Registration-API',
+    'auth.matrixOidcSignupIntro':
+      'Auf diesem Homeserver laufen neue Konten ueber den Matrix-Anmeldeservice ' +
+      '(MAS / OAuth), vergleichbar mit Element, nicht ueber die Legacy-/register-' +
+      'API.',
+    'auth.matrixOidcSignupButton':
+      'Mit Matrix-Webfenster registrieren…',
+    'auth.matrixOidcSignupFinePrint':
+      'Nach dem Abschluss dort kehrst du hier automatisch weiter.',
+    'auth.matrixOidcLoginIntro':
+      'Delegation ueber OAuth wie bei Element, falls der Homeserver keine ' +
+      'klassische Password-/login-Anmeldung nutzt.',
+    'auth.matrixOidcLoginButton':
+      'Mit Matrix-Webfenster anmelden…',
+    'auth.signInPasswordDivider': 'Oder mit Passwort anmelden',
+    'auth.matrixOidcNeedsHttpsSiteUrl':
+      'Fuer OAuth-Bruecken setze NUXT_PUBLIC_SITE_URL auf eine oeffentliche ' +
+      'HTTPS-Origin (z. B. Tunnel-Preview, nicht nur http localhost).',
+    'auth.matrixOidcCallbackTitle':
+      'Matrix-Anmeldung wird abgeschlossen',
+    'auth.matrixOidcCallbackBusy':
+      'Mit dem Anmeldeservice unterhalten…',
+    'auth.matrixOidcMissingCodeState':
+      'OAuth-Rueckruf ohne code oder state.',
+    'auth.matrixOidcCallbackInvalid':
+      'Anmeldedaten ungueltig oder abgelaufen—OAuth erneut starten.',
+    'auth.matrixOidcCallbackFailedRaw': '{detail}',
+    'auth.matrixOidcBackToLogin': 'Zurueck zum Login',
     'auth.homeserverConnectionHint':
       'Homeserver aus dem Browser nicht erreichbar. Oeffentliche ' +
       'Server: https:// statt http:// (sonst bricht CORS-Preflight). Synapse ' +

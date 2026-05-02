@@ -144,6 +144,23 @@ export function readMatrixErrorMessage(error: unknown): string {
   )
 }
 
+/**
+ * Homeserver refuses open registration via POST /register (Synapse/matrix.org).
+ * Separate from flows Decentra can complete via UIA when a session exists.
+ */
+export function isPublicRegisterEndpointDisabled(error: unknown): boolean {
+  const raw = readMatrixErrorMessage(error)
+  const normalized = raw.toLowerCase()
+  return (
+    normalized.includes('registration has been disabled') ||
+    normalized.includes('registration is disabled') ||
+    (
+      normalized.includes('application_service') &&
+      normalized.includes('registrations are allowed')
+    )
+  )
+}
+
 export function isSignupUnsupported(error: unknown): boolean {
   const matrixErrorCode = readMatrixErrorCode(error)
   if (

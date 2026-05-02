@@ -39,6 +39,7 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.signUpBackToForm': 'Back',
           'auth.signUpEmailVerificationRequired': 'Email required',
           'auth.signUpUnavailable': 'Unavailable',
+          'auth.signUpRegisterApiClosed': 'Register API closed hint',
           'auth.homeserverConnectionHint': 'Hint',
           'auth.signUpUnsupportedAuthStage': 'Unsupported',
           'auth.signUpSessionExpired': 'Expired',
@@ -69,6 +70,7 @@ vi.mock('~/composables/useMatrixClient', () => {
     SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR:
       'SIGNUP_EMAIL_VERIFICATION_REQUIRED',
     SIGNUP_UNAVAILABLE_ERROR: 'SIGNUP_UNAVAILABLE',
+    SIGNUP_REGISTER_API_CLOSED_ERROR: 'SIGNUP_REGISTER_API_CLOSED',
     HOMESERVER_CONNECTION_HINT_ERROR: 'HOMESERVER_CONNECTION_HINT',
     SIGNUP_REGISTRATION_UNSUPPORTED_STAGE:
       'SIGNUP_REGISTRATION_UNSUPPORTED_STAGE',

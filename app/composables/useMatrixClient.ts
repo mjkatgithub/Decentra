@@ -39,6 +39,7 @@ import {
   SIGNUP_PENDING_STORAGE_KEY,
   SIGNUP_RECAPTCHA_FAILED,
   SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
+  SIGNUP_REGISTER_API_CLOSED_ERROR,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
   SIGNUP_REGISTRATION_TOKEN_REJECTED,
   SIGNUP_REGISTRATION_TOKEN_REQUIRED,
@@ -67,6 +68,7 @@ export {
   SIGNUP_PENDING_STORAGE_KEY,
   SIGNUP_RECAPTCHA_FAILED,
   SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
+  SIGNUP_REGISTER_API_CLOSED_ERROR,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
   SIGNUP_REGISTRATION_TOKEN_REJECTED,
   SIGNUP_REGISTRATION_TOKEN_REQUIRED,
@@ -92,11 +94,37 @@ export {
   isTermsStage
 } from './matrix/matrixRegistrationUia'
 
+import {
+  exchangeNativeOidcAuthorizationCode,
+  fetchMatrixWhoAmI,
+  MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
+  MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR,
+  MATRIX_OIDC_INVALID_CALLBACK_ERROR,
+  redirectToMatrixNativeOidc,
+  refreshNativeOidcAccessToken,
+  resolveTrustedAppHttpsOrigin,
+  type MatrixOidcIntent
+} from './matrix/matrixOidcNative'
+
+export {
+  MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
+  fetchMatrixDelegatedClientHints,
+  MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR,
+  MATRIX_OIDC_INVALID_CALLBACK_ERROR,
+  MATRIX_OIDC_NO_DELEGATED_AUTH_ERROR,
+  MATRIX_OIDC_REGISTRATION_REJECTED_ERROR,
+  MATRIX_OIDC_STATE_STORAGE_PREFIX
+} from './matrix/matrixOidcNative'
+
 interface StoredMatrixSession {
   baseUrl: string
   accessToken: string
   userId: string
   deviceId?: string
+  refreshToken?: string
+  oauthTokenExpiresAtMs?: number
+  oidcTokenEndpoint?: string
+  oidcClientId?: string
 }
 
 interface StoredMatrixDevice {
@@ -591,9 +619,41 @@ export function useMatrixClient() {
     if (client.value) {
       return
     }
-    const session = readStoredSession()
+    let session = readStoredSession()
     if (!session) {
       return
+    }
+    if (
+      session.refreshToken &&
+      session.oidcTokenEndpoint &&
+      session.oidcClientId &&
+      session.oauthTokenExpiresAtMs != null
+    ) {
+      const nearingExpiry =
+        Date.now() > session.oauthTokenExpiresAtMs - 120_000
+      if (nearingExpiry) {
+        try {
+          const renewed = await refreshNativeOidcAccessToken({
+            refreshToken: session.refreshToken,
+            tokenEndpoint: session.oidcTokenEndpoint,
+            clientId: session.oidcClientId
+          })
+          let expiresMs = session.oauthTokenExpiresAtMs
+          if (renewed.expiresInSeconds != null) {
+            expiresMs =
+              Date.now() + renewed.expiresInSeconds * 1000
+          }
+          session = {
+            ...session,
+            accessToken: renewed.accessToken,
+            refreshToken: renewed.refreshToken || session.refreshToken,
+            oauthTokenExpiresAtMs: expiresMs
+          }
+          writeStoredSession(session)
+        } catch {
+          // Keep previous access_token; renewal can fail offline.
+        }
+      }
     }
     const restoredClient = sdk.createClient({
       baseUrl: session.baseUrl,
@@ -743,6 +803,84 @@ export function useMatrixClient() {
       client.value = null
     }
     clearStoredSession()
+  }
+
+  function resolveConfiguredTrustedSiteOrigin(): string {
+    const runtimeCfg = useRuntimeConfig()
+    return resolveTrustedAppHttpsOrigin(
+      String(runtimeCfg.public.siteUrl || '').trim()
+    )
+  }
+
+  async function startDelegatedMatrixNativeOidcAuth(payload: {
+    homeserverUrlInput: string
+    intent: MatrixOidcIntent
+  }): Promise<void> {
+    const siteOriginHttps = resolveConfiguredTrustedSiteOrigin()
+    if (!siteOriginHttps) {
+      throw new Error(MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR)
+    }
+    const runtimeCfg = useRuntimeConfig()
+    await redirectToMatrixNativeOidc({
+      homeserverUrlInput: payload.homeserverUrlInput,
+      trustedAppHttpsOrigin: siteOriginHttps,
+      runtimeClientIdConfigured: String(
+        runtimeCfg.public.matrixOidcClientId || ''
+      ).trim(),
+      callbackPath: MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
+      intent: payload.intent
+    })
+  }
+
+  async function finalizeDelegatedMatrixOidcFromRedirectPayload(
+    payload: { code: string; state: string }
+  ): Promise<void> {
+    if (typeof window === 'undefined') {
+      throw new Error(MATRIX_OIDC_INVALID_CALLBACK_ERROR)
+    }
+    const exchanged = await exchangeNativeOidcAuthorizationCode({
+      code: payload.code,
+      state: payload.state
+    })
+    const identity = await fetchMatrixWhoAmI(
+      exchanged.pending.matrixClientApiBaseUrl,
+      exchanged.tokens.accessToken
+    )
+    const ttlSeconds = exchanged.tokens.expiresInSeconds ?? 300
+    const oauthExpiresAtMs = Date.now() + ttlSeconds * 1000
+    const deviceLit = exchanged.pending.oidcDeviceId
+    const matrixApiBase = exchanged.pending.matrixClientApiBaseUrl
+    const delegatedClient = sdk.createClient({
+      baseUrl: matrixApiBase,
+      accessToken: exchanged.tokens.accessToken,
+      userId: identity.userId,
+      deviceId: deviceLit
+    })
+    await initRustCryptoWithRecovery(
+      delegatedClient,
+      'during delegated OIDC'
+    )
+    delegatedClient.startClient({ initialSyncLimit: 50 })
+    if (client.value) {
+      client.value.stopClient()
+    }
+    client.value = delegatedClient
+    const maybeRefresh = exchanged.tokens.refreshToken ?? undefined
+    writeStoredSession({
+      baseUrl: matrixApiBase,
+      accessToken: exchanged.tokens.accessToken,
+      userId: identity.userId,
+      deviceId: deviceLit,
+      refreshToken: maybeRefresh,
+      oauthTokenExpiresAtMs: oauthExpiresAtMs,
+      oidcTokenEndpoint: exchanged.pending.tokenEndpoint,
+      oidcClientId: exchanged.pending.oauthClientId
+    })
+    writeStoredDevice({
+      baseUrl: matrixApiBase,
+      userId: identity.userId,
+      deviceId: deviceLit
+    })
   }
 
   async function ensureCryptoReady(): Promise<boolean> {
@@ -1203,6 +1341,8 @@ export function useMatrixClient() {
     signupPendingNeedsRecaptchaBeforeEmail,
     readSignupPendingPublic,
     logout,
+    startDelegatedMatrixNativeOidcAuth,
+    finalizeDelegatedMatrixOidcFromRedirectPayload,
     getRooms,
     getRoom,
     sendMessage,

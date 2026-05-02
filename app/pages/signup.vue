@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { SignupTermsPolicyItem } from '~/composables/matrix/matrixRegistrationUia'
-import { ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
+  MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR,
   clearSignupPending,
   extractRecaptchaFromParams,
   HOMESERVER_CONNECTION_HINT_ERROR,
@@ -20,6 +21,7 @@ import {
   SIGNUP_SESSION_EXPIRED,
   SIGNUP_SSO_USE_WEB_CLIENT,
   SIGNUP_TERMS_ACCEPTANCE_REQUIRED,
+  SIGNUP_REGISTER_API_CLOSED_ERROR,
   SIGNUP_UNAVAILABLE_ERROR,
   startEmailRegistration,
   submitSignupRecaptcha,
@@ -27,6 +29,10 @@ import {
   submitSignupTermsAcceptance,
   useMatrixClient
 } from '~/composables/useMatrixClient'
+import {
+  fetchMatrixDelegatedClientHints,
+  resolveTrustedAppHttpsOrigin
+} from '~/composables/matrix/matrixOidcNative'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 type SignupStep =
@@ -49,7 +55,18 @@ const captchaSiteKey = ref('')
 const captchaVersion = ref<'v2' | 'v3'>('v2')
 const termsPolicies = ref<SignupTermsPolicyItem[]>([])
 
-const { isLoggedIn } = useMatrixClient()
+const delegatedOidcForHomeserver = ref(false)
+const runtimeConfig = useRuntimeConfig()
+const trustedHttpsOriginReady = computed(() => {
+  return !!resolveTrustedAppHttpsOrigin(
+    String(runtimeConfig.public.siteUrl ?? '').trim()
+  )
+})
+
+const {
+  isLoggedIn,
+  startDelegatedMatrixNativeOidcAuth
+} = useMatrixClient()
 const { translateText } = useAppI18n()
 
 if (isLoggedIn.value) {
@@ -63,6 +80,12 @@ function mapSignupError(thrown: unknown): string {
   const message = thrown.message
   if (message === SIGNUP_UNAVAILABLE_ERROR) {
     return translateText('auth.signUpUnavailable')
+  }
+  if (message === SIGNUP_REGISTER_API_CLOSED_ERROR) {
+    return translateText('auth.signUpRegisterApiClosed')
+  }
+  if (message === MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR) {
+    return translateText('auth.matrixOidcNeedsHttpsSiteUrl')
   }
   if (message === SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR) {
     return translateText('auth.signUpEmailVerificationRequired')
@@ -265,6 +288,45 @@ async function handleCaptchaVerified(token: string) {
   }
 }
 
+async function refreshDelegatedBanner(): Promise<void> {
+  delegatedOidcForHomeserver.value = false
+  const homeserver = baseUrl.value.trim()
+  if (!homeserver) {
+    return
+  }
+  try {
+    await fetchMatrixDelegatedClientHints(homeserver)
+    delegatedOidcForHomeserver.value = true
+  } catch {
+    delegatedOidcForHomeserver.value = false
+  }
+}
+
+async function handleOidcSignupViaMas(): Promise<void> {
+  error.value = ''
+  if (!trustedHttpsOriginReady.value) {
+    error.value = translateText('auth.matrixOidcNeedsHttpsSiteUrl')
+    return
+  }
+  const homeserverUrl = baseUrl.value.trim() || 'https://matrix.org'
+  try {
+    await startDelegatedMatrixNativeOidcAuth({
+      homeserverUrlInput: homeserverUrl,
+      intent: 'signup'
+    })
+  } catch (thrownError: unknown) {
+    error.value = mapSignupError(thrownError)
+  }
+}
+
+watch(baseUrl, () => {
+  void refreshDelegatedBanner()
+})
+
+onMounted(() => {
+  void refreshDelegatedBanner()
+})
+
 function resetToForm() {
   clearSignupPending()
   step.value = 'form'
@@ -328,19 +390,7 @@ function clearForm() {
           </h1>
         </template>
 
-        <form
-          class="space-y-4"
-          @submit.prevent="handleSignup"
-        >
-          <UFormField :label="translateText('auth.email')">
-            <UInput
-              v-model="email"
-              placeholder="name@example.org"
-              type="email"
-              required
-            />
-          </UFormField>
-
+        <div class="space-y-4">
           <UFormField :label="translateText('auth.homeserver')">
             <UInput
               v-model="baseUrl"
@@ -350,54 +400,102 @@ function clearForm() {
             />
           </UFormField>
 
-          <UFormField :label="translateText('auth.username')">
-            <UInput
-              v-model="username"
-              placeholder="@user:matrix.org"
-              required
+          <div
+            v-if="delegatedOidcForHomeserver"
+            class="space-y-3 rounded-lg border border-primary-500/30 bg-gray-900/60 p-3"
+          >
+            <p class="text-sm text-gray-300">
+              {{ translateText('auth.matrixOidcSignupIntro') }}
+            </p>
+            <UAlert
+              v-if="!trustedHttpsOriginReady"
+              color="warning"
+              :title="translateText('auth.matrixOidcNeedsHttpsSiteUrl')"
             />
-          </UFormField>
+            <UButton
+              type="button"
+              class="w-full justify-center"
+              color="primary"
+              variant="outline"
+              :loading="loading"
+              :disabled="loading || !trustedHttpsOriginReady"
+              @click="handleOidcSignupViaMas()"
+            >
+              {{ translateText('auth.matrixOidcSignupButton') }}
+            </UButton>
+            <p class="text-xs text-gray-500">
+              {{ translateText('auth.matrixOidcSignupFinePrint') }}
+            </p>
+          </div>
 
-          <UFormField :label="translateText('auth.password')">
-            <UInput
-              v-model="password"
-              type="password"
-              placeholder="••••••••"
-              required
-            />
-          </UFormField>
-
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            {{ translateText('auth.signUpHomeserverPrivacyNotice') }}
+          <p
+            v-if="delegatedOidcForHomeserver"
+            class="text-xs font-medium text-gray-500"
+          >
+            {{ translateText('auth.signUpClassicRegistrationDivider') }}
           </p>
 
           <UAlert
             v-if="error"
             color="error"
             :title="error"
-            class="mb-4"
           />
 
-          <div class="grid grid-cols-2 gap-3">
-            <UButton
-              type="button"
-              color="neutral"
-              variant="outline"
-              class="w-full justify-center"
-              :disabled="loading"
-              @click="clearForm"
-            >
-              {{ translateText('cancel') }}
-            </UButton>
-            <UButton
-              type="submit"
-              class="w-full justify-center"
-              :loading="loading"
-            >
-              {{ translateText('auth.signUp') }}
-            </UButton>
-          </div>
-        </form>
+          <form
+            class="space-y-4"
+            @submit.prevent="handleSignup"
+          >
+            <UFormField :label="translateText('auth.email')">
+              <UInput
+                v-model="email"
+                placeholder="name@example.org"
+                type="email"
+                required
+              />
+            </UFormField>
+
+            <UFormField :label="translateText('auth.username')">
+              <UInput
+                v-model="username"
+                placeholder="@user:matrix.org"
+                required
+              />
+            </UFormField>
+
+            <UFormField :label="translateText('auth.password')">
+              <UInput
+                v-model="password"
+                type="password"
+                placeholder="••••••••"
+                required
+              />
+            </UFormField>
+
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              {{ translateText('auth.signUpHomeserverPrivacyNotice') }}
+            </p>
+
+            <div class="grid grid-cols-2 gap-3">
+              <UButton
+                type="button"
+                color="neutral"
+                variant="outline"
+                class="w-full justify-center"
+                :disabled="loading"
+                @click="clearForm"
+              >
+                {{ translateText('cancel') }}
+              </UButton>
+              <UButton
+                type="submit"
+                class="w-full justify-center"
+                :loading="loading"
+              >
+                {{ translateText('auth.signUp') }}
+              </UButton>
+            </div>
+          </form>
+        </div>
       </UCard>
 
       <UCard

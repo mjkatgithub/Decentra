@@ -26,11 +26,28 @@ const {
 const v3Running = ref(false)
 const v3Error = ref('')
 
-const widgetAllowed = computed(() => canLoadGoogleRecaptcha())
+const needsExplicitGoogleTransferAck = computed(() => !iubendaConfigured())
+const acknowledgesGoogleTransfer = ref(false)
+
+const widgetAllowed = computed(() => {
+  if (!canLoadGoogleRecaptcha()) {
+    return false
+  }
+  if (needsExplicitGoogleTransferAck.value && !acknowledgesGoogleTransfer.value) {
+    return false
+  }
+  return true
+})
 
 const policyHref = computed(() => privacyPolicyUrl())
 
 function onConsentContinue(): void {
+  if (
+    needsExplicitGoogleTransferAck.value &&
+    !acknowledgesGoogleTransfer.value
+  ) {
+    return
+  }
   grantLocalRecaptchaConsent()
 }
 
@@ -95,10 +112,24 @@ function onRecaptchaV2Verified(response: unknown): void {
       </UButton>
     </div>
 
+    <label
+      v-if="needsExplicitGoogleTransferAck && !canLoadGoogleRecaptcha()"
+      class="flex cursor-pointer items-start gap-3 text-sm text-gray-300"
+    >
+      <input
+        v-model="acknowledgesGoogleTransfer"
+        type="checkbox"
+        class="mt-0.5"
+      >
+      <span>{{ translateText('auth.signUpRecaptchaTransferAck') }}</span>
+    </label>
+
     <div v-if="!widgetAllowed">
       <UButton
         type="button"
         class="w-full justify-center"
+        :disabled="needsExplicitGoogleTransferAck &&
+          !acknowledgesGoogleTransfer"
         @click="onConsentContinue"
       >
         {{ translateText('auth.signUpAgreeLoadRecaptcha') }}

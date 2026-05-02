@@ -3,6 +3,15 @@ import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import SignupPage from '~/pages/signup.vue'
 
+vi.mock('~/composables/matrix/matrixOidcNative', () => {
+  return {
+    fetchMatrixDelegatedClientHints: vi.fn(async () => {
+      throw new Error('MATRIX_OIDC_NO_DELEGATED_AUTH')
+    }),
+    resolveTrustedAppHttpsOrigin: vi.fn(() => '')
+  }
+})
+
 const {
   navigateToMock,
   startEmailRegistrationMock,
@@ -69,6 +78,8 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.signUpFailed': 'Sign up failed',
           'auth.signUpUnavailable':
             'Sign-up is not available on this homeserver',
+          'auth.signUpRegisterApiClosed':
+            'Register API closed - use elsewhere then sign in',
           'auth.signUpEmailVerificationRequired':
             'Sign-up requires email verification on this homeserver',
           'auth.homeserverConnectionHint': 'Connection hint',
@@ -127,6 +138,7 @@ vi.mock('~/composables/useMatrixClient', () => {
     SIGNUP_MSISDN_NOT_SUPPORTED: 'SIGNUP_MSISDN_NOT_SUPPORTED',
     SIGNUP_SSO_USE_WEB_CLIENT: 'SIGNUP_SSO_USE_WEB_CLIENT',
     SIGNUP_SESSION_EXPIRED: 'SIGNUP_SESSION_EXPIRED',
+    SIGNUP_REGISTER_API_CLOSED_ERROR: 'SIGNUP_REGISTER_API_CLOSED',
     extractRecaptchaFromParams: mockExtractRecaptchaFromParams,
     readSignupPendingPublic: mockReadSignupPendingPublic,
     clearSignupPending: vi.fn(() => {
@@ -134,8 +146,11 @@ vi.mock('~/composables/useMatrixClient', () => {
         sessionStorage.removeItem(PENDING_KEY)
       }
     }),
+    MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR:
+      'MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED',
     useMatrixClient: () => ({
-      isLoggedIn: ref(false)
+      isLoggedIn: ref(false),
+      startDelegatedMatrixNativeOidcAuth: vi.fn(async () => undefined)
     }),
     startEmailRegistration: startEmailRegistrationMock,
     submitSignupRecaptcha: submitSignupRecaptchaMock,
@@ -204,6 +219,17 @@ describe('signup page', () => {
     startEmailRegistrationMock.mockImplementation(async () => undefined)
     submitSignupRecaptchaMock.mockImplementation(async () => undefined)
     ;(globalThis as Record<string, unknown>).navigateTo = navigateToMock
+    vi.stubGlobal('useRuntimeConfig', () => ({
+      public: {
+        siteUrl: '',
+        matrixOidcClientId: '',
+        iubendaSiteId: '',
+        iubendaCookiePolicyId: '',
+        iubendaLang: 'de',
+        iubendaRecaptchaPurposeIds: '',
+        iubendaPrivacyPolicyUrl: ''
+      }
+    }))
   })
 
   function mountSignupPage() {
@@ -229,8 +255,8 @@ describe('signup page', () => {
     const inputElements = wrapper.findAll('input')
     expect(inputElements).toHaveLength(4)
     const [
-      emailInput,
       homeserverInput,
+      emailInput,
       usernameInput,
       passwordInput
     ] = inputElements
@@ -263,8 +289,8 @@ describe('signup page', () => {
     const wrapper = mountSignupPage()
     const inputElements = wrapper.findAll('input')
     const [
-      emailInput,
       homeserverInput,
+      emailInput,
       usernameInput,
       passwordInput
     ] = inputElements
@@ -294,8 +320,8 @@ describe('signup page', () => {
     const wrapper = mountSignupPage()
     const inputElements = wrapper.findAll('input')
     const [
-      emailInput,
       homeserverInput,
+      emailInput,
       usernameInput,
       passwordInput
     ] = inputElements
@@ -331,6 +357,21 @@ describe('signup page', () => {
     expect(wrapper.text().includes('Decentra'))
       .toBe(true)
     expect(wrapper.find('form').exists()).toBe(true)
+  })
+
+  it('shows register-API-closed hint when HS blocks client /register', async () => {
+    startEmailRegistrationMock.mockRejectedValueOnce(
+      new Error('SIGNUP_REGISTER_API_CLOSED')
+    )
+    const wrapper = mountSignupPage()
+
+    await wrapper.find('form').trigger('submit.prevent')
+
+    expect(
+      wrapper.text().includes(
+        'Register API closed - use elsewhere then sign in'
+      )
+    ).toBe(true)
   })
 
   it('shows translated error when signup is unavailable', async () => {
