@@ -16,12 +16,23 @@ const {
   navigateToMock,
   startEmailRegistrationMock,
   submitSignupRecaptchaMock,
+  mockResolveHomeserverBaseUrlForClient,
   PENDING_KEY
 } = vi.hoisted(() => {
+  function mockResolveHomeserverBaseUrlForClient(input: string): string {
+    const trimmed = input.trim()
+    const withScheme = trimmed.includes('://') ? trimmed : `https://${trimmed}`
+    try {
+      return new URL(withScheme).origin
+    } catch {
+      return ''
+    }
+  }
   return {
     navigateToMock: vi.fn(async () => undefined),
     startEmailRegistrationMock: vi.fn(async () => undefined),
     submitSignupRecaptchaMock: vi.fn(async () => undefined),
+    mockResolveHomeserverBaseUrlForClient,
     PENDING_KEY: 'decentra.signup.pending.v1'
   }
 })
@@ -67,7 +78,10 @@ function mockReadSignupPendingPublic(): Record<string, unknown> | null {
 vi.mock('~/composables/useAppI18n', () => {
   return {
     useAppI18n: () => ({
-      translateText: (key: string) => {
+      translateText: (
+        key: string,
+        placeholders?: Record<string, string>
+      ) => {
         const messages: Record<string, string> = {
           'auth.signIn': 'Sign in',
           'auth.signUp': 'Sign up',
@@ -79,7 +93,7 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.signUpUnavailable':
             'Sign-up is not available on this homeserver',
           'auth.signUpRegisterApiClosed':
-            'Register API closed - use elsewhere then sign in',
+            'REGISTER_CLOSED_MSG {homeserverPortal}',
           'auth.signUpEmailVerificationRequired':
             'Sign-up requires email verification on this homeserver',
           'auth.homeserverConnectionHint': 'Connection hint',
@@ -107,10 +121,16 @@ vi.mock('~/composables/useAppI18n', () => {
           'auth.signUpRegistrationTokenSubmit': 'Continue',
           'auth.signUpRegistrationTokenTitle': 'Registration token',
           'auth.signUpTermsTitle': 'Policies',
-          'auth.signUpSsoUseWebClient': 'Use Element web SSO',
+          'auth.signUpSsoUseWebClient': 'Use operator SSO web sign-up',
           'auth.signUpMsisdnUnsupported': 'SMS signup unsupported'
         }
-        return messages[key] ?? key
+        let text = messages[key] ?? key
+        if (placeholders) {
+          for (const [ph, value] of Object.entries(placeholders)) {
+            text = text.replaceAll(`{${ph}}`, value)
+          }
+        }
+        return text
       }
     })
   }
@@ -139,6 +159,7 @@ vi.mock('~/composables/useMatrixClient', () => {
     SIGNUP_SSO_USE_WEB_CLIENT: 'SIGNUP_SSO_USE_WEB_CLIENT',
     SIGNUP_SESSION_EXPIRED: 'SIGNUP_SESSION_EXPIRED',
     SIGNUP_REGISTER_API_CLOSED_ERROR: 'SIGNUP_REGISTER_API_CLOSED',
+    resolveHomeserverBaseUrlForClient: mockResolveHomeserverBaseUrlForClient,
     extractRecaptchaFromParams: mockExtractRecaptchaFromParams,
     readSignupPendingPublic: mockReadSignupPendingPublic,
     clearSignupPending: vi.fn(() => {
@@ -369,7 +390,7 @@ describe('signup page', () => {
 
     expect(
       wrapper.text().includes(
-        'Register API closed - use elsewhere then sign in'
+        'REGISTER_CLOSED_MSG https://matrix.org'
       )
     ).toBe(true)
   })

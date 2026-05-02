@@ -8,6 +8,7 @@ import {
   HOMESERVER_CONNECTION_HINT_ERROR,
   hydrateTermsPoliciesForPending,
   readSignupPendingPublic,
+  resolveHomeserverBaseUrlForClient,
   SIGNUP_EMAIL_NOT_CONFIRMED_YET,
   SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
   SIGNUP_MSISDN_NOT_SUPPORTED,
@@ -82,7 +83,12 @@ function mapSignupError(thrown: unknown): string {
     return translateText('auth.signUpUnavailable')
   }
   if (message === SIGNUP_REGISTER_API_CLOSED_ERROR) {
-    return translateText('auth.signUpRegisterApiClosed')
+    const portalUrl = resolveHomeserverBaseUrlForClient(
+      baseUrl.value.trim() || 'https://matrix.org'
+    )
+    return translateText('auth.signUpRegisterApiClosed', {
+      homeserverPortal: portalUrl
+    })
   }
   if (message === MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR) {
     return translateText('auth.matrixOidcNeedsHttpsSiteUrl')

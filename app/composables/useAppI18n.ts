@@ -15,10 +15,13 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpFailed': 'Sign up failed',
     'auth.signUpUnavailable': 'Sign-up is not available on this homeserver',
     'auth.signUpRegisterApiClosed':
-      'This homeserver does not allow creating new accounts through the ' +
-      'Matrix Client-Server API—the method Decentra uses for sign-up. ' +
-      'You may still be able to register through the operator\'s website ' +
-      'or another Matrix client, then sign in here.',
+      'Sign-up through this Decentra page is not available on this ' +
+      'homeserver: registration is restricted to portals or approved ' +
+      'web entry points—the generic Matrix registration API Decentra ' +
+      'uses is blocked or disabled here.\n\n' +
+      'If the operator offers account creation on the web, try their ' +
+      'site starting at:\n{homeserverPortal}\n\n' +
+      'After you have an account, sign in below.',
     'auth.signUpEmailVerificationRequired': 'Sign-up requires email verification on this homeserver',
     'auth.signUpSuccess': 'Account created. Please sign in.',
     'auth.signUpEmailSentTitle': 'Check your email',
@@ -41,9 +44,9 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'This homeserver needs an additional sign-up step that Decentra ' +
       'does not support yet.',
     'auth.signUpSsoUseWebClient':
-      'This homeserver only allows SSO sign-up. Please use the official ' +
-      'Element web client in a browser, then continue in Decentra after ' +
-      'your account exists.',
+      'This homeserver only accepts SSO for new accounts. Complete ' +
+      'sign-up via your homeserver operator\'s SSO or web registration ' +
+      'page, then sign in here once the account exists.',
     'auth.signUpMsisdnUnsupported':
       'This homeserver expects phone-number (SMS) confirmation. Decentra ' +
       'does not support SMS sign-up yet.',
@@ -88,16 +91,11 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpClassicRegistrationDivider':
       'Classic sign-up via homeserver registration API',
     'auth.matrixOidcSignupIntro':
-      'On this homeserver new accounts use the Matrix login service ' +
-      '(MAS / OAuth), like Element—not the legacy /register form.',
+      'On this homeserver new accounts use the delegated Matrix login ' +
+      'service (MAS / OAuth), not the classic /register form in this dialog.',
     'auth.matrixOidcSignupButton': 'Continue Matrix sign-up in browser…',
     'auth.matrixOidcSignupFinePrint':
       'After you confirm in the Matrix window, Decentra continues here.',
-    'auth.matrixOidcLoginIntro':
-      'Delegated Matrix login (OAuth)—same mechanism many Element users ' +
-      'use here.',
-    'auth.matrixOidcLoginButton': 'Continue Matrix sign-in in browser…',
-    'auth.signInPasswordDivider': 'Or sign in with password',
     'auth.matrixOidcNeedsHttpsSiteUrl':
       'Set NUXT_PUBLIC_SITE_URL to your public HTTPS app origin so OAuth ' +
       'redirects work (e.g. HTTPS preview URL—not plain http localhost).',
@@ -110,9 +108,10 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.matrixOidcCallbackFailedRaw': '{detail}',
     'auth.matrixOidcBackToLogin': 'Return to login',
     'auth.homeserverConnectionHint':
-      'Cannot reach the homeserver from the browser. For public ' +
-      'servers use https:// (not http://) so a redirect does not break ' +
-      'CORS preflight. Synapse must allow this app origin in CORS.',
+      'Unable to reach the Matrix client API from this page. Use ' +
+      'https:// for public servers (not plain http://). Check your ' +
+      'network. Some operators also limit which browser origins may ' +
+      'call the login API—even when the homeserver URL is correct.',
     'auth.restoringSession': 'Restoring session...',
     'chat.loggedInAs': 'Signed in as',
     'chat.signOut': 'Sign out',
@@ -178,6 +177,17 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.verificationMismatch': 'Verification cancelled because emojis did not match.',
     'settings.verificationCancelled': 'Verification was cancelled.',
     'settings.verificationCrossSigningHint': 'Cross-signing might need setup on your other client first.',
+    'settings.verificationNeedCrossSigning':
+      'Cross-signing is not available on this account yet; set it up ' +
+      'in another Matrix client before verifying this device.',
+    'settings.verificationReadyTimeout':
+      'Timed out waiting for the other client. Open your other session, ' +
+      'accept verification, then try again.',
+    'settings.verificationUnknownOtherDevice':
+      'Could not load the other device yet. Confirm the other client is ' +
+      'online and tap Refresh status, then try again.',
+    'settings.verificationProtocolError':
+      'Verification could not continue — try cancelling and starting again.',
     'settings.backToChat': 'Back to chat',
     'settings.spaceTitle': 'Space settings',
     'settings.spaceDescription': 'Basic settings for this space.',
@@ -261,11 +271,13 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpFailed': 'Registrierung fehlgeschlagen',
     'auth.signUpUnavailable': 'Registrierung ist auf diesem Homeserver nicht verfuegbar',
     'auth.signUpRegisterApiClosed':
-      'Dieser Homeserver erlaubt keine Neuregistrierung ueber die ' +
-      'Matrix Client-Server-API - genau diese Schnittstelle nutzt Decentra ' +
-      'fuer die Registrierung. Evtl. kannst du den Account bei der ' +
-      'Betreibenden oder in einem anderen Client anlegen und dich hier ' +
-      'danach anmelden.',
+      'Ueber diese Decentra-Seite kannst du dich auf diesem Homeserver ' +
+      'nicht registrieren: Dort ist die Kontenerstellung auf bestimmte ' +
+      'portale oder zugelassene Web-Angebote beschraenkt oder die fuer ' +
+      'Decentra noetige generische Matrix-Registrierung ist abgeschaltet.\n\n' +
+      'Wenn der Betreiber Registrierung im Web anbietet, probiere dort ' +
+      'beginnend mit:\n{homeserverPortal}\n\n' +
+      'Wenn der Account steht, melde dich unten an.',
     'auth.signUpEmailVerificationRequired': 'Registrierung erfordert E-Mail-Verifizierung auf diesem Homeserver',
     'auth.signUpSuccess': 'Account erstellt. Bitte melde dich an.',
     'auth.signUpEmailSentTitle': 'E-Mail pruefen',
@@ -292,9 +304,9 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'Dieser Homeserver verlangt einen weiteren Registrierungs-Schritt, ' +
       'den Decentra noch nicht unterstuetzt.',
     'auth.signUpSsoUseWebClient':
-      'Dieser Homeserver erlaubt die Registrierung nur ueber SSO. Bitte ' +
-      'die offizielle Element-Web-App im Browser nutzen, danach kannst du ' +
-      'hier fortfahren, sobald ein Account besteht.',
+      'Dieser Homeserver akzeptiert Neukonten nur ueber SSO. Bitte ' +
+      'Registrierung ueber das SSO bzw. Web-Angebot des Betreibers ' +
+      'abschliessen, danach hier anmelden.',
     'auth.signUpMsisdnUnsupported':
       'Dieser Homeserver erwartet Bestaetigung per Mobilnummer/SMS. ' +
       'Decentra unterstuetzt diese SMS-Registrierung noch nicht.',
@@ -342,19 +354,13 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.signUpClassicRegistrationDivider':
       'Klassische Registrierung ueber die Legacy-Registration-API',
     'auth.matrixOidcSignupIntro':
-      'Auf diesem Homeserver laufen neue Konten ueber den Matrix-Anmeldeservice ' +
-      '(MAS / OAuth), vergleichbar mit Element, nicht ueber die Legacy-/register-' +
-      'API.',
+      'Auf diesem Homeserver laufen neue Konten ueber den delegierten ' +
+      'Matrix-Anmeldeservice (MAS / OAuth), nicht ueber das klassische ' +
+      '/register-Formular in diesem Dialog.',
     'auth.matrixOidcSignupButton':
       'Mit Matrix-Webfenster registrieren…',
     'auth.matrixOidcSignupFinePrint':
       'Nach dem Abschluss dort kehrst du hier automatisch weiter.',
-    'auth.matrixOidcLoginIntro':
-      'Delegation ueber OAuth wie bei Element, falls der Homeserver keine ' +
-      'klassische Password-/login-Anmeldung nutzt.',
-    'auth.matrixOidcLoginButton':
-      'Mit Matrix-Webfenster anmelden…',
-    'auth.signInPasswordDivider': 'Oder mit Passwort anmelden',
     'auth.matrixOidcNeedsHttpsSiteUrl':
       'Fuer OAuth-Bruecken setze NUXT_PUBLIC_SITE_URL auf eine oeffentliche ' +
       'HTTPS-Origin (z. B. Tunnel-Preview, nicht nur http localhost).',
@@ -369,9 +375,11 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.matrixOidcCallbackFailedRaw': '{detail}',
     'auth.matrixOidcBackToLogin': 'Zurueck zum Login',
     'auth.homeserverConnectionHint':
-      'Homeserver aus dem Browser nicht erreichbar. Oeffentliche ' +
-      'Server: https:// statt http:// (sonst bricht CORS-Preflight). Synapse ' +
-      'muss diese App-Origin in CORS erlauben.',
+      'Matrix-Client-API von dieser Seite aus nicht erreichbar. Bei ' +
+      'oeffentlichen Servern https:// verwenden (kein Klartext-http). ' +
+      'Netzwerk pruefen. Manche Betreiberschraenken zusaetzlich, welche ' +
+      'Website-Urspruenge Login-Calls erlauben—auch wenn die ' +
+      'Homeserver-URL stimmt.',
     'auth.restoringSession': 'Session wird wiederhergestellt...',
     'chat.loggedInAs': 'Eingeloggt als',
     'chat.signOut': 'Abmelden',
@@ -437,6 +445,18 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.verificationMismatch': 'Verifizierung abgebrochen, weil Emojis nicht uebereinstimmen.',
     'settings.verificationCancelled': 'Verifizierung wurde abgebrochen.',
     'settings.verificationCrossSigningHint': 'Cross-Signing muss eventuell zuerst im anderen Client eingerichtet werden.',
+    'settings.verificationNeedCrossSigning':
+      'Cross-Signing fuer dieses Konto ist noch nicht verfuegbar; richte ihn ' +
+      'zuerst in einem anderen Matrix-Client ein.',
+    'settings.verificationReadyTimeout':
+      'Timeout beim Warten auf den anderen Client. Offne die andere Session, ' +
+      'akzeptiere die Verifizierung und versuche es erneut.',
+    'settings.verificationUnknownOtherDevice':
+      'Das andere Geraet konnte noch nicht geladen werden. Stelle sicher, ' +
+      'dass der andere Client online ist, tippe auf Status aktualisieren, ' +
+      'und versuche es erneut.',
+    'settings.verificationProtocolError':
+      'Die Verifizierung konnte nicht fortgesetzt werden — abbrechen und erneut starten.',
     'settings.backToChat': 'Zurück zum Chat',
     'settings.spaceTitle': 'Space-Einstellungen',
     'settings.spaceDescription': 'Basis-Einstellungen für diesen Space.',
@@ -536,12 +556,20 @@ export function useAppI18n() {
     }
   }
 
-  function translateText(key: string): string {
-    return (
+  function translateText(
+    key: string,
+    placeholders?: Record<string, string>
+  ): string {
+    let text =
       messages[locale.value][key] ??
       messages.en[key] ??
       key
-    )
+    if (placeholders) {
+      for (const [ph, value] of Object.entries(placeholders)) {
+        text = text.replaceAll(`{${ph}}`, value)
+      }
+    }
+    return text
   }
 
   return {

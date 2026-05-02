@@ -4,7 +4,7 @@ import * as sdk from 'matrix-js-sdk'
 import {
   HOMESERVER_CONNECTION_HINT_ERROR,
   extractUserLocalpart,
-  isLikelyBrowserNetworkOrCorsError,
+  isTransportFailureWithoutMatrixBody,
   isPublicRegisterEndpointDisabled,
   isSignupUnsupported,
   readMatrixErrorCode,
@@ -813,7 +813,7 @@ export async function startEmailRegistration(
     clearSignupPending()
     return
   } catch (error) {
-    if (isLikelyBrowserNetworkOrCorsError(error)) {
+    if (isTransportFailureWithoutMatrixBody(error)) {
       throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
     }
     const uia = readMatrixUiaData(error)
@@ -1044,7 +1044,7 @@ async function runSignupFinalizeLoop(
       clearSignupPending()
       return
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       if (
@@ -1176,7 +1176,7 @@ export async function submitSignupRecaptcha(
     clearSignupPending()
     return
   } catch (error) {
-    if (isLikelyBrowserNetworkOrCorsError(error)) {
+    if (isTransportFailureWithoutMatrixBody(error)) {
       throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
     }
     if (isLikelyRecaptchaRejected(error)) {
@@ -1261,7 +1261,7 @@ export async function submitSignupRegistrationToken(
     clearSignupPending()
     return
   } catch (error) {
-    if (isLikelyBrowserNetworkOrCorsError(error)) {
+    if (isTransportFailureWithoutMatrixBody(error)) {
       throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
     }
     if (isLikelyRegistrationTokenRejected(error)) {
@@ -1337,7 +1337,7 @@ export async function submitSignupTermsAcceptance(): Promise<void> {
     clearSignupPending()
     return
   } catch (error) {
-    if (isLikelyBrowserNetworkOrCorsError(error)) {
+    if (isTransportFailureWithoutMatrixBody(error)) {
       throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
     }
     if (isLikelyTermsRejected(error)) {
@@ -1433,7 +1433,7 @@ export async function registerWithDummy(
     }
     throw new Error(SIGNUP_UNAVAILABLE_ERROR)
   } catch (error) {
-    if (isLikelyBrowserNetworkOrCorsError(error)) {
+    if (isTransportFailureWithoutMatrixBody(error)) {
       throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
     }
     throwIfPublicRegisterDisabled(error)

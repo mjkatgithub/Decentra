@@ -139,8 +139,8 @@ and `params`; the client keeps the session and completes stages in order.
 
 If `/.well-known/matrix/client` includes `org.matrix.msc2965.authentication`,
 the homeserver typically **blocks legacy `POST /register`** for web clients but
-delegates login to a Matrix Authentication Service (OAuth/OIDC—the path Element
-uses on matrix.org).
+delegates new-account creation (and related flows) to a Matrix Authentication
+  Service (OAuth/OIDC).
 
 - Set **`NUXT_PUBLIC_SITE_URL`** to your app's public **`https://` origin**
   **without path** (Matrix dynamic client registration rejects `http://localhost`
@@ -164,7 +164,7 @@ uses on matrix.org).
 
 - **`m.login.sso`** as an in-flow stage **after `/register` already returned UIA**
   (`session` + flows) — not wired in-app; where MSC2965 is advertised, prefer
-  the **delegated OAuth** buttons on login/signup instead.
+  the **delegated OAuth** button on the **sign-up** page instead.
 - **`m.login.msisdn`** – Phone/SMS registration is not implemented; users get
   a clear “not supported” message instead of failing silently.
 

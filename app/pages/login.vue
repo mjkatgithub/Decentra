@@ -1,14 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import {
   HOMESERVER_CONNECTION_HINT_ERROR,
-  MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR,
   useMatrixClient
 } from '~/composables/useMatrixClient'
-import {
-  fetchMatrixDelegatedClientHints,
-  resolveTrustedAppHttpsOrigin
-} from '~/composables/matrix/matrixOidcNative'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 const baseUrl = ref('https://matrix.org')
@@ -19,69 +14,11 @@ const loading = ref(false)
 const route = useRoute()
 const signupSuccess = computed(() => route.query.signup === 'success')
 
-const delegatedOidcForHomeserver = ref(false)
-const runtimeConfig = useRuntimeConfig()
-const trustedHttpsOriginReady = computed(() => {
-  return !!resolveTrustedAppHttpsOrigin(
-    String(runtimeConfig.public.siteUrl ?? '').trim()
-  )
-})
-
-const {
-  login,
-  isLoggedIn,
-  startDelegatedMatrixNativeOidcAuth
-} = useMatrixClient()
+const { login, isLoggedIn } = useMatrixClient()
 const { translateText } = useAppI18n()
 
 if (isLoggedIn.value) {
   navigateTo('/chat')
-}
-
-async function refreshDelegatedBanner(): Promise<void> {
-  delegatedOidcForHomeserver.value = false
-  const hs = baseUrl.value.trim()
-  if (!hs) return
-  try {
-    await fetchMatrixDelegatedClientHints(hs)
-    delegatedOidcForHomeserver.value = true
-  } catch {
-    delegatedOidcForHomeserver.value = false
-  }
-}
-
-watch(baseUrl, () => {
-  void refreshDelegatedBanner()
-})
-
-onMounted(() => {
-  void refreshDelegatedBanner()
-})
-
-async function handleOidcLoginViaMas(): Promise<void> {
-  error.value = ''
-  if (!trustedHttpsOriginReady.value) {
-    error.value = translateText('auth.matrixOidcNeedsHttpsSiteUrl')
-    return
-  }
-  try {
-    await startDelegatedMatrixNativeOidcAuth({
-      homeserverUrlInput: baseUrl.value.trim() || 'https://matrix.org',
-      intent: 'login'
-    })
-  } catch (thrownError) {
-    if (
-      thrownError instanceof Error &&
-      thrownError.message === MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR
-    ) {
-      error.value = translateText('auth.matrixOidcNeedsHttpsSiteUrl')
-      return
-    }
-    error.value =
-      thrownError instanceof Error
-        ? thrownError.message
-        : translateText('auth.signInFailed')
-  }
 }
 
 async function handleLogin() {
@@ -121,7 +58,9 @@ function clearForm() {
     <header
       class="border-b border-gray-200/70 bg-white/90 backdrop-blur dark:border-gray-800 dark:bg-gray-900/85"
     >
-      <div class="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
+      <div
+        class="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6"
+      >
         <NuxtLink
           to="/"
           class="text-lg font-semibold text-white/70 transition hover:text-white dark:text-white/80"
@@ -162,37 +101,6 @@ function clearForm() {
               required
             />
           </UFormField>
-
-          <div
-            v-if="delegatedOidcForHomeserver"
-            class="space-y-3 rounded-lg border border-primary-500/30 bg-gray-900/60 p-3"
-          >
-            <p class="text-sm text-gray-300">
-              {{ translateText('auth.matrixOidcLoginIntro') }}
-            </p>
-            <UAlert
-              v-if="!trustedHttpsOriginReady"
-              color="warning"
-              :title="translateText('auth.matrixOidcNeedsHttpsSiteUrl')"
-            />
-            <UButton
-              type="button"
-              color="primary"
-              variant="outline"
-              class="w-full justify-center"
-              :disabled="loading || !trustedHttpsOriginReady"
-              @click="handleOidcLoginViaMas()"
-            >
-              {{ translateText('auth.matrixOidcLoginButton') }}
-            </UButton>
-          </div>
-
-          <p
-            v-if="delegatedOidcForHomeserver"
-            class="text-xs font-medium text-gray-500"
-          >
-            {{ translateText('auth.signInPasswordDivider') }}
-          </p>
 
           <UAlert
             v-if="error"

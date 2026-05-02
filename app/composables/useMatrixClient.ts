@@ -8,18 +8,25 @@ import {
   Preset,
   Visibility
 } from 'matrix-js-sdk'
+import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
+import { readonly, shallowRef } from 'vue'
 
 import {
   extractUserLocalpart,
-  isLikelyBrowserNetworkOrCorsError,
+  HOMESERVER_CONNECTION_HINT_ERROR,
+  isTransportFailureWithoutMatrixBody,
   isSameHomeserver,
   readMatrixErrorCode,
   readMatrixErrorMessage,
   isSignupUnsupported,
   resolveHomeserverBaseUrlForClient
 } from './matrix/matrixClientShared'
-export { HOMESERVER_CONNECTION_HINT_ERROR, isSameHomeserver, resolveHomeserverBaseUrlForClient } from './matrix/matrixClientShared'
+export {
+  HOMESERVER_CONNECTION_HINT_ERROR,
+  isSameHomeserver,
+  resolveHomeserverBaseUrlForClient
+} from './matrix/matrixClientShared'
 import {
   clearSignupPending,
   finalizeEmailRegistration,
@@ -138,6 +145,94 @@ type SessionRestoreStatus = 'idle' | 'loading' | 'success' | 'failure'
 const MATRIX_SESSION_STORAGE_KEY = 'decentra.matrix.session.v1'
 const MATRIX_DEVICE_STORAGE_KEY = 'decentra.matrix.device.v1'
 let cryptoWasmInitialization: Promise<void> | null = null
+
+/** MatrixClient started verification from another own device → open SAS flow */
+const incomingVerificationFromOtherOwnDevice = shallowRef(false)
+
+/** @returns Whether a beacon was consumed (caller may start SAS flow once). */
+export function consumeIncomingVerificationFromOtherOwnDeviceBeacon(): boolean {
+  if (!incomingVerificationFromOtherOwnDevice.value) {
+    return false
+  }
+  incomingVerificationFromOtherOwnDevice.value = false
+  return true
+}
+
+/** Read-only: verification request initiated from another own device/tab */
+export function getIncomingVerificationFromOtherOwnDeviceReadonly() {
+  return readonly(incomingVerificationFromOtherOwnDevice)
+}
+
+let verificationRelayAttachedClient: MatrixClient | null = null
+
+function onMatrixVerificationRelayRequestReceived(
+  request: unknown
+): void {
+  if (!request || typeof request !== 'object') {
+    return
+  }
+  const candidate = request as {
+    isSelfVerification?: boolean
+    pending?: boolean
+    initiatedByMe?: boolean
+  }
+  if (
+    candidate.isSelfVerification &&
+    candidate.pending &&
+    candidate.initiatedByMe === false
+  ) {
+    incomingVerificationFromOtherOwnDevice.value = true
+  }
+}
+
+/**
+ * Incoming SAS from another signed-in device (MSC re-emitted onto MatrixClient).
+ * Call after initRustCrypto; detach on logout/replace client.
+ */
+export function syncMatrixIncomingVerificationRelay(
+  matrixClient: MatrixClient | null
+): void {
+  if (verificationRelayAttachedClient === matrixClient && matrixClient) {
+    return
+  }
+  if (verificationRelayAttachedClient) {
+    if (
+      typeof verificationRelayAttachedClient.removeListener === 'function'
+    ) {
+      verificationRelayAttachedClient.removeListener(
+        CryptoEvent.VerificationRequestReceived,
+        onMatrixVerificationRelayRequestReceived
+      )
+    }
+    verificationRelayAttachedClient = null
+  }
+  if (!matrixClient) {
+    return
+  }
+  if (typeof matrixClient.on !== 'function') {
+    return
+  }
+  verificationRelayAttachedClient = matrixClient
+  matrixClient.on(
+    CryptoEvent.VerificationRequestReceived,
+    onMatrixVerificationRelayRequestReceived
+  )
+}
+
+async function bootstrapRustCrossSigningIfNeeded(
+  matrixClient: MatrixClient
+): Promise<void> {
+  const cryptoApi = matrixClient.getCrypto?.()
+  if (!cryptoApi || typeof cryptoApi.bootstrapCrossSigning !== 'function') {
+    return
+  }
+  try {
+    await cryptoApi.bootstrapCrossSigning({})
+  } catch {
+    // Interactive auth may be required on some homeservers; ignore silently.
+  }
+}
+
 let sessionRestorePromise: Promise<void> | null = null
 
 interface MatrixEncryptedFile {
@@ -515,6 +610,7 @@ export function useMatrixClient() {
     try {
       await ensureCryptoWasmInitialized()
       await matrixClient.initRustCrypto()
+      await bootstrapRustCrossSigningIfNeeded(matrixClient)
       return true
     } catch (error) {
       if (!isCryptoStoreAccountMismatch(error)) {
@@ -531,6 +627,7 @@ export function useMatrixClient() {
       try {
         await ensureCryptoWasmInitialized()
         await matrixClient.initRustCrypto()
+        await bootstrapRustCrossSigningIfNeeded(matrixClient)
         return true
       } catch (retryError) {
         console.error(
@@ -666,6 +763,7 @@ export function useMatrixClient() {
     }
     restoredClient.startClient({ initialSyncLimit: 50 })
     client.value = restoredClient
+    syncMatrixIncomingVerificationRelay(restoredClient)
   }
 
   function startSessionRestore(): Promise<void> {
@@ -753,6 +851,7 @@ export function useMatrixClient() {
 
       newClient.startClient({ initialSyncLimit: 50 })
       client.value = newClient
+      syncMatrixIncomingVerificationRelay(newClient)
       writeStoredSession({
         baseUrl: resolvedBaseUrl,
         accessToken: authData.access_token,
@@ -767,7 +866,7 @@ export function useMatrixClient() {
         })
       }
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       const matrixMessage = readMatrixErrorMessage(error)
@@ -798,6 +897,7 @@ export function useMatrixClient() {
   }
 
   function logout(): void {
+    syncMatrixIncomingVerificationRelay(null)
     if (client.value) {
       client.value.stopClient()
       client.value = null
@@ -864,6 +964,7 @@ export function useMatrixClient() {
     if (client.value) {
       client.value.stopClient()
     }
+    syncMatrixIncomingVerificationRelay(delegatedClient)
     client.value = delegatedClient
     const maybeRefresh = exchanged.tokens.refreshToken ?? undefined
     writeStoredSession({
@@ -1145,7 +1246,7 @@ export function useMatrixClient() {
       await mergeDirectAccountData(matrixClient, peerUserId, roomId)
       return roomId
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(error, 'Could not start direct message')
@@ -1216,7 +1317,7 @@ export function useMatrixClient() {
       const { room_id: roomId } = await matrixClient.createRoom(createOpts)
       return roomId
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(error, 'Could not create room')
@@ -1233,7 +1334,7 @@ export function useMatrixClient() {
       const room = await matrixClient.joinRoom(trimmed, {})
       return room.roomId
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(error, 'Could not join room')
@@ -1284,7 +1385,7 @@ export function useMatrixClient() {
         totalRoomCountEstimate: response.total_room_count_estimate
       }
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(
@@ -1314,7 +1415,7 @@ export function useMatrixClient() {
         avatarUrl: row.avatar_url
       }))
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(
@@ -1360,6 +1461,9 @@ export function useMatrixClient() {
     createGroupRoom,
     joinRoomByIdOrAlias,
     searchPublicRooms,
-    searchUsersDirectory
+    searchUsersDirectory,
+    incomingVerificationFromOtherOwnDeviceBeacon:
+      getIncomingVerificationFromOtherOwnDeviceReadonly(),
+    consumeIncomingVerificationFromOtherOwnDeviceBeacon
   }
 }

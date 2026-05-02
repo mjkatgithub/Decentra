@@ -4,6 +4,8 @@
  * .well-known/matrix/client.
  */
 
+import { resolveHomeserverBaseUrlForClient } from './matrixClientShared'
+
 export const MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH =
   '/auth/matrix-oidc/callback'
 
@@ -120,13 +122,8 @@ export async function fetchMatrixDelegatedClientHints(
   if (!trimmed) {
     throw new Error(MATRIX_OIDC_NO_DELEGATED_AUTH_ERROR)
   }
-  const probeUrl = trimmed.includes('://')
-    ? trimmed
-    : `https://${trimmed}`
-  let delegateOrigin: string
-  try {
-    delegateOrigin = new URL(probeUrl).origin
-  } catch {
+  const delegateOrigin = resolveHomeserverBaseUrlForClient(trimmed)
+  if (!delegateOrigin) {
     throw new Error(MATRIX_OIDC_NO_DELEGATED_AUTH_ERROR)
   }
   const resolved = `${delegateOrigin}/.well-known/matrix/client`

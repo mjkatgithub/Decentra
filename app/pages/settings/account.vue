@@ -1,6 +1,36 @@
 <script setup lang="ts">
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useThemePreference } from '~/composables/useThemePreference'
+import { useMatrixClient } from '~/composables/useMatrixClient'
+
+/**
+ * matrix-js-sdk `VerificationPhase` values (avoid importing sdk subpaths:
+ * SSR can 500 pulling crypto modules).
+ *
+ * @see matrix-js-sdk/src/crypto-api/verification.ts — enum VerificationPhase
+ */
+const PHASE_REQUESTED = 2 as const
+const PHASE_READY = 3 as const
+const PHASE_STARTED = 4 as const
+const PHASE_CANCELLED = 5 as const
+const PHASE_DONE = 6 as const
+const METHOD_SAS_V1 = 'm.sas.v1' as const
+
+/** Subset used by device verification helpers (Rust crypto request object). */
+type MatrixDeviceVerificationRequest = {
+  phase: number
+  initiatedByMe: boolean
+  accepting: boolean
+  pending: boolean
+  isSelfVerification: boolean
+  on?: (event: string, listener: (...args: unknown[]) => void) => void
+  removeListener?: (
+    event: string,
+    listener: (...args: unknown[]) => void
+  ) => void
+  accept: () => Promise<void>
+  startVerification: (method: string) => Promise<unknown>
+}
 
 type ThemeMode = 'light' | 'dark' | 'system'
 type AppLocale = 'en' | 'de'
@@ -10,7 +40,14 @@ type PresenceMode =
   | 'offline'
   | 'org.matrix.msc3026.busy'
 
-const { client, userId, logout, ensureCryptoReady } = useMatrixClient()
+const {
+  client,
+  userId,
+  logout,
+  ensureCryptoReady,
+  incomingVerificationFromOtherOwnDeviceBeacon,
+  consumeIncomingVerificationFromOtherOwnDeviceBeacon
+} = useMatrixClient()
 const { locale, setLocale, translateText } = useAppI18n()
 const { getThemePreference, setThemePreference } = useThemePreference()
 
@@ -116,7 +153,27 @@ onMounted(async () => {
   await detectBusyPresenceSupport()
   syncPresenceFromCurrentUser()
   await refreshVerificationState()
+  await tryContinueVerificationFromAnotherOwnDevice()
 })
+
+async function tryContinueVerificationFromAnotherOwnDevice(): Promise<void> {
+  if (!consumeIncomingVerificationFromOtherOwnDeviceBeacon()) {
+    return
+  }
+  await nextTick()
+  verificationErrorText.value = ''
+  await startDeviceVerification()
+}
+
+watch(
+  incomingVerificationFromOtherOwnDeviceBeacon,
+  async (pendingFromOtherOwnDevice) => {
+    if (!pendingFromOtherOwnDevice) {
+      return
+    }
+    await tryContinueVerificationFromAnotherOwnDevice()
+  }
+)
 
 function handleLogout() {
   logout()
@@ -211,6 +268,7 @@ function clearVerificationUi() {
 }
 
 async function refreshVerificationState() {
+  verificationErrorText.value = ''
   const matrixClient = client.value
   const matrixUserId = matrixClient?.getUserId?.()
   const matrixDeviceId = matrixClient?.getDeviceId?.()
@@ -269,13 +327,57 @@ async function refreshVerificationState() {
   }
 }
 
-function getSelfVerificationRequest(cryptoApi: any, matrixUserId: string): any {
-  const openRequests = cryptoApi.getVerificationRequestsToDeviceInProgress?.(
-    matrixUserId
-  ) ?? []
-  return openRequests.find((request: any) => {
+function getSelfVerificationRequest(
+  cryptoApi: any,
+  matrixUserId: string
+): MatrixDeviceVerificationRequest | undefined {
+  const openRequests =
+    cryptoApi.getVerificationRequestsToDeviceInProgress?.(
+      matrixUserId
+    ) ?? []
+  return openRequests.find((request: MatrixDeviceVerificationRequest) => {
     return request.isSelfVerification && request.pending
   })
+}
+
+function verificationPhaseAllowsSasStart(phase: number): boolean {
+  return phase === PHASE_READY || phase === PHASE_STARTED
+}
+
+function verificationPhaseTerminated(phase: number): boolean {
+  return phase === PHASE_CANCELLED || phase === PHASE_DONE
+}
+
+/**
+ * Wait until the other party has sent `.ready` (Ready) or verification ended.
+ */
+async function waitVerificationUntilReadyOrEnd(
+  verificationRequest: MatrixDeviceVerificationRequest,
+  timeoutMs: number
+): Promise<'ready' | 'cancelled' | 'timeout'> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const phase = verificationRequest.phase
+    if (verificationPhaseAllowsSasStart(phase)) {
+      return 'ready'
+    }
+    if (verificationPhaseTerminated(phase)) {
+      return 'cancelled'
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  const phase = verificationRequest.phase
+  if (verificationPhaseAllowsSasStart(phase)) {
+    return 'ready'
+  }
+  if (verificationPhaseTerminated(phase)) {
+    return 'cancelled'
+  }
+  return 'timeout'
+}
+
+function resolveVerificationThrownMessage(thrownError: unknown): string {
+  return thrownError instanceof Error ? thrownError.message : String(thrownError)
 }
 
 async function startDeviceVerification() {
@@ -287,6 +389,7 @@ async function startDeviceVerification() {
     const matrixUserId = matrixClient?.getUserId?.()
     if (!matrixClient || !matrixUserId) {
       verificationStatusText.value = translateText('settings.verificationUnavailable')
+      verificationBusy.value = false
       return
     }
     const cryptoReady = await withTimeout(
@@ -297,29 +400,74 @@ async function startDeviceVerification() {
     if (!cryptoReady) {
       verificationStatusText.value = translateText('settings.verificationUnavailable')
       verificationErrorText.value = translateText('settings.verificationFailed')
+      verificationBusy.value = false
       return
     }
     const cryptoApi = matrixClient.getCrypto?.()
     if (!cryptoApi) {
       verificationStatusText.value = translateText('settings.verificationUnavailable')
+      verificationBusy.value = false
       return
     }
 
-    const verificationRequest = getSelfVerificationRequest(cryptoApi, matrixUserId) ??
-      await withTimeout(
+    // Do not gate on isCrossSigningReady(): it is local to this device;
+    // new sessions often read false while the account still works and
+    // requestOwnUserVerification() must reach other clients. True absence
+    // of cross-signing surfaces from the SDK throw.
+
+    await matrixClient.downloadKeysForUsers([matrixUserId]).catch(() => {
+      /* best-effort: rust may still resolve the other device from sync */
+    })
+
+    const existingIncomingRequest = getSelfVerificationRequest(
+      cryptoApi,
+      matrixUserId
+    )
+
+    const verificationRequest = (
+      existingIncomingRequest ??
+      (await withTimeout(
         cryptoApi.requestOwnUserVerification(),
         10000,
         'Verification request timeout'
-      )
+      ))
+    ) as MatrixDeviceVerificationRequest
     pendingVerificationRequest.value = true
     verificationStatusText.value = translateText('settings.verificationRequestSent')
 
-    if (verificationRequest.phase <= 2 && !verificationRequest.accepting) {
+    const responderShouldSendReady =
+      existingIncomingRequest !== undefined ||
+      !verificationRequest.initiatedByMe
+
+    if (
+      responderShouldSendReady &&
+      verificationRequest.phase === PHASE_REQUESTED &&
+      !verificationRequest.accepting
+    ) {
       await verificationRequest.accept()
     }
 
+    const waitOutcome = await waitVerificationUntilReadyOrEnd(
+      verificationRequest,
+      90_000
+    )
+    if (waitOutcome === 'timeout') {
+      verificationErrorText.value = translateText(
+        'settings.verificationReadyTimeout'
+      )
+      pendingVerificationRequest.value = false
+      verificationBusy.value = false
+      return
+    }
+    if (waitOutcome === 'cancelled') {
+      verificationErrorText.value = translateText('settings.verificationCancelled')
+      pendingVerificationRequest.value = false
+      verificationBusy.value = false
+      return
+    }
+
     const verifier = await withTimeout<any>(
-      verificationRequest.startVerification('m.sas.v1'),
+      verificationRequest.startVerification(METHOD_SAS_V1),
       10000,
       'Verification start timeout'
     )
@@ -356,8 +504,23 @@ async function startDeviceVerification() {
         activeVerificationPromise = null
       }) ?? null
     verificationBusy.value = false
-  } catch {
-    verificationErrorText.value = translateText('settings.verificationFailed')
+  } catch (thrownError: unknown) {
+    const message = resolveVerificationThrownMessage(thrownError)
+    if (message.includes('no existing cross-signing key')) {
+      verificationErrorText.value = translateText(
+        'settings.verificationNeedCrossSigning'
+      )
+    } else if (message.includes('other device is unknown')) {
+      verificationErrorText.value = translateText(
+        'settings.verificationUnknownOtherDevice'
+      )
+    } else if (message.includes('Cannot accept a verification request')) {
+      verificationErrorText.value = translateText(
+        'settings.verificationProtocolError'
+      )
+    } else {
+      verificationErrorText.value = translateText('settings.verificationFailed')
+    }
     pendingVerificationRequest.value = false
     clearVerificationUi()
     verificationBusy.value = false
@@ -506,8 +669,10 @@ function cancelVerification() {
             {{ translateText('settings.verificationDeviceId') }}:
             <span class="font-mono">{{ ownDeviceId || '-' }}</span>
           </p>
-          <p class="text-xs text-gray-500 dark:text-gray-400">
-            {{ verificationStatusText }}
+          <p
+            class="text-xs text-gray-500 dark:text-gray-400"
+          >
+            {{ verificationErrorText ? '' : verificationStatusText }}
           </p>
           <p
             v-if="verificationErrorText"

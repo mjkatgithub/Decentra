@@ -1,9 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import {
-  isPublicRegisterEndpointDisabled
+  isPublicRegisterEndpointDisabled,
+  isTransportFailureWithoutMatrixBody
 } from '~/composables/matrix/matrixClientShared'
 
 describe('matrixClientShared', () => {
+  describe('isTransportFailureWithoutMatrixBody', () => {
+    it('maps plain fetch-style failures', () => {
+      expect(
+        isTransportFailureWithoutMatrixBody(new TypeError('Failed to fetch'))
+      ).toBe(true)
+      expect(
+        isTransportFailureWithoutMatrixBody(new Error('Load failed'))
+      ).toBe(true)
+    })
+
+    it('does not treat Matrix API errors as transport-only failures', () => {
+      const withErrcode = Object.assign(new Error('Failed to fetch'), {
+        errcode: 'M_BAD_JSON',
+        data: { error: 'Not JSON' }
+      })
+      expect(isTransportFailureWithoutMatrixBody(withErrcode)).toBe(false)
+    })
+
+    it('respects HTTP status on the SDK error shape', () => {
+      const withStatus = Object.assign(new Error('NetworkError'), {
+        httpStatus: 502
+      })
+      expect(isTransportFailureWithoutMatrixBody(withStatus)).toBe(false)
+    })
+  })
+
   describe('isPublicRegisterEndpointDisabled', () => {
     it('detects matrix.org-style forbidden register response body', () => {
       expect(
