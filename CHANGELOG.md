@@ -90,6 +90,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#58)
 - Additional unit coverage for registration UIA helpers and signup pages
   (`matrixRegistrationUia.spec.ts`, page specs)
+- Matrix delegated OIDC sign-up (MSC2965 / MAS): OpenID discovery, PKCE,
+  dynamic client registration, token exchange, `/auth/matrix-oidc/callback`,
+  and Matrix JS SDK session wiring (`matrixOidcNative.ts`, `useMatrixClient`
+  with persisted OIDC client and token-endpoint metadata for refresh)
+- Sign-up entry point for delegated browser OAuth; runtime
+  `nuxt.public.siteUrl` / `matrixOidcClientId`; EN/DE i18n for callback and
+  error paths; README notes on HTTPS redirect requirements for matrix.org
 
 ### Changed
 

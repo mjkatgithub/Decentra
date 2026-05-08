@@ -135,7 +135,22 @@ Signup uses Matrix **User-Interactive Authentication** against
 `/register`: first request may return **401** with `session`, `flows`,
 and `params`; the client keeps the session and completes stages in order.
 
-**Supported stages today**
+**Delegated auth (MAS / OAuth — e.g. matrix.org)**
+
+If `/.well-known/matrix/client` includes `org.matrix.msc2965.authentication`,
+the homeserver typically **blocks legacy `POST /register`** for web clients but
+delegates new-account creation (and related flows) to a Matrix Authentication
+  Service (OAuth/OIDC).
+
+- Set **`NUXT_PUBLIC_SITE_URL`** to your app's public **`https://` origin**
+  **without path** (Matrix dynamic client registration rejects `http://localhost`
+  redirects; use an HTTPS tunnel / preview URL for local OAuth).
+- Optional **`NUXT_PUBLIC_MATRIX_OIDC_CLIENT_ID`** — static OAuth client id if you
+  register one yourself.
+- Redirect/callback **`/auth/matrix-oidc/callback`** completes the PKCE exchange,
+  restores the Matrix JS SDK session (`matrixOidcNative.ts`, `useMatrixClient`).
+
+**Supported stages today (legacy `/register` UIA)**
 
 | Stage | Notes |
 | --- | --- |
@@ -147,9 +162,9 @@ and `params`; the client keeps the session and completes stages in order.
 
 **Explicit non-support**
 
-- **`m.login.sso`** – SSO/OIDC signup is not implemented in-app. Users see a
-  message to complete registration via a Matrix web client (e.g. Element),
-  then sign in here.
+- **`m.login.sso`** as an in-flow stage **after `/register` already returned UIA**
+  (`session` + flows) — not wired in-app; where MSC2965 is advertised, prefer
+  the **delegated OAuth** button on the **sign-up** page instead.
 - **`m.login.msisdn`** – Phone/SMS registration is not implemented; users get
   a clear “not supported” message instead of failing silently.
 

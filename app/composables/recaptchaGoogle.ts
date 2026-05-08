@@ -2,16 +2,28 @@
  * Loads Google reCAPTCHA v3 client script and executes once for a site key.
  */
 
-declare global {
-  interface Window {
-    grecaptcha?: {
-      ready: (callback: () => void) => void
-      execute: (
-        siteKey: string,
-        options: { action: string }
-      ) => Promise<string>
-    }
+type RecaptchaV3Api = {
+  ready: (callback: () => void) => void
+  execute: (
+    siteKey: string,
+    options: { action: string }
+  ) => Promise<string>
+}
+
+function readRecaptchaV3FromWindow(): RecaptchaV3Api | undefined {
+  const bridge = window as unknown as {
+    grecaptcha?: Record<string, unknown>
   }
+  const candidate = bridge.grecaptcha
+  const executeCandidate = candidate?.execute
+  const readyCandidate = candidate?.ready
+  if (
+    typeof executeCandidate !== 'function' ||
+    typeof readyCandidate !== 'function'
+  ) {
+    return undefined
+  }
+  return candidate as unknown as RecaptchaV3Api
 }
 
 function scriptSelector(siteKey: string): string {
@@ -23,7 +35,7 @@ async function ensureRecaptchaV3Script(siteKey: string): Promise<void> {
     throw new Error('recaptcha-v3-no-document')
   }
   const existing = document.querySelector(scriptSelector(siteKey))
-  if (existing && window.grecaptcha?.execute) {
+  if (existing && readRecaptchaV3FromWindow()?.execute) {
     return
   }
   await new Promise<void>((resolvePromise, rejectPromise) => {
@@ -44,7 +56,7 @@ export async function executeGoogleRecaptchaV3(
   action: string
 ): Promise<string> {
   await ensureRecaptchaV3Script(siteKey)
-  const client = window.grecaptcha
+  const client = readRecaptchaV3FromWindow()
   if (!client?.execute || !client.ready) {
     throw new Error('recaptcha-v3-unavailable')
   }

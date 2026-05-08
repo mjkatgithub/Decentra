@@ -129,6 +129,33 @@ export function readMatrixErrorCode(error: unknown): string {
   )
 }
 
+/**
+ * Narrow {@link HOMESERVER_CONNECTION_HINT_ERROR} mapping to cases where fetch
+ * failed before a usable Matrix JSON body (no {@link readMatrixErrorCode},
+ * no HTTP status). Signup PR #60 added broad browser-message matching; without
+ * this, legitimate API failures can be mislabeled as “homeserver unreachable”.
+ */
+export function isTransportFailureWithoutMatrixBody(
+  error: unknown
+): boolean {
+  if (!isLikelyBrowserNetworkOrCorsError(error)) {
+    return false
+  }
+  if (readMatrixErrorCode(error)) {
+    return false
+  }
+  if (!error || typeof error !== 'object') {
+    return true
+  }
+  const shaped = error as MatrixApiErrorShape
+  const httpStatus = shaped.httpStatus ?? shaped.statusCode
+  return !(
+    typeof httpStatus === 'number' &&
+    Number.isFinite(httpStatus) &&
+    httpStatus > 0
+  )
+}
+
 export function readMatrixErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message
@@ -141,6 +168,23 @@ export function readMatrixErrorMessage(error: unknown): string {
     matrixError.error ||
     matrixError.data?.error ||
     ''
+  )
+}
+
+/**
+ * Homeserver refuses open registration via POST /register (Synapse/matrix.org).
+ * Separate from flows Decentra can complete via UIA when a session exists.
+ */
+export function isPublicRegisterEndpointDisabled(error: unknown): boolean {
+  const raw = readMatrixErrorMessage(error)
+  const normalized = raw.toLowerCase()
+  return (
+    normalized.includes('registration has been disabled') ||
+    normalized.includes('registration is disabled') ||
+    (
+      normalized.includes('application_service') &&
+      normalized.includes('registrations are allowed')
+    )
   )
 }
 

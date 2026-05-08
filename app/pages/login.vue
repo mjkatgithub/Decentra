@@ -58,7 +58,9 @@ function clearForm() {
     <header
       class="border-b border-gray-200/70 bg-white/90 backdrop-blur dark:border-gray-800 dark:bg-gray-900/85"
     >
-      <div class="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6">
+      <div
+        class="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6"
+      >
         <NuxtLink
           to="/"
           class="text-lg font-semibold text-white/70 transition hover:text-white dark:text-white/80"
@@ -84,13 +86,13 @@ function clearForm() {
           </h1>
         </template>
 
-        <form class="space-y-4" @submit.prevent="handleLogin">
+        <div class="space-y-4">
           <UAlert
             v-if="signupSuccess"
             color="success"
             :title="translateText('auth.signUpSuccess')"
-            class="mb-4"
           />
+
           <UFormField :label="translateText('auth.homeserver')">
             <UInput
               v-model="baseUrl"
@@ -100,50 +102,51 @@ function clearForm() {
             />
           </UFormField>
 
-          <UFormField :label="translateText('auth.username')">
-            <UInput
-              v-model="username"
-              placeholder="@user:matrix.org"
-              required
-            />
-          </UFormField>
-
-          <UFormField :label="translateText('auth.password')">
-            <UInput
-              v-model="password"
-              type="password"
-              placeholder="••••••••"
-              required
-            />
-          </UFormField>
-
           <UAlert
             v-if="error"
             color="error"
             :title="error"
-            class="mb-4"
           />
 
-          <div class="grid grid-cols-2 gap-3">
-            <UButton
-              type="button"
-              color="neutral"
-              variant="outline"
-              class="w-full justify-center"
-              :disabled="loading"
-              @click="clearForm"
-            >
-              {{ translateText('cancel') }}
-            </UButton>
-            <UButton
-              type="submit"
-              class="w-full justify-center"
-              :loading="loading"
-            >
-              {{ translateText('auth.signIn') }}
-            </UButton>
-          </div>
-        </form>
+          <form class="space-y-4" @submit.prevent="handleLogin">
+            <UFormField :label="translateText('auth.username')">
+              <UInput
+                v-model="username"
+                placeholder="@user:matrix.org"
+                required
+              />
+            </UFormField>
+
+            <UFormField :label="translateText('auth.password')">
+              <UInput
+                v-model="password"
+                type="password"
+                placeholder="••••••••"
+                required
+              />
+            </UFormField>
+
+            <div class="grid grid-cols-2 gap-3">
+              <UButton
+                type="button"
+                color="neutral"
+                variant="outline"
+                class="w-full justify-center"
+                :disabled="loading"
+                @click="clearForm"
+              >
+                {{ translateText('cancel') }}
+              </UButton>
+              <UButton
+                type="submit"
+                class="w-full justify-center"
+                :loading="loading"
+              >
+                {{ translateText('auth.signIn') }}
+              </UButton>
+            </div>
+          </form>
+        </div>
       </UCard>
     </main>
   </div>

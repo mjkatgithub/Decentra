@@ -8,18 +8,25 @@ import {
   Preset,
   Visibility
 } from 'matrix-js-sdk'
+import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
+import { readonly, shallowRef } from 'vue'
 
 import {
   extractUserLocalpart,
-  isLikelyBrowserNetworkOrCorsError,
+  HOMESERVER_CONNECTION_HINT_ERROR,
+  isTransportFailureWithoutMatrixBody,
   isSameHomeserver,
   readMatrixErrorCode,
   readMatrixErrorMessage,
   isSignupUnsupported,
   resolveHomeserverBaseUrlForClient
 } from './matrix/matrixClientShared'
-export { HOMESERVER_CONNECTION_HINT_ERROR, isSameHomeserver, resolveHomeserverBaseUrlForClient } from './matrix/matrixClientShared'
+export {
+  HOMESERVER_CONNECTION_HINT_ERROR,
+  isSameHomeserver,
+  resolveHomeserverBaseUrlForClient
+} from './matrix/matrixClientShared'
 import {
   clearSignupPending,
   finalizeEmailRegistration,
@@ -39,6 +46,7 @@ import {
   SIGNUP_PENDING_STORAGE_KEY,
   SIGNUP_RECAPTCHA_FAILED,
   SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
+  SIGNUP_REGISTER_API_CLOSED_ERROR,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
   SIGNUP_REGISTRATION_TOKEN_REJECTED,
   SIGNUP_REGISTRATION_TOKEN_REQUIRED,
@@ -67,6 +75,7 @@ export {
   SIGNUP_PENDING_STORAGE_KEY,
   SIGNUP_RECAPTCHA_FAILED,
   SIGNUP_RECAPTCHA_TOKEN_REQUIRED,
+  SIGNUP_REGISTER_API_CLOSED_ERROR,
   SIGNUP_REGISTRATION_UNSUPPORTED_STAGE,
   SIGNUP_REGISTRATION_TOKEN_REJECTED,
   SIGNUP_REGISTRATION_TOKEN_REQUIRED,
@@ -92,11 +101,37 @@ export {
   isTermsStage
 } from './matrix/matrixRegistrationUia'
 
+import {
+  exchangeNativeOidcAuthorizationCode,
+  fetchMatrixWhoAmI,
+  MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
+  MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR,
+  MATRIX_OIDC_INVALID_CALLBACK_ERROR,
+  redirectToMatrixNativeOidc,
+  refreshNativeOidcAccessToken,
+  resolveTrustedAppHttpsOrigin,
+  type MatrixOidcIntent
+} from './matrix/matrixOidcNative'
+
+export {
+  MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
+  fetchMatrixDelegatedClientHints,
+  MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR,
+  MATRIX_OIDC_INVALID_CALLBACK_ERROR,
+  MATRIX_OIDC_NO_DELEGATED_AUTH_ERROR,
+  MATRIX_OIDC_REGISTRATION_REJECTED_ERROR,
+  MATRIX_OIDC_STATE_STORAGE_PREFIX
+} from './matrix/matrixOidcNative'
+
 interface StoredMatrixSession {
   baseUrl: string
   accessToken: string
   userId: string
   deviceId?: string
+  refreshToken?: string
+  oauthTokenExpiresAtMs?: number
+  oidcTokenEndpoint?: string
+  oidcClientId?: string
 }
 
 interface StoredMatrixDevice {
@@ -110,6 +145,94 @@ type SessionRestoreStatus = 'idle' | 'loading' | 'success' | 'failure'
 const MATRIX_SESSION_STORAGE_KEY = 'decentra.matrix.session.v1'
 const MATRIX_DEVICE_STORAGE_KEY = 'decentra.matrix.device.v1'
 let cryptoWasmInitialization: Promise<void> | null = null
+
+/** MatrixClient started verification from another own device → open SAS flow */
+const incomingVerificationFromOtherOwnDevice = shallowRef(false)
+
+/** @returns Whether a beacon was consumed (caller may start SAS flow once). */
+export function consumeIncomingVerificationFromOtherOwnDeviceBeacon(): boolean {
+  if (!incomingVerificationFromOtherOwnDevice.value) {
+    return false
+  }
+  incomingVerificationFromOtherOwnDevice.value = false
+  return true
+}
+
+/** Read-only: verification request initiated from another own device/tab */
+export function getIncomingVerificationFromOtherOwnDeviceReadonly() {
+  return readonly(incomingVerificationFromOtherOwnDevice)
+}
+
+let verificationRelayAttachedClient: MatrixClient | null = null
+
+function onMatrixVerificationRelayRequestReceived(
+  request: unknown
+): void {
+  if (!request || typeof request !== 'object') {
+    return
+  }
+  const candidate = request as {
+    isSelfVerification?: boolean
+    pending?: boolean
+    initiatedByMe?: boolean
+  }
+  if (
+    candidate.isSelfVerification &&
+    candidate.pending &&
+    candidate.initiatedByMe === false
+  ) {
+    incomingVerificationFromOtherOwnDevice.value = true
+  }
+}
+
+/**
+ * Incoming SAS from another signed-in device (MSC re-emitted onto MatrixClient).
+ * Call after initRustCrypto; detach on logout/replace client.
+ */
+export function syncMatrixIncomingVerificationRelay(
+  matrixClient: MatrixClient | null
+): void {
+  if (verificationRelayAttachedClient === matrixClient && matrixClient) {
+    return
+  }
+  if (verificationRelayAttachedClient) {
+    if (
+      typeof verificationRelayAttachedClient.removeListener === 'function'
+    ) {
+      verificationRelayAttachedClient.removeListener(
+        CryptoEvent.VerificationRequestReceived,
+        onMatrixVerificationRelayRequestReceived
+      )
+    }
+    verificationRelayAttachedClient = null
+  }
+  if (!matrixClient) {
+    return
+  }
+  if (typeof matrixClient.on !== 'function') {
+    return
+  }
+  verificationRelayAttachedClient = matrixClient
+  matrixClient.on(
+    CryptoEvent.VerificationRequestReceived,
+    onMatrixVerificationRelayRequestReceived
+  )
+}
+
+async function bootstrapRustCrossSigningIfNeeded(
+  matrixClient: MatrixClient
+): Promise<void> {
+  const cryptoApi = matrixClient.getCrypto?.()
+  if (!cryptoApi || typeof cryptoApi.bootstrapCrossSigning !== 'function') {
+    return
+  }
+  try {
+    await cryptoApi.bootstrapCrossSigning({})
+  } catch {
+    // Interactive auth may be required on some homeservers; ignore silently.
+  }
+}
+
 let sessionRestorePromise: Promise<void> | null = null
 
 interface MatrixEncryptedFile {
@@ -487,6 +610,7 @@ export function useMatrixClient() {
     try {
       await ensureCryptoWasmInitialized()
       await matrixClient.initRustCrypto()
+      await bootstrapRustCrossSigningIfNeeded(matrixClient)
       return true
     } catch (error) {
       if (!isCryptoStoreAccountMismatch(error)) {
@@ -503,6 +627,7 @@ export function useMatrixClient() {
       try {
         await ensureCryptoWasmInitialized()
         await matrixClient.initRustCrypto()
+        await bootstrapRustCrossSigningIfNeeded(matrixClient)
         return true
       } catch (retryError) {
         console.error(
@@ -591,9 +716,41 @@ export function useMatrixClient() {
     if (client.value) {
       return
     }
-    const session = readStoredSession()
+    let session = readStoredSession()
     if (!session) {
       return
+    }
+    if (
+      session.refreshToken &&
+      session.oidcTokenEndpoint &&
+      session.oidcClientId &&
+      session.oauthTokenExpiresAtMs != null
+    ) {
+      const nearingExpiry =
+        Date.now() > session.oauthTokenExpiresAtMs - 120_000
+      if (nearingExpiry) {
+        try {
+          const renewed = await refreshNativeOidcAccessToken({
+            refreshToken: session.refreshToken,
+            tokenEndpoint: session.oidcTokenEndpoint,
+            clientId: session.oidcClientId
+          })
+          let expiresMs = session.oauthTokenExpiresAtMs
+          if (renewed.expiresInSeconds != null) {
+            expiresMs =
+              Date.now() + renewed.expiresInSeconds * 1000
+          }
+          session = {
+            ...session,
+            accessToken: renewed.accessToken,
+            refreshToken: renewed.refreshToken || session.refreshToken,
+            oauthTokenExpiresAtMs: expiresMs
+          }
+          writeStoredSession(session)
+        } catch {
+          // Keep previous access_token; renewal can fail offline.
+        }
+      }
     }
     const restoredClient = sdk.createClient({
       baseUrl: session.baseUrl,
@@ -606,6 +763,7 @@ export function useMatrixClient() {
     }
     restoredClient.startClient({ initialSyncLimit: 50 })
     client.value = restoredClient
+    syncMatrixIncomingVerificationRelay(restoredClient)
   }
 
   function startSessionRestore(): Promise<void> {
@@ -693,6 +851,7 @@ export function useMatrixClient() {
 
       newClient.startClient({ initialSyncLimit: 50 })
       client.value = newClient
+      syncMatrixIncomingVerificationRelay(newClient)
       writeStoredSession({
         baseUrl: resolvedBaseUrl,
         accessToken: authData.access_token,
@@ -707,7 +866,7 @@ export function useMatrixClient() {
         })
       }
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       const matrixMessage = readMatrixErrorMessage(error)
@@ -738,11 +897,91 @@ export function useMatrixClient() {
   }
 
   function logout(): void {
+    syncMatrixIncomingVerificationRelay(null)
     if (client.value) {
       client.value.stopClient()
       client.value = null
     }
     clearStoredSession()
+  }
+
+  function resolveConfiguredTrustedSiteOrigin(): string {
+    const runtimeCfg = useRuntimeConfig()
+    return resolveTrustedAppHttpsOrigin(
+      String(runtimeCfg.public.siteUrl || '').trim()
+    )
+  }
+
+  async function startDelegatedMatrixNativeOidcAuth(payload: {
+    homeserverUrlInput: string
+    intent: MatrixOidcIntent
+  }): Promise<void> {
+    const siteOriginHttps = resolveConfiguredTrustedSiteOrigin()
+    if (!siteOriginHttps) {
+      throw new Error(MATRIX_OIDC_HTTPS_ORIGIN_REQUIRED_ERROR)
+    }
+    const runtimeCfg = useRuntimeConfig()
+    await redirectToMatrixNativeOidc({
+      homeserverUrlInput: payload.homeserverUrlInput,
+      trustedAppHttpsOrigin: siteOriginHttps,
+      runtimeClientIdConfigured: String(
+        runtimeCfg.public.matrixOidcClientId || ''
+      ).trim(),
+      callbackPath: MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
+      intent: payload.intent
+    })
+  }
+
+  async function finalizeDelegatedMatrixOidcFromRedirectPayload(
+    payload: { code: string; state: string }
+  ): Promise<void> {
+    if (typeof window === 'undefined') {
+      throw new Error(MATRIX_OIDC_INVALID_CALLBACK_ERROR)
+    }
+    const exchanged = await exchangeNativeOidcAuthorizationCode({
+      code: payload.code,
+      state: payload.state
+    })
+    const identity = await fetchMatrixWhoAmI(
+      exchanged.pending.matrixClientApiBaseUrl,
+      exchanged.tokens.accessToken
+    )
+    const ttlSeconds = exchanged.tokens.expiresInSeconds ?? 300
+    const oauthExpiresAtMs = Date.now() + ttlSeconds * 1000
+    const deviceLit = exchanged.pending.oidcDeviceId
+    const matrixApiBase = exchanged.pending.matrixClientApiBaseUrl
+    const delegatedClient = sdk.createClient({
+      baseUrl: matrixApiBase,
+      accessToken: exchanged.tokens.accessToken,
+      userId: identity.userId,
+      deviceId: deviceLit
+    })
+    await initRustCryptoWithRecovery(
+      delegatedClient,
+      'during delegated OIDC'
+    )
+    delegatedClient.startClient({ initialSyncLimit: 50 })
+    if (client.value) {
+      client.value.stopClient()
+    }
+    syncMatrixIncomingVerificationRelay(delegatedClient)
+    client.value = delegatedClient
+    const maybeRefresh = exchanged.tokens.refreshToken ?? undefined
+    writeStoredSession({
+      baseUrl: matrixApiBase,
+      accessToken: exchanged.tokens.accessToken,
+      userId: identity.userId,
+      deviceId: deviceLit,
+      refreshToken: maybeRefresh,
+      oauthTokenExpiresAtMs: oauthExpiresAtMs,
+      oidcTokenEndpoint: exchanged.pending.tokenEndpoint,
+      oidcClientId: exchanged.pending.oauthClientId
+    })
+    writeStoredDevice({
+      baseUrl: matrixApiBase,
+      userId: identity.userId,
+      deviceId: deviceLit
+    })
   }
 
   async function ensureCryptoReady(): Promise<boolean> {
@@ -1007,7 +1246,7 @@ export function useMatrixClient() {
       await mergeDirectAccountData(matrixClient, peerUserId, roomId)
       return roomId
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(error, 'Could not start direct message')
@@ -1078,7 +1317,7 @@ export function useMatrixClient() {
       const { room_id: roomId } = await matrixClient.createRoom(createOpts)
       return roomId
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(error, 'Could not create room')
@@ -1095,7 +1334,7 @@ export function useMatrixClient() {
       const room = await matrixClient.joinRoom(trimmed, {})
       return room.roomId
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(error, 'Could not join room')
@@ -1146,7 +1385,7 @@ export function useMatrixClient() {
         totalRoomCountEstimate: response.total_room_count_estimate
       }
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(
@@ -1176,7 +1415,7 @@ export function useMatrixClient() {
         avatarUrl: row.avatar_url
       }))
     } catch (error) {
-      if (isLikelyBrowserNetworkOrCorsError(error)) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
         throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
       }
       throwMappedMatrixError(
@@ -1203,6 +1442,8 @@ export function useMatrixClient() {
     signupPendingNeedsRecaptchaBeforeEmail,
     readSignupPendingPublic,
     logout,
+    startDelegatedMatrixNativeOidcAuth,
+    finalizeDelegatedMatrixOidcFromRedirectPayload,
     getRooms,
     getRoom,
     sendMessage,
@@ -1220,6 +1461,9 @@ export function useMatrixClient() {
     createGroupRoom,
     joinRoomByIdOrAlias,
     searchPublicRooms,
-    searchUsersDirectory
+    searchUsersDirectory,
+    incomingVerificationFromOtherOwnDeviceBeacon:
+      getIncomingVerificationFromOtherOwnDeviceReadonly(),
+    consumeIncomingVerificationFromOtherOwnDeviceBeacon
   }
 }
