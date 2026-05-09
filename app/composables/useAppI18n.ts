@@ -143,6 +143,8 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'layout.collapseSpaces': 'Collapse spaces',
     'layout.openAccountSettings': 'Account settings',
     'layout.openSpaceSettings': 'Space settings',
+    'layout.expandCategory': 'Expand category',
+    'layout.collapseCategory': 'Collapse category',
     'layout.createSpace': 'Create space',
     'layout.online': 'Online',
     'layout.away': 'Away',
@@ -205,7 +207,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.verificationRecoverySubmit': 'Restore encryption',
     'settings.verificationRecoverySuccess':
       'Encryption secrets were restored and this session is now verified. ' +
-      'Other clients (Element, Thunderbird, ...) may need a few minutes ' +
+      'Other Matrix clients may need a few minutes ' +
       'to refresh their device list before they show this session as verified.',
     'settings.verificationRecoveryErrorInvalidInput': 'Enter your recovery key.',
     'settings.verificationRecoveryErrorInvalidKey':
@@ -445,6 +447,8 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'layout.collapseSpaces': 'Spaces einklappen',
     'layout.openAccountSettings': 'Account-Einstellungen',
     'layout.openSpaceSettings': 'Space-Einstellungen',
+    'layout.expandCategory': 'Kategorie aufklappen',
+    'layout.collapseCategory': 'Kategorie zuklappen',
     'layout.createSpace': 'Space erstellen',
     'layout.online': 'Online',
     'layout.away': 'Abwesend',
@@ -508,7 +512,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.verificationRecoverySubmit': 'Verschluesselung wiederherstellen',
     'settings.verificationRecoverySuccess':
       'Schluessel wurden wiederhergestellt und diese Session ist jetzt ' +
-      'verifiziert. Andere Clients (Element, Thunderbird, ...) benoetigen ' +
+      'verifiziert. Andere Matrix-Clients benoetigen ' +
       'eventuell ein paar Minuten, bis sie diese Session als verifiziert ' +
       'anzeigen.',
     'settings.verificationRecoveryErrorInvalidInput':

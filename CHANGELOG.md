@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Matrix space hierarchy in the channel column: subspaces as collapsible
+  category headers (chevron toggle), rooms grouped under `m.space.child`
+  order, and a root-level "General" segment for direct space children (#5)
+- Drag-and-drop reordering of category blocks and rooms (within and across
+  categories) with persistence via `m.space.child` / `order`, gated by
+  `m.room.power_levels` for `m.space.child` (no DnD when not allowed)
+- `vue-draggable-plus` dependency for the space channel sidebar
+- Helpers and unit tests for space category mapping, space state writes, and
+  hierarchy permission checks (`matrixSpaceHierarchyPermissions`)
 - reCAPTCHA UIA stage (`m.login.recaptcha`) in signup with consent-gated
   script load and optional iubenda hooks (#57)
 - Optional Synapse-backed E2E for registration captcha (`@recaptcha_signup`);
@@ -104,10 +113,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Space rail (first column) lists only root spaces; nested subspaces appear
+  only as categories in the second channel column
+- Room grouping under a selected space no longer uses `/` prefixes in room
+  names; ordering follows Matrix space state
 - Direct message resolution now consults `m.direct` account data before
   falling back to two-member heuristics for existing rooms
 - Global auth middleware now also protects the `/rooms` route prefix
-
 - Chat timeline now opens with a bounded initial message window to reduce
   startup scroll depth and perceived room-load latency
 - Login page now shows a post-signup success banner (#52)
