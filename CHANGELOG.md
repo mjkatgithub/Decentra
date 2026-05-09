@@ -97,6 +97,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sign-up entry point for delegated browser OAuth; runtime
   `nuxt.public.siteUrl` / `matrixOidcClientId`; EN/DE i18n for callback and
   error paths; README notes on HTTPS redirect requirements for matrix.org
+- Account verification panel in settings with device verification (SAS)
+  and recovery key bootstrap for cross-signing (#69)
+- Optional remote debug logging via `NUXT_PUBLIC_DEBUG_LOG_*` env vars and
+  `.env.example` template (#69)
 
 ### Changed
 
