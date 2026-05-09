@@ -15,6 +15,13 @@ import {
   mapTimelineEventsToMessages,
   resolveTimelineWindowSelection,
 } from "~/utils/chatTimeline";
+import {
+  buildSpaceRoomCategories,
+  getJoinedSpaceRoomIds,
+  isRootSpaceRoom,
+  isRoomUnderAncestorSpace,
+} from "~/utils/spaceRoomCategories";
+import { canUserSendSpaceChildState } from "~/utils/matrixSpaceHierarchyPermissions";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
 
@@ -68,15 +75,14 @@ interface RoomItem {
   parentSpaceIds: string[];
 }
 
-interface RoomCategory {
-  id: string;
-  name: string;
-  rooms: Array<{ roomId: string; name: string }>;
-}
-
 interface RoomCategoryGroup {
   id: string;
   name: string;
+  kind: "root" | "subspace";
+  subspaceRoomId?: string;
+  rootChildAnchorIds: string[];
+  /** Power-level: may send m.space.child on the parent of these rooms */
+  canReorderRooms: boolean;
   rooms: Array<{ roomId: string; name: string }>;
 }
 
@@ -99,6 +105,8 @@ const {
   logout,
   loadOlderMessages,
   toggleReaction,
+  reorderSpaceChildren,
+  moveChannelBetweenSpaceParents,
 } = useMatrixClient();
 const { translateText } = useAppI18n();
 const {
@@ -154,13 +162,29 @@ function getParentSpaceIds(room: Record<string, any>): string[] {
     .filter((spaceId): spaceId is string => Boolean(spaceId));
 }
 
+function getMatrixRoomId(room: unknown): string {
+  return String((room as { roomId: string }).roomId);
+}
+
 function refreshRooms() {
   matrixRooms.value = getRooms();
 }
 
+const joinedSpaceIds = computed(() =>
+  getJoinedSpaceRoomIds(
+    matrixRooms.value.map((room) => ({
+      roomId: room.roomId,
+      getType: () => getRoomType(room),
+    })),
+  ),
+);
+
 const spaceItems = computed<SpaceItem[]>(() => {
   const spaces = matrixRooms.value
     .filter((room) => getRoomType(room) === "m.space")
+    .filter((room) =>
+      isRootSpaceRoom(room, joinedSpaceIds.value, getParentSpaceIds),
+    )
     .map((spaceRoom) => ({
       id: spaceRoom.roomId,
       name: spaceRoom.name || translateText("layout.spaceFallback"),
@@ -198,11 +222,20 @@ const visibleRooms = computed(() => {
     return [];
   }
   const activeSpaceId = selectedSpaceId.value;
+  const roomsById = new Map<string, unknown>(
+    matrixRooms.value.map((room) => [room.roomId, room]),
+  );
   return roomItems.value.filter((room) => {
     if (room.parentSpaceIds.length === 0) {
       return activeSpaceId === HOME_SPACE_ID;
     }
-    return activeSpaceId ? room.parentSpaceIds.includes(activeSpaceId) : false;
+    return isRoomUnderAncestorSpace({
+      roomParentIds: room.parentSpaceIds,
+      ancestorSpaceId: activeSpaceId,
+      roomsById,
+      getRoomType,
+      getParentSpaceIds,
+    });
   });
 });
 
@@ -222,6 +255,16 @@ const roomCategories = computed<RoomCategoryGroup[]>(() => {
   return buildSpaceSections();
 });
 
+const canReorderRootCategories = computed(() => {
+  const rootId = selectedSpaceId.value;
+  const matrixClient = client.value;
+  const matrixUserId = userId.value;
+  if (!rootId || rootId === HOME_SPACE_ID || !matrixClient) {
+    return false;
+  }
+  return canUserSendSpaceChildState(matrixClient, rootId, matrixUserId);
+});
+
 function buildHomeSections(): RoomCategoryGroup[] {
   const directRooms = visibleRooms.value.filter((room) => isDirectRoom(room));
   const unassignedRooms = visibleRooms.value.filter((room) => {
@@ -233,6 +276,9 @@ function buildHomeSections(): RoomCategoryGroup[] {
     categories.push({
       id: "personal-chats",
       name: translateText("layout.personalChats"),
+      kind: "root",
+      rootChildAnchorIds: [],
+      canReorderRooms: false,
       rooms: directRooms.map((room) => ({
         roomId: room.roomId,
         name: room.name,
@@ -243,6 +289,9 @@ function buildHomeSections(): RoomCategoryGroup[] {
     categories.push({
       id: "unassigned-rooms",
       name: translateText("layout.unassignedRooms"),
+      kind: "root",
+      rootChildAnchorIds: [],
+      canReorderRooms: false,
       rooms: unassignedRooms.map((room) => ({
         roomId: room.roomId,
         name: room.name,
@@ -254,35 +303,47 @@ function buildHomeSections(): RoomCategoryGroup[] {
 }
 
 function buildSpaceSections(): RoomCategoryGroup[] {
-  const roomsInSpace = visibleRooms.value.filter((room) => !isDirectRoom(room));
-  const categories = new Map<string, RoomCategory>();
-
-  for (const room of roomsInSpace) {
-    const segments = room.name.split("/");
-    const rawCategory = segments.length > 1 ? (segments[0] || "").trim() : "";
-    const categoryName = rawCategory || translateText("layout.generalCategory");
-    const roomName =
-      segments.length > 1 ? segments.slice(1).join("/").trim() : room.name;
-    const categoryId = categoryName.toLowerCase().replace(/\s+/g, "-");
-    if (!categories.has(categoryId)) {
-      categories.set(categoryId, {
-        id: categoryId,
-        name: categoryName,
-        rooms: [],
-      });
-    }
-
-    const category = categories.get(categoryId);
-    if (!category) {
-      continue;
-    }
-    category.rooms.push({
-      roomId: room.roomId,
-      name: roomName || room.name,
-    });
+  const selectedId = selectedSpaceId.value;
+  if (!selectedId || selectedId === HOME_SPACE_ID) {
+    return [];
   }
-
-  return Array.from(categories.values());
+  const built = buildSpaceRoomCategories({
+    rootSpaceId: selectedId,
+    matrixRooms: matrixRooms.value,
+    getRoomType,
+    getRoomId: getMatrixRoomId,
+    getRoomDisplayName: (room) =>
+      String(
+        (room as { name?: string }).name ||
+          translateText("layout.roomFallback"),
+      ),
+    generalCategoryLabel: translateText("layout.generalCategory"),
+  });
+  const matrixClient = client.value;
+  const matrixUserId = userId.value;
+  return built.map((category) => {
+    const parentForRooms =
+      category.kind === "subspace" && category.subspaceRoomId
+        ? category.subspaceRoomId
+        : selectedId;
+    const canReorderRooms =
+      matrixClient && parentForRooms
+        ? canUserSendSpaceChildState(
+            matrixClient,
+            parentForRooms,
+            matrixUserId,
+          )
+        : false;
+    return {
+      id: category.id,
+      name: category.name,
+      kind: category.kind,
+      subspaceRoomId: category.subspaceRoomId,
+      rootChildAnchorIds: category.rootChildAnchorIds,
+      canReorderRooms,
+      rooms: category.rooms,
+    };
+  });
 }
 
 const selectedRoom = computed(() => {
@@ -743,6 +804,58 @@ function selectRoom(roomId: string) {
   }
 }
 
+async function onPersistRoomOrder(payload: {
+  parentSpaceId: string;
+  orderedRoomIds: string[];
+}) {
+  try {
+    await reorderSpaceChildren(
+      payload.parentSpaceId,
+      payload.orderedRoomIds,
+    );
+    refreshRooms();
+  } catch (thrownError) {
+    console.error("reorderSpaceChildren failed", thrownError);
+  }
+}
+
+async function onMoveRoomBetweenCategories(payload: {
+  roomId: string;
+  previousParentSpaceId: string;
+  nextParentSpaceId: string;
+  insertIndex: number;
+}) {
+  try {
+    await moveChannelBetweenSpaceParents({
+      roomId: payload.roomId,
+      previousParentSpaceId: payload.previousParentSpaceId,
+      nextParentSpaceId: payload.nextParentSpaceId,
+      insertIndex: payload.insertIndex,
+    });
+    refreshRooms();
+  } catch (thrownError) {
+    console.error(
+      "moveChannelBetweenSpaceParents failed",
+      thrownError,
+    );
+  }
+}
+
+async function onReorderRootCategories(
+  orderedRootChildIds: string[],
+) {
+  const rootId = selectedSpaceId.value;
+  if (!rootId || rootId === HOME_SPACE_ID) {
+    return;
+  }
+  try {
+    await reorderSpaceChildren(rootId, orderedRootChildIds);
+    refreshRooms();
+  } catch (thrownError) {
+    console.error("reorder root categories failed", thrownError);
+  }
+}
+
 function openSpaceSettings() {
   if (!selectedSpaceId.value) {
     return;
@@ -942,8 +1055,15 @@ watch(
           :selected-space-name="selectedSpaceName"
           :categories="roomCategories"
           :selected-room-id="selectedRoomId"
+          :can-reorder-categories="canReorderRootCategories"
+          :selected-root-space-id="
+            selectedSpaceId === HOME_SPACE_ID ? null : selectedSpaceId
+          "
           @select-room="selectRoom"
           @open-space-settings="openSpaceSettings"
+          @persist-room-order="onPersistRoomOrder"
+          @move-room-between-categories="onMoveRoomBetweenCategories"
+          @reorder-root-categories="onReorderRootCategories"
         />
       </div>
     </aside>

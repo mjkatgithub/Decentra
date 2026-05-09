@@ -112,6 +112,10 @@ import {
   resolveTrustedAppHttpsOrigin,
   type MatrixOidcIntent
 } from './matrix/matrixOidcNative'
+import {
+  moveRoomBetweenParents,
+  persistSpaceChildOrder
+} from './matrix/spaceStateHelpers'
 
 export {
   MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
@@ -1176,6 +1180,28 @@ export function useMatrixClient() {
     return matrixClient
   }
 
+  async function reorderSpaceChildren(
+    parentSpaceId: string,
+    orderedChildRoomIds: string[]
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await persistSpaceChildOrder(
+      matrixClient,
+      parentSpaceId,
+      orderedChildRoomIds
+    )
+  }
+
+  async function moveChannelBetweenSpaceParents(options: {
+    roomId: string
+    previousParentSpaceId: string | null
+    nextParentSpaceId: string
+    insertIndex?: number
+  }): Promise<void> {
+    const matrixClient = requireClient()
+    await moveRoomBetweenParents({ matrixClient, ...options })
+  }
+
   async function mergeDirectAccountData(
     matrixClient: MatrixClient,
     peerUserId: string,
@@ -1462,6 +1488,8 @@ export function useMatrixClient() {
     joinRoomByIdOrAlias,
     searchPublicRooms,
     searchUsersDirectory,
+    reorderSpaceChildren,
+    moveChannelBetweenSpaceParents,
     incomingVerificationFromOtherOwnDeviceBeacon:
       getIncomingVerificationFromOtherOwnDeviceReadonly(),
     consumeIncomingVerificationFromOtherOwnDeviceBeacon

@@ -29,6 +29,7 @@
     "matrix-js-sdk": "^37.5.0",
     "nuxt": "^4.3.1",
     "vue": "^3.5.28",
+    "vue-draggable-plus": "^0.6.1",
     "vue-router": "^4.6.4",
     "vue3-recaptcha-v2": "^2.1.0"
   },
