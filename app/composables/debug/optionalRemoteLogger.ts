@@ -1,5 +1,3 @@
-import { useRuntimeConfig } from '#imports'
-
 type OptionalRemoteLoggerPayload = {
   sessionId?: string
   runId?: string
@@ -8,6 +6,12 @@ type OptionalRemoteLoggerPayload = {
   message: string
   data?: unknown
   timestamp: number
+}
+
+type OptionalRemoteLoggerPublicConfig = {
+  debugLogIngestUrl?: string
+  debugLogSessionId?: string
+  debugLogSessionHeader?: string
 }
 
 function safeConsoleWarn(payload: OptionalRemoteLoggerPayload) {
@@ -19,22 +23,35 @@ function safeConsoleWarn(payload: OptionalRemoteLoggerPayload) {
   }
 }
 
+function getOptionalRemoteLoggerPublicConfig(): OptionalRemoteLoggerPublicConfig {
+  const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env
+
+  const envConfig: OptionalRemoteLoggerPublicConfig = {
+    debugLogIngestUrl: metaEnv?.NUXT_PUBLIC_DEBUG_LOG_INGEST_URL?.trim(),
+    debugLogSessionId: metaEnv?.NUXT_PUBLIC_DEBUG_LOG_SESSION_ID?.trim(),
+    debugLogSessionHeader: metaEnv?.NUXT_PUBLIC_DEBUG_LOG_SESSION_HEADER?.trim()
+  }
+
+  const nuxtPublicConfig = (
+    globalThis as unknown as {
+      __NUXT__?: { config?: { public?: OptionalRemoteLoggerPublicConfig } }
+    }
+  ).__NUXT__?.config?.public
+
+  return { ...envConfig, ...(nuxtPublicConfig ?? {}) }
+}
+
 export function logOptionalRemote(payload: OptionalRemoteLoggerPayload) {
   safeConsoleWarn(payload)
 
-  const runtimePublic = useRuntimeConfig().public as {
-    debugLogIngestUrl?: string
-    debugLogSessionId?: string
-    debugLogSessionHeader?: string
-  }
-
-  const ingestUrl = String(runtimePublic.debugLogIngestUrl ?? '').trim()
+  const config = getOptionalRemoteLoggerPublicConfig()
+  const ingestUrl = String(config.debugLogIngestUrl ?? '').trim()
   if (!ingestUrl) {
     return
   }
 
-  const sessionId = String(runtimePublic.debugLogSessionId ?? '').trim()
-  const sessionHeader = String(runtimePublic.debugLogSessionHeader ?? '').trim()
+  const sessionId = String(config.debugLogSessionId ?? '').trim()
+  const sessionHeader = String(config.debugLogSessionHeader ?? '').trim()
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   if (sessionId && sessionHeader) {
