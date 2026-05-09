@@ -157,8 +157,13 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.applyPresence': 'Apply presence',
     'settings.presenceSaved': 'Presence updated',
     'settings.busyUnsupported': 'Busy presence is not supported by this homeserver',
-    'settings.verificationTitle': 'Device verification',
-    'settings.verificationDescription': 'Verify this session with another client of the same account.',
+    'settings.verificationPanelTitle': 'Verification',
+    'settings.verificationPanelIntro':
+      'You can verify this session in two ways: with another signed-in client ' +
+      '(emoji comparison) or with your recovery / security key.',
+    'settings.verificationEmojiTitle': 'Verification with another client (emoji)',
+    'settings.verificationEmojiDescription':
+      'Verify this session with another client of the same account by comparing emojis.',
     'settings.verificationDeviceId': 'Device ID',
     'settings.verificationStart': 'Start verification',
     'settings.verificationRefresh': 'Refresh status',
@@ -188,6 +193,35 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'online and tap Refresh status, then try again.',
     'settings.verificationProtocolError':
       'Verification could not continue — try cancelling and starting again.',
+    'settings.verificationRecoveryTitle': 'Verification with recovery key',
+    'settings.verificationRecoveryDescription':
+      'If you cannot verify with another client, enter your Matrix ' +
+      'recovery / security key to restore cross-signing secrets from ' +
+      'secret storage on this device.',
+    'settings.verificationRecoveryHint':
+      'Prefer emoji verification when you have a second trusted client; use ' +
+      'the recovery key only when that is not possible.',
+    'settings.verificationRecoveryKeyLabel': 'Recovery or security key',
+    'settings.verificationRecoverySubmit': 'Restore encryption',
+    'settings.verificationRecoverySuccess':
+      'Encryption secrets were restored and this session is now verified. ' +
+      'Other clients (Element, Thunderbird, ...) may need a few minutes ' +
+      'to refresh their device list before they show this session as verified.',
+    'settings.verificationRecoveryErrorInvalidInput': 'Enter your recovery key.',
+    'settings.verificationRecoveryErrorInvalidKey':
+      'That key does not match your secret storage. Check the key and try again.',
+    'settings.verificationRecoveryErrorNoSecretStorage':
+      'This account has no cross-signing keys in secret storage yet. Set up ' +
+      'secret storage in another Matrix client first.',
+    'settings.verificationRecoveryErrorCryptoUnavailable':
+      'Encryption is not ready on this device. Try signing out and in, then retry.',
+    'settings.verificationRecoveryErrorUiaRequired':
+      'The homeserver needs extra authentication to finish this step. Try ' +
+      'again from a session that can complete interactive auth, or use another client.',
+    'settings.verificationRecoveryErrorNetwork':
+      'Network error talking to the homeserver. Check your connection and retry.',
+    'settings.verificationRecoveryErrorUnknown':
+      'Could not restore encryption. Try again or use another client.',
     'settings.backToChat': 'Back to chat',
     'settings.spaceTitle': 'Space settings',
     'settings.spaceDescription': 'Basic settings for this space.',
@@ -425,8 +459,13 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.applyPresence': 'Status setzen',
     'settings.presenceSaved': 'Status aktualisiert',
     'settings.busyUnsupported': 'Busy-Status wird vom Homeserver nicht unterstuetzt',
-    'settings.verificationTitle': 'Geraet verifizieren',
-    'settings.verificationDescription': 'Verifiziere diese Session mit einem anderen Client desselben Accounts.',
+    'settings.verificationPanelTitle': 'Verifizierung',
+    'settings.verificationPanelIntro':
+      'Du kannst diese Session auf zwei Arten verifizieren: mit einem anderen ' +
+      'angemeldeten Client (Emoji-Vergleich) oder mit deinem Recovery- bzw. Security-Key.',
+    'settings.verificationEmojiTitle': 'Verifizierung mit anderem Client (Emoji)',
+    'settings.verificationEmojiDescription':
+      'Verifiziere diese Session mit einem anderen Client desselben Accounts per Emoji-Vergleich.',
     'settings.verificationDeviceId': 'Geraete-ID',
     'settings.verificationStart': 'Verifizierung starten',
     'settings.verificationRefresh': 'Status aktualisieren',
@@ -457,6 +496,38 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'und versuche es erneut.',
     'settings.verificationProtocolError':
       'Die Verifizierung konnte nicht fortgesetzt werden — abbrechen und erneut starten.',
+    'settings.verificationRecoveryTitle': 'Verifizierung mit Recovery-Key',
+    'settings.verificationRecoveryDescription':
+      'Wenn du keinen zweiten Client zur Verifizierung hast, gib deinen ' +
+      'Matrix-Wiederherstellungsschluessel (Security Key) ein, um Cross-Signing ' +
+      'aus dem Secret Storage auf diesem Geraet wiederherzustellen.',
+    'settings.verificationRecoveryHint':
+      'Nutze zuerst die Emoji-Verifizierung, wenn du einen zweiten vertrauenswuerdigen ' +
+      'Client hast; den Recovery-Key nur, wenn das nicht moeglich ist.',
+    'settings.verificationRecoveryKeyLabel': 'Recovery- oder Security-Key',
+    'settings.verificationRecoverySubmit': 'Verschluesselung wiederherstellen',
+    'settings.verificationRecoverySuccess':
+      'Schluessel wurden wiederhergestellt und diese Session ist jetzt ' +
+      'verifiziert. Andere Clients (Element, Thunderbird, ...) benoetigen ' +
+      'eventuell ein paar Minuten, bis sie diese Session als verifiziert ' +
+      'anzeigen.',
+    'settings.verificationRecoveryErrorInvalidInput':
+      'Bitte den Wiederherstellungsschluessel eingeben.',
+    'settings.verificationRecoveryErrorInvalidKey':
+      'Dieser Schluessel passt nicht zu deinem Secret Storage. Bitte pruefen und erneut versuchen.',
+    'settings.verificationRecoveryErrorNoSecretStorage':
+      'Fuer dieses Konto liegt kein Cross-Signing im Secret Storage. Richte ' +
+      'Secret Storage zuerst in einem anderen Matrix-Client ein.',
+    'settings.verificationRecoveryErrorCryptoUnavailable':
+      'Verschluesselung ist auf diesem Geraet nicht bereit. Ab- und wieder anmelden, dann erneut versuchen.',
+    'settings.verificationRecoveryErrorUiaRequired':
+      'Der Homeserver verlangt zusaetzliche Authentifizierung. Von einer Session ' +
+      'mit Interactive Auth versuchen oder einen anderen Client nutzen.',
+    'settings.verificationRecoveryErrorNetwork':
+      'Netzwerkfehler zum Homeserver. Verbindung pruefen und erneut versuchen.',
+    'settings.verificationRecoveryErrorUnknown':
+      'Verschluesselung konnte nicht wiederhergestellt werden. Erneut versuchen ' +
+      'oder anderen Client nutzen.',
     'settings.backToChat': 'Zurück zum Chat',
     'settings.spaceTitle': 'Space-Einstellungen',
     'settings.spaceDescription': 'Basis-Einstellungen für diesen Space.',

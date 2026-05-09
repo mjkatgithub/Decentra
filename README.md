@@ -30,6 +30,22 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+### Optional debug logging (console vs. remote)
+
+By default, Decentra logs debug traces only to the **browser console**.
+You can optionally forward those traces to a remote ingest endpoint by
+setting environment variables (recommended via a local untracked file):
+
+```bash
+cp .env.example .env.local
+```
+
+Then set one or more of:
+
+- `NUXT_PUBLIC_DEBUG_LOG_INGEST_URL` (enables remote logging)
+- `NUXT_PUBLIC_DEBUG_LOG_SESSION_ID` (optional)
+- `NUXT_PUBLIC_DEBUG_LOG_SESSION_HEADER` (optional, e.g. `X-Debug-Session-Id`)
+
 ## Build & Preview
 
 ```bash
