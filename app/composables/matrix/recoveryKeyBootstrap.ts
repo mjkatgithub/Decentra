@@ -7,6 +7,7 @@ import {
   isLikelyBrowserNetworkOrCorsError,
   readMatrixErrorCode
 } from './matrixClientShared'
+import { logOptionalRemote } from '../debug/optionalRemoteLogger'
 
 /** Outcome of {@link bootstrapCrossSigningWithRecoveryKeyString}. */
 export type RecoveryKeyBootstrapResult =
@@ -126,6 +127,9 @@ function installMatchingSecretStorageGetter(
   const getter: CryptoCallbacks['getSecretStorageKey'] = async (opts) => {
     for (const keyId of Object.keys(opts.keys)) {
       const keyInfo = opts.keys[keyId]
+      if (!keyInfo) {
+        continue
+      }
       const matches = await matrixClient.secretStorage.checkKey(
         decodedPrivateKey,
         keyInfo
@@ -187,13 +191,25 @@ export async function bootstrapCrossSigningWithRecoveryKeyString(
     return { success: false, failureReason: 'crypto_unavailable' }
   }
 
+  let crossSigningStatusBefore: unknown = null
   try {
     const crossSigningStatus = await cryptoApi.getCrossSigningStatus()
+    crossSigningStatusBefore = crossSigningStatus
     const defaultKeyId = await matrixClient.secretStorage.getDefaultKeyId()
     if (
       !crossSigningStatus.privateKeysInSecretStorage ||
       !defaultKeyId
     ) {
+      // #region agent log
+      logOptionalRemote({
+        sessionId: '4f7064',
+        hypothesisId: 'H1,H3',
+        location: 'recoveryKeyBootstrap.ts:precheck',
+        message: 'pre-bootstrap ssss_missing branch',
+        data: { crossSigningStatus, defaultKeyId },
+        timestamp: Date.now()
+      })
+      // #endregion
       return { success: false, failureReason: 'ssss_missing' }
     }
   } catch (thrownError) {
@@ -209,6 +225,16 @@ export async function bootstrapCrossSigningWithRecoveryKeyString(
   )
 
   try {
+    // #region agent log
+    logOptionalRemote({
+      sessionId: '4f7064',
+      hypothesisId: 'H1,H3',
+      location: 'recoveryKeyBootstrap.ts:before-bootstrap',
+      message: 'about to call bootstrapCrossSigning',
+      data: { crossSigningStatusBefore },
+      timestamp: Date.now()
+    })
+    // #endregion
     await cryptoApi.bootstrapCrossSigning({})
     try {
       await cryptoApi.loadSessionBackupPrivateKeyFromSecretStorage()
@@ -216,12 +242,59 @@ export async function bootstrapCrossSigningWithRecoveryKeyString(
       /* optional; backup may be absent */
     }
     const crossSigningReady = await cryptoApi.isCrossSigningReady()
+    let crossSigningStatusAfter: unknown = null
+    try {
+      crossSigningStatusAfter = await cryptoApi.getCrossSigningStatus()
+    } catch {
+      /* best-effort only for diagnostics */
+    }
+    let deviceVerifiedAfter: boolean | null = null
+    try {
+      const matrixUserId = matrixClient.getUserId?.() ?? ''
+      const matrixDeviceId = matrixClient.getDeviceId?.() ?? ''
+      const status = matrixUserId && matrixDeviceId
+        ? await cryptoApi.getDeviceVerificationStatus(
+            matrixUserId,
+            matrixDeviceId
+          )
+        : null
+      deviceVerifiedAfter = status?.isVerified() ?? null
+    } catch {
+      /* diagnostics */
+    }
+    // #region agent log
+    logOptionalRemote({
+      sessionId: '4f7064',
+      hypothesisId: 'H1,H3',
+      location: 'recoveryKeyBootstrap.ts:after-bootstrap',
+      message: 'bootstrapCrossSigning returned',
+      data: {
+        crossSigningReady,
+        crossSigningStatusBefore,
+        crossSigningStatusAfter,
+        deviceVerifiedAfter
+      },
+      timestamp: Date.now()
+    })
+    // #endregion
     return { success: true, crossSigningReady }
   } catch (thrownError) {
-    return {
-      success: false,
-      failureReason: mapThrownErrorToRecoveryFailureReason(thrownError)
-    }
+    const failureReason = mapThrownErrorToRecoveryFailureReason(thrownError)
+    // #region agent log
+    logOptionalRemote({
+      sessionId: '4f7064',
+      hypothesisId: 'H1,H3,H5',
+      location: 'recoveryKeyBootstrap.ts:catch',
+      message: 'bootstrapCrossSigning threw',
+      data: {
+        failureReason,
+        errorMessage:
+          thrownError instanceof Error ? thrownError.message : String(thrownError)
+      },
+      timestamp: Date.now()
+    })
+    // #endregion
+    return { success: false, failureReason }
   } finally {
     uninstallGetter()
   }

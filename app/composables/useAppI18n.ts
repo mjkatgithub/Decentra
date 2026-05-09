@@ -204,7 +204,9 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.verificationRecoveryKeyLabel': 'Recovery or security key',
     'settings.verificationRecoverySubmit': 'Restore encryption',
     'settings.verificationRecoverySuccess':
-      'Encryption secrets were restored. Status below should update shortly.',
+      'Encryption secrets were restored and this session is now verified. ' +
+      'Other clients (Element, Thunderbird, ...) may need a few minutes ' +
+      'to refresh their device list before they show this session as verified.',
     'settings.verificationRecoveryErrorInvalidInput': 'Enter your recovery key.',
     'settings.verificationRecoveryErrorInvalidKey':
       'That key does not match your secret storage. Check the key and try again.',
@@ -505,7 +507,10 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.verificationRecoveryKeyLabel': 'Recovery- oder Security-Key',
     'settings.verificationRecoverySubmit': 'Verschluesselung wiederherstellen',
     'settings.verificationRecoverySuccess':
-      'Schluessel wurden wiederhergestellt. Der Status unten aktualisiert sich in Kuerze.',
+      'Schluessel wurden wiederhergestellt und diese Session ist jetzt ' +
+      'verifiziert. Andere Clients (Element, Thunderbird, ...) benoetigen ' +
+      'eventuell ein paar Minuten, bis sie diese Session als verifiziert ' +
+      'anzeigen.',
     'settings.verificationRecoveryErrorInvalidInput':
       'Bitte den Wiederherstellungsschluessel eingeben.',
     'settings.verificationRecoveryErrorInvalidKey':

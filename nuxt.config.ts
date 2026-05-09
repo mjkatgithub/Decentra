@@ -16,7 +16,23 @@ export default defineNuxtConfig({
        * Example: https://YOUR-NGROK.app — required for matrix.org OAuth.
        */
       siteUrl: '',
-      matrixOidcClientId: ''
+      matrixOidcClientId: '',
+      /**
+       * Optional remote debug log sink. When unset, Decentra only logs to the
+       * browser console. When set, Decentra will POST NDJSON-ish payloads.
+       *
+       * Example: http://127.0.0.1:7476/ingest/<id> (local), or your Graylog.
+       */
+      debugLogIngestUrl: '',
+      /**
+       * Optional session id for remote log sink. Only sent when both this and
+       * `debugLogSessionHeader` are configured.
+       */
+      debugLogSessionId: '',
+      /**
+       * Optional header name for session id, e.g. X-Debug-Session-Id.
+       */
+      debugLogSessionHeader: ''
     }
   },
   app: {
