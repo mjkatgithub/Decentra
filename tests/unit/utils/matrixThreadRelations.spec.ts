@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildThreadRelatesTo,
+  getInReplyToEventId,
   getThreadRootEventId,
+  isEditedMessageContent,
   isThreadReplyContent,
+  readMessageRelationSnapshot,
 } from '~/utils/matrixThreadRelations'
 
 describe('matrixThreadRelations', () => {
@@ -61,5 +64,40 @@ describe('matrixThreadRelations', () => {
       rel_type: 'm.thread',
       event_id: '$root',
     })
+  })
+
+  it('reads top-level m.in_reply_to', () => {
+    expect(
+      getInReplyToEventId({
+        body: 'reply',
+        'm.in_reply_to': { event_id: '$parent' },
+      }),
+    ).to.equal('$parent')
+  })
+
+  it('detects edited message content', () => {
+    expect(
+      isEditedMessageContent({
+        'm.relates_to': {
+          rel_type: 'm.replace',
+          event_id: '$original',
+        },
+      }),
+    ).to.equal(true)
+  })
+
+  it('reads relations from clear content', () => {
+    const snapshot = readMessageRelationSnapshot({
+      getContent: () => ({ body: 'visible' }),
+      getClearContent: () => ({
+        body: 'visible',
+        'm.relates_to': {
+          rel_type: 'm.thread',
+          event_id: '$root',
+        },
+      }),
+    })
+
+    expect(snapshot.threadRootId).to.equal('$root')
   })
 })

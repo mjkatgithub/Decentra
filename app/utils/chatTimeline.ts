@@ -1,4 +1,7 @@
-import { getThreadRootEventId } from '~/utils/matrixThreadRelations'
+import {
+  getInReplyToEventId,
+  readMessageRelationSnapshot,
+} from '~/utils/matrixThreadRelations'
 
 export interface ChatTimelineMedia {
   url: string
@@ -44,6 +47,7 @@ export interface ChatTimelineMessage {
   }>
   /** Present on root messages that have thread replies (MSC3440) */
   threadSummary?: ChatThreadSummary
+  isEdited?: boolean
 }
 
 export interface ChatTimelineReaction {
@@ -107,8 +111,176 @@ function filterTimelineEventsByType(
   })
 }
 
+type TimelineEventRecord = Record<string, any>
+
+interface MessageRelationIndex {
+  threadRootByMessageId: Map<string, string>
+  supersededMessageIds: Set<string>
+}
+
+function resolveThreadRootFromEventId(
+  eventId: string,
+  eventsById: Map<string, TimelineEventRecord>,
+  threadRootByMessageId: Map<string, string>,
+  visited = new Set<string>(),
+): string | undefined {
+  if (visited.has(eventId)) {
+    return undefined
+  }
+  visited.add(eventId)
+
+  const mappedRoot = threadRootByMessageId.get(eventId)
+  if (mappedRoot) {
+    return mappedRoot
+  }
+
+  const timelineEvent = eventsById.get(eventId)
+  if (!timelineEvent) {
+    return undefined
+  }
+
+  const snapshot = readMessageRelationSnapshot(timelineEvent)
+  if (snapshot.threadRootId) {
+    return snapshot.threadRootId
+  }
+  if (snapshot.replaceTargetId) {
+    const inheritedRoot = resolveThreadRootFromEventId(
+      snapshot.replaceTargetId,
+      eventsById,
+      threadRootByMessageId,
+      visited,
+    )
+    if (inheritedRoot) {
+      return inheritedRoot
+    }
+  }
+  if (snapshot.inReplyToId) {
+    const parentRoot = threadRootByMessageId.get(snapshot.inReplyToId)
+    if (parentRoot) {
+      return parentRoot
+    }
+    return resolveThreadRootFromEventId(
+      snapshot.inReplyToId,
+      eventsById,
+      threadRootByMessageId,
+      visited,
+    )
+  }
+  return undefined
+}
+
+function collectMessageTimelineEvents(
+  rawEvents: TimelineEventRecord[],
+): TimelineEventRecord[] {
+  return rawEvents.filter((timelineEvent) => {
+    const eventType = timelineEvent.getType?.() ?? ''
+    return eventType === 'm.room.message' && !isUndecryptableEvent(timelineEvent)
+  })
+}
+
+function buildMessageRelationIndex(
+  messageEvents: TimelineEventRecord[],
+): MessageRelationIndex {
+  const threadRootByMessageId = new Map<string, string>()
+  const latestReplacementByTarget = new Map<
+    string,
+    { replacementId: string; originServerTs: number }
+  >()
+  const replacementIdsByTarget = new Map<string, Set<string>>()
+  const eventsById = new Map<string, TimelineEventRecord>()
+
+  for (const timelineEvent of messageEvents) {
+    const eventId = timelineEvent.getId?.() ?? ''
+    if (!eventId) {
+      continue
+    }
+    eventsById.set(eventId, timelineEvent)
+
+    const snapshot = readMessageRelationSnapshot(timelineEvent)
+    if (snapshot.threadRootId) {
+      threadRootByMessageId.set(eventId, snapshot.threadRootId)
+    }
+
+    if (!snapshot.replaceTargetId) {
+      continue
+    }
+    const originServerTs = Number(timelineEvent.getTs?.() ?? 0)
+    const replacementIds =
+      replacementIdsByTarget.get(snapshot.replaceTargetId) ??
+      new Set<string>()
+    replacementIds.add(eventId)
+    replacementIdsByTarget.set(snapshot.replaceTargetId, replacementIds)
+
+    const previous = latestReplacementByTarget.get(snapshot.replaceTargetId)
+    if (!previous || originServerTs >= previous.originServerTs) {
+      latestReplacementByTarget.set(snapshot.replaceTargetId, {
+        replacementId: eventId,
+        originServerTs,
+      })
+    }
+  }
+
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const timelineEvent of messageEvents) {
+      const eventId = timelineEvent.getId?.() ?? ''
+      if (!eventId || threadRootByMessageId.has(eventId)) {
+        continue
+      }
+      const snapshot = readMessageRelationSnapshot(timelineEvent)
+      if (snapshot.replaceTargetId) {
+        const inheritedRoot = threadRootByMessageId.get(
+          snapshot.replaceTargetId,
+        )
+        if (inheritedRoot) {
+          threadRootByMessageId.set(eventId, inheritedRoot)
+          changed = true
+          continue
+        }
+      }
+      if (snapshot.inReplyToId) {
+        const inheritedRoot = threadRootByMessageId.get(snapshot.inReplyToId)
+        if (inheritedRoot) {
+          threadRootByMessageId.set(eventId, inheritedRoot)
+          changed = true
+        }
+      }
+    }
+  }
+
+  for (const timelineEvent of messageEvents) {
+    const eventId = timelineEvent.getId?.() ?? ''
+    if (!eventId || threadRootByMessageId.has(eventId)) {
+      continue
+    }
+    const inheritedRoot = resolveThreadRootFromEventId(
+      eventId,
+      eventsById,
+      threadRootByMessageId,
+    )
+    if (inheritedRoot && inheritedRoot !== eventId) {
+      threadRootByMessageId.set(eventId, inheritedRoot)
+    }
+  }
+
+  const supersededMessageIds = new Set<string>()
+  for (const [targetId, replacementIds] of replacementIdsByTarget) {
+    supersededMessageIds.add(targetId)
+    const latest = latestReplacementByTarget.get(targetId)
+    for (const replacementId of replacementIds) {
+      if (replacementId !== latest?.replacementId) {
+        supersededMessageIds.add(replacementId)
+      }
+    }
+  }
+
+  return { threadRootByMessageId, supersededMessageIds }
+}
+
 function shouldIncludeMessageInMainTimeline(
-  timelineEvent: Record<string, any>,
+  timelineEvent: TimelineEventRecord,
+  relationIndex: MessageRelationIndex,
 ): boolean {
   const eventType = timelineEvent.getType?.() ?? ''
   if (eventType !== 'm.room.message') {
@@ -117,16 +289,30 @@ function shouldIncludeMessageInMainTimeline(
   if (isUndecryptableEvent(timelineEvent)) {
     return true
   }
-  const content = timelineEvent.getContent?.() ?? {}
-  return !getThreadRootEventId(content as Record<string, unknown>)
+  const eventId = timelineEvent.getId?.() ?? ''
+  if (eventId && relationIndex.supersededMessageIds.has(eventId)) {
+    return false
+  }
+  const snapshot = readMessageRelationSnapshot(timelineEvent)
+  if (snapshot.threadRootId) {
+    return false
+  }
+  if (eventId && relationIndex.threadRootByMessageId.has(eventId)) {
+    return false
+  }
+  return true
 }
 
 function shouldIncludeMessageInThreadView(
-  timelineEvent: Record<string, any>,
+  timelineEvent: TimelineEventRecord,
   rootEventId: string,
+  relationIndex: MessageRelationIndex,
 ): boolean {
   const eventType = timelineEvent.getType?.() ?? ''
   const eventId = timelineEvent.getId?.() ?? ''
+  if (eventId && relationIndex.supersededMessageIds.has(eventId)) {
+    return false
+  }
   if (eventId === rootEventId) {
     return true
   }
@@ -136,8 +322,11 @@ function shouldIncludeMessageInThreadView(
   if (isUndecryptableEvent(timelineEvent)) {
     return false
   }
-  const content = timelineEvent.getContent?.() ?? {}
-  return getThreadRootEventId(content as Record<string, unknown>) === rootEventId
+  if (relationIndex.threadRootByMessageId.get(eventId) === rootEventId) {
+    return true
+  }
+  const snapshot = readMessageRelationSnapshot(timelineEvent)
+  return snapshot.threadRootId === rootEventId
 }
 
 /**
@@ -150,18 +339,19 @@ export function buildThreadSummariesByRoot(
   ) => string | undefined,
 ): Map<string, ChatThreadSummary> {
   const raw = room.getLiveTimeline().getEvents()
+  const messageEvents = collectMessageTimelineEvents(raw)
+  const relationIndex = buildMessageRelationIndex(messageEvents)
   const byRoot = new Map<
     string,
     { replyCount: number; lastReply?: ChatThreadLastReply }
   >()
 
-  for (const timelineEvent of raw) {
-    const eventType = timelineEvent.getType?.() ?? ''
-    if (eventType !== 'm.room.message' || isUndecryptableEvent(timelineEvent)) {
+  for (const timelineEvent of messageEvents) {
+    const eventId = timelineEvent.getId?.() ?? ''
+    if (!eventId || relationIndex.supersededMessageIds.has(eventId)) {
       continue
     }
-    const content = timelineEvent.getContent?.() ?? {}
-    const rootId = getThreadRootEventId(content as Record<string, unknown>)
+    const rootId = relationIndex.threadRootByMessageId.get(eventId)
     if (!rootId) {
       continue
     }
@@ -173,7 +363,6 @@ export function buildThreadSummariesByRoot(
       senderName,
       false,
     )
-    const eventId = timelineEvent.getId?.() ?? ''
     const originServerTs = Number(timelineEvent.getTs?.() ?? 0)
     const previous = byRoot.get(rootId)
     const nextCount = (previous?.replyCount ?? 0) + 1
@@ -214,6 +403,8 @@ export function mapTimelineEventsToMessages({
   mode = { kind: 'main' } as TimelineMappingMode,
 }: MapTimelineArgs & { mode?: TimelineMappingMode }): ChatTimelineMessage[] {
   const allTimelineEvents = room.getLiveTimeline().getEvents()
+  const messageEvents = collectMessageTimelineEvents(allTimelineEvents)
+  const relationIndex = buildMessageRelationIndex(messageEvents)
   const reactionSummaryByEventId = buildReactionSummaryByEventId(
     allTimelineEvents,
     ownUserId,
@@ -231,11 +422,17 @@ export function mapTimelineEventsToMessages({
 
   const timelineEvents =
     mode.kind === 'main'
-      ? typedTimelineEvents.filter(shouldIncludeMessageInMainTimeline)
+      ? typedTimelineEvents.filter((timelineEvent) => {
+          return shouldIncludeMessageInMainTimeline(
+            timelineEvent,
+            relationIndex,
+          )
+        })
       : typedTimelineEvents.filter((timelineEvent) => {
           return shouldIncludeMessageInThreadView(
             timelineEvent,
             mode.rootEventId,
+            relationIndex,
           )
         })
 
@@ -246,7 +443,7 @@ export function mapTimelineEventsToMessages({
       timelineEventsById.set(timelineEventId, timelineEvent)
     }
   }
-  const messageEvents = timelineEvents.filter(
+  const visibleMessageEvents = timelineEvents.filter(
     (timelineEvent: Record<string, any>) => {
       return (
         (timelineEvent.getType?.() ?? '') === 'm.room.message' &&
@@ -261,8 +458,12 @@ export function mapTimelineEventsToMessages({
     if (member.userId === ownUserId) {
       continue
     }
-    for (let messageIndex = messageEvents.length - 1; messageIndex >= 0; messageIndex--) {
-      const messageEvent = messageEvents[messageIndex]
+    for (
+      let messageIndex = visibleMessageEvents.length - 1;
+      messageIndex >= 0;
+      messageIndex--
+    ) {
+      const messageEvent = visibleMessageEvents[messageIndex]
       if (!messageEvent) {
         continue
       }
@@ -310,6 +511,9 @@ export function mapTimelineEventsToMessages({
         : []
 
       const content = timelineEvent.getContent() ?? {}
+      const relationSnapshot = eventType === 'm.room.message'
+        ? readMessageRelationSnapshot(timelineEvent)
+        : undefined
       const reactions = eventType === 'm.room.message' && currentEventId
         ? reactionSummaryByEventId.get(currentEventId) ?? []
         : []
@@ -356,7 +560,8 @@ export function mapTimelineEventsToMessages({
         replyTo,
         media,
         reactions,
-        readBy
+        readBy,
+        isEdited: relationSnapshot?.isReplacement === true,
       }
     } catch {
       const senderUserId = timelineEvent.getSender?.() ?? ''
@@ -495,8 +700,6 @@ export function resolveTimelineWindowSelection(
   }
 }
 
-type TimelineEventRecord = Record<string, any>
-
 interface ReactionAggregate {
   users: Set<string>
   ownReactionEventIds: Set<string>
@@ -596,7 +799,9 @@ function buildReplyMetadata(
   timelineEventsById: Map<string, Record<string, any>>,
   threadRootEventId?: string,
 ): ChatTimelineReply | undefined {
-  const replyEventId = getReplyEventId(content)
+  const replyEventId = getInReplyToEventId(
+    content as Record<string, unknown>,
+  )
   if (!replyEventId) {
     return undefined
   }
@@ -634,21 +839,6 @@ function buildReplyMetadata(
     senderName: replySenderName,
     body: getMessageBody(replyTargetEvent, replySenderName, replyUndecryptable)
   }
-}
-
-function getReplyEventId(content: Record<string, any>): string | undefined {
-  const relatesTo = content['m.relates_to']
-  if (!relatesTo || typeof relatesTo !== 'object') {
-    return undefined
-  }
-  const inReplyTo = relatesTo['m.in_reply_to']
-  if (!inReplyTo || typeof inReplyTo !== 'object') {
-    return undefined
-  }
-  const replyEventId = inReplyTo.event_id
-  return typeof replyEventId === 'string' && replyEventId.length > 0
-    ? replyEventId
-    : undefined
 }
 
 function getRedactedEventIds(timelineEvents: TimelineEventRecord[]): Set<string> {

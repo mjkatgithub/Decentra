@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ChatThreadSummary } from "~/utils/chatTimeline";
 import ChatThreadPreview from "~/components/Chat/ChatThreadPreview.vue";
+import { useAppI18n } from "~/composables/useAppI18n";
 
 interface MediaInfo {
   url: string;
@@ -41,6 +42,7 @@ interface MessageItem {
     avatarUrl?: string;
   }>;
   threadSummary?: ChatThreadSummary;
+  isEdited?: boolean;
 }
 
 const props = defineProps<{
@@ -51,6 +53,8 @@ const props = defineProps<{
   /** Hide thread affordances (when rendering inside thread panel) */
   isThreadView?: boolean;
 }>();
+
+const { translateText } = useAppI18n();
 
 const emit = defineEmits<{
   reply: [];
@@ -126,6 +130,12 @@ function handlePickerReaction(emoji: string) {
         <div class="flex items-center gap-2">
           <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ message.senderName }}
+          </span>
+          <span
+            v-if="message.isEdited"
+            class="text-xs text-gray-400 dark:text-gray-500"
+          >
+            ({{ translateText("chat.messageEdited") }})
           </span>
         </div>
 
