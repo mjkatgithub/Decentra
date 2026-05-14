@@ -604,6 +604,13 @@ export interface ThreadNavEntry {
   lastActivityTs: number
 }
 
+export const DEFAULT_THREAD_SIDEBAR_MAX_AGE_DAYS = 2
+
+export interface BuildRoomThreadNavOptions {
+  maxAgeDays?: number
+  nowMs?: number
+}
+
 function threadTitleFromRootEvent(rootEvent: Record<string, any> | undefined): string {
   if (!rootEvent) {
     return 'Thread'
@@ -621,6 +628,7 @@ function threadTitleFromRootEvent(rootEvent: Record<string, any> | undefined): s
  */
 export function buildRoomThreadNavEntries(
   room: Record<string, any>,
+  options?: BuildRoomThreadNavOptions,
 ): ThreadNavEntry[] {
   const summaries = buildThreadSummariesByRoot(room)
   const typed = filterTimelineEventsByType(room.getLiveTimeline().getEvents())
@@ -651,7 +659,12 @@ export function buildRoomThreadNavEntries(
   entries.sort((entryA, entryB) => {
     return entryB.lastActivityTs - entryA.lastActivityTs
   })
-  return entries
+
+  const maxAgeDays =
+    options?.maxAgeDays ?? DEFAULT_THREAD_SIDEBAR_MAX_AGE_DAYS
+  const nowMs = options?.nowMs ?? Date.now()
+  const cutoffTs = nowMs - maxAgeDays * 24 * 60 * 60 * 1000
+  return entries.filter((entry) => entry.lastActivityTs >= cutoffTs)
 }
 
 export function resolveTimelineWindowSelection(

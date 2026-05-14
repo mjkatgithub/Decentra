@@ -648,10 +648,152 @@ describe('chatTimeline helpers', () => {
       getMember: () => ({ name: 'Alice' }),
       hasUserReadEvent: () => false,
     }
-    const entries = buildRoomThreadNavEntries(mockRoom as any)
+    const entries = buildRoomThreadNavEntries(mockRoom as any, {
+      nowMs: 20,
+    })
     entries.length.should.equal(1)
     entries[0]!.rootEventId.should.equal('root_a')
     entries[0]!.title.should.include('channel topic')
+  })
+
+  it('buildRoomThreadNavEntries lists multiple thread roots', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'root_a',
+            getSender: () => '@a:example.org',
+            getTs: () => 10,
+            getContent: () => ({
+              body: 'first topic',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'reply_a',
+            getSender: () => '@b:example.org',
+            getTs: () => 20,
+            getContent: () => ({
+              body: 'reply a',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'root_a',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'root_b',
+            getSender: () => '@a:example.org',
+            getTs: () => 30,
+            getContent: () => ({
+              body: 'second topic',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'reply_b',
+            getSender: () => '@b:example.org',
+            getTs: () => 40,
+            getContent: () => ({
+              body: 'reply b',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'root_b',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const entries = buildRoomThreadNavEntries(mockRoom as any, {
+      nowMs: 50,
+    })
+    entries.length.should.equal(2)
+    entries[0]!.rootEventId.should.equal('root_b')
+    entries[1]!.rootEventId.should.equal('root_a')
+  })
+
+  it('buildRoomThreadNavEntries hides stale threads by age', () => {
+    const nowMs = 10 * 24 * 60 * 60 * 1000
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'root_old',
+            getSender: () => '@a:example.org',
+            getTs: () => 1,
+            getContent: () => ({
+              body: 'old topic',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'reply_old',
+            getSender: () => '@b:example.org',
+            getTs: () => nowMs - (3 * 24 * 60 * 60 * 1000),
+            getContent: () => ({
+              body: 'old reply',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'root_old',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'root_new',
+            getSender: () => '@a:example.org',
+            getTs: () => 2,
+            getContent: () => ({
+              body: 'fresh topic',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'reply_new',
+            getSender: () => '@b:example.org',
+            getTs: () => nowMs - (60 * 60 * 1000),
+            getContent: () => ({
+              body: 'fresh reply',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'root_new',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const entries = buildRoomThreadNavEntries(mockRoom as any, { nowMs })
+    entries.length.should.equal(1)
+    entries[0]!.rootEventId.should.equal('root_new')
   })
 
   it('hides superseded originals from the main timeline', () => {

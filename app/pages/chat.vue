@@ -162,6 +162,9 @@ const spaceRailExpanded = ref(false);
 const activeThread = ref<ActiveThreadState | null>(null);
 const threadPanelAllMessages = ref<ChatMessage[]>([]);
 const activeThreadReplyTo = ref<ChatMessage["replyTo"] | null>(null);
+const threadNavVersion = ref(0);
+let threadNavRefreshTimerId: number | null = null;
+const THREAD_NAV_REFRESH_MS = 250;
 
 function getRoomType(room: Record<string, any>): string | undefined {
   return (room as { getType?: () => string }).getType?.();
@@ -190,6 +193,21 @@ function getMatrixRoomId(room: unknown): string {
 
 function refreshRooms() {
   matrixRooms.value = getRooms();
+  scheduleThreadNavRefresh();
+}
+
+function scheduleThreadNavRefresh() {
+  if (!import.meta.client) {
+    threadNavVersion.value += 1;
+    return;
+  }
+  if (threadNavRefreshTimerId !== null) {
+    window.clearTimeout(threadNavRefreshTimerId);
+  }
+  threadNavRefreshTimerId = window.setTimeout(() => {
+    threadNavRefreshTimerId = null;
+    threadNavVersion.value += 1;
+  }, THREAD_NAV_REFRESH_MS);
 }
 
 const joinedSpaceIds = computed(() =>
@@ -401,6 +419,7 @@ const memberItems = computed<MemberItem[]>(() => {
 });
 
 const threadNavByRoomId = computed<Record<string, ThreadNavEntry[]>>(() => {
+  void threadNavVersion.value;
   const matrixClient = client.value;
   if (!matrixClient) {
     return {};
@@ -756,6 +775,7 @@ function loadMessages(
     applyWindow();
     scrollIntentToken.value += 1;
     syncThreadPanelIfActive(roomId);
+    scheduleThreadNavRefresh();
     return;
   }
 
@@ -781,6 +801,7 @@ function loadMessages(
   }
   applyWindow();
   syncThreadPanelIfActive(roomId);
+  scheduleThreadNavRefresh();
 }
 
 function patchMessageReactions(roomId: string) {
@@ -1127,6 +1148,10 @@ onBeforeUnmount(() => {
     window.clearTimeout(loadMessagesTimerId.value);
     loadMessagesTimerId.value = null;
   }
+  if (threadNavRefreshTimerId !== null) {
+    window.clearTimeout(threadNavRefreshTimerId);
+    threadNavRefreshTimerId = null;
+  }
   window.removeEventListener("resize", resizeHandler);
 });
 
@@ -1146,6 +1171,15 @@ watch(
       timelineEvent: Record<string, any> | undefined,
       room: Record<string, any> | undefined,
     ) => {
+      if (room?.roomId) {
+        const eventType = timelineEvent?.getType?.() ?? "";
+        if (
+          eventType === "m.room.message" ||
+          isReactionRelatedEvent(eventType)
+        ) {
+          scheduleThreadNavRefresh();
+        }
+      }
       if (room?.roomId === selectedRoomId.value) {
         const eventType = timelineEvent?.getType?.() ?? "";
         if (isReactionRelatedEvent(eventType)) {
