@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { VueDraggable } from 'vue-draggable-plus'
 import { useAppI18n } from '~/composables/useAppI18n'
+import type { ThreadNavEntry } from '~/utils/chatTimeline'
 
 interface RoomItem {
   roomId: string
@@ -25,10 +26,13 @@ const props = defineProps<{
   canReorderCategories: boolean
   /** When null (e.g. Home), hierarchy DnD is off */
   selectedRootSpaceId: string | null
+  threadsByRoomId?: Record<string, ThreadNavEntry[]>
+  activeThreadRootId?: string | null
 }>()
 
 const emit = defineEmits<{
   selectRoom: [roomId: string]
+  selectThread: [payload: { roomId: string; rootEventId: string }]
   openSpaceSettings: []
   persistRoomOrder: [
     payload: { parentSpaceId: string; orderedRoomIds: string[] },
@@ -95,6 +99,10 @@ function roomListDragEnabled(category: RoomSectionItem): boolean {
 
 function selectRoom(roomId: string) {
   emit('selectRoom', roomId)
+}
+
+function selectThread(roomId: string, rootEventId: string) {
+  emit('selectThread', { roomId, rootEventId })
 }
 
 /**
@@ -325,19 +333,42 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                 item?: HTMLElement
               })"
             >
-              <button
+              <div
                 v-for="room in category.rooms"
                 :key="room.roomId"
-                type="button"
-                class="w-full rounded-lg px-2 py-2 text-left text-sm transition"
-                :class="selectedRoomId === room.roomId
-                  ? 'bg-primary-500/15 text-primary-500'
-                  : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'"
-                :data-room-id="room.roomId"
-                @click="selectRoom(room.roomId)"
+                class="space-y-0.5"
               >
-                <span class="truncate"># {{ room.name }}</span>
-              </button>
+                <button
+                  type="button"
+                  class="w-full rounded-lg px-2 py-2 text-left text-sm transition"
+                  :class="selectedRoomId === room.roomId
+                    ? 'bg-primary-500/15 text-primary-500'
+                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'"
+                  :data-room-id="room.roomId"
+                  @click="selectRoom(room.roomId)"
+                >
+                  <span class="truncate"># {{ room.name }}</span>
+                </button>
+                <button
+                  v-for="thread in (
+                    props.threadsByRoomId?.[room.roomId] ?? []
+                  )"
+                  :key="thread.rootEventId"
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 pl-6
+                         text-left text-sm transition"
+                  :class="props.activeThreadRootId === thread.rootEventId
+                    ? 'bg-gray-200 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'"
+                  @click.stop="selectThread(room.roomId, thread.rootEventId)"
+                >
+                  <UIcon
+                    name="i-lucide-messages-square"
+                    class="size-4 shrink-0 opacity-80"
+                  />
+                  <span class="min-w-0 truncate">{{ thread.title }}</span>
+                </button>
+              </div>
               <div
                 v-if="category.rooms.length === 0"
                 :data-category-empty="category.id"

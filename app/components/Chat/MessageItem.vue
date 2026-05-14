@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import type { ChatThreadSummary } from "~/utils/chatTimeline";
+import ChatThreadPreview from "~/components/Chat/ChatThreadPreview.vue";
+
 interface MediaInfo {
   url: string;
   mxcUrl: string;
@@ -37,6 +40,7 @@ interface MessageItem {
     displayName: string;
     avatarUrl?: string;
   }>;
+  threadSummary?: ChatThreadSummary;
 }
 
 const props = defineProps<{
@@ -44,11 +48,15 @@ const props = defineProps<{
   displayUrl?: string;
   loadingMedia?: boolean;
   currentUserId?: string;
+  /** Hide thread affordances (when rendering inside thread panel) */
+  isThreadView?: boolean;
 }>();
 
 const emit = defineEmits<{
   reply: [];
   openLightbox: [];
+  openThread: [];
+  openThreadPreview: [];
   toggleReaction: [payload: {
     messageId: string;
     emoji: string;
@@ -69,6 +77,11 @@ function handlePickerReaction(emoji: string) {
     return reaction.emoji === emoji;
   });
   emitToggleReaction(emoji, existingReaction?.ownReactionEventIds ?? []);
+}
+
+function threadPreviewTitle(): string {
+  const raw = props.message.body.split("\n")[0]?.trim() ?? "";
+  return raw.length > 120 ? `${raw.slice(0, 117)}...` : raw || "Thread";
 }
 </script>
 
@@ -95,8 +108,10 @@ function handlePickerReaction(emoji: string) {
   >
     <ChatMessageActionBar
       :frequent-scope-key="props.currentUserId"
+      :show-thread-button="!isThreadView"
       @reply="emit('reply')"
       @reaction-pick="handlePickerReaction"
+      @open-thread="emit('openThread')"
     />
     <div class="flex items-start gap-3">
       <img
@@ -159,6 +174,12 @@ function handlePickerReaction(emoji: string) {
         <p v-else class="text-sm wrap-break-word">
           {{ message.body }}
         </p>
+        <ChatThreadPreview
+          v-if="message.threadSummary && !isThreadView"
+          :summary="message.threadSummary"
+          :thread-title="threadPreviewTitle()"
+          @open="emit('openThreadPreview')"
+        />
         <div
           v-if="message.reactions && message.reactions.length > 0"
           class="mt-2 flex flex-wrap gap-1"

@@ -1,3 +1,5 @@
+import { getThreadRootEventId } from '~/utils/matrixThreadRelations'
+
 export interface ChatTimelineMedia {
   url: string
   mxcUrl: string
@@ -9,6 +11,18 @@ export interface ChatTimelineMedia {
     h?: number
     size?: number
   }
+}
+
+export interface ChatThreadLastReply {
+  eventId: string
+  senderName: string
+  body: string
+  originServerTs: number
+}
+
+export interface ChatThreadSummary {
+  replyCount: number
+  lastReply?: ChatThreadLastReply
 }
 
 export interface ChatTimelineMessage {
@@ -27,6 +41,8 @@ export interface ChatTimelineMessage {
     displayName: string
     avatarUrl?: string
   }>
+  /** Present on root messages that have thread replies (MSC3440) */
+  threadSummary?: ChatThreadSummary
 }
 
 export interface ChatTimelineReaction {
@@ -65,34 +81,155 @@ interface MapTimelineArgs {
   ) => string
 }
 
+export type TimelineMappingMode =
+  | { kind: 'main' }
+  | { kind: 'thread'; rootEventId: string }
+
+function eventTypesForChatTimeline(): Set<string> {
+  return new Set([
+    'm.room.message',
+    'm.room.encrypted',
+    'm.room.member',
+    'm.room.name',
+    'm.room.avatar',
+    'm.room.topic',
+  ])
+}
+
+function filterTimelineEventsByType(
+  rawEvents: Record<string, any>[],
+): Record<string, any>[] {
+  const allowed = eventTypesForChatTimeline()
+  return rawEvents.filter((timelineEvent) => {
+    const eventType = timelineEvent.getType?.() ?? ''
+    return allowed.has(eventType)
+  })
+}
+
+function shouldIncludeMessageInMainTimeline(
+  timelineEvent: Record<string, any>,
+): boolean {
+  const eventType = timelineEvent.getType?.() ?? ''
+  if (eventType !== 'm.room.message') {
+    return true
+  }
+  if (isUndecryptableEvent(timelineEvent)) {
+    return true
+  }
+  const content = timelineEvent.getContent?.() ?? {}
+  return !getThreadRootEventId(content as Record<string, unknown>)
+}
+
+function shouldIncludeMessageInThreadView(
+  timelineEvent: Record<string, any>,
+  rootEventId: string,
+): boolean {
+  const eventType = timelineEvent.getType?.() ?? ''
+  const eventId = timelineEvent.getId?.() ?? ''
+  if (eventId === rootEventId) {
+    return true
+  }
+  if (eventType !== 'm.room.message') {
+    return false
+  }
+  if (isUndecryptableEvent(timelineEvent)) {
+    return false
+  }
+  const content = timelineEvent.getContent?.() ?? {}
+  return getThreadRootEventId(content as Record<string, unknown>) === rootEventId
+}
+
+/**
+ * Aggregates thread reply counts and last reply per root (MSC3440).
+ */
+export function buildThreadSummariesByRoot(
+  room: Record<string, any>,
+): Map<string, ChatThreadSummary> {
+  const raw = room.getLiveTimeline().getEvents()
+  const byRoot = new Map<
+    string,
+    { replyCount: number; lastReply?: ChatThreadLastReply }
+  >()
+
+  for (const timelineEvent of raw) {
+    const eventType = timelineEvent.getType?.() ?? ''
+    if (eventType !== 'm.room.message' || isUndecryptableEvent(timelineEvent)) {
+      continue
+    }
+    const content = timelineEvent.getContent?.() ?? {}
+    const rootId = getThreadRootEventId(content as Record<string, unknown>)
+    if (!rootId) {
+      continue
+    }
+    const senderUserId = timelineEvent.getSender?.() ?? ''
+    const senderMember = room.getMember(senderUserId)
+    const senderName = senderMember?.name || senderUserId
+    const body = getMessageBody(
+      timelineEvent,
+      senderName,
+      false,
+    )
+    const eventId = timelineEvent.getId?.() ?? ''
+    const originServerTs = Number(timelineEvent.getTs?.() ?? 0)
+    const previous = byRoot.get(rootId)
+    const nextCount = (previous?.replyCount ?? 0) + 1
+    const lastReply: ChatThreadLastReply = {
+      eventId,
+      senderName,
+      body,
+      originServerTs,
+    }
+    const prevLastTs = previous?.lastReply?.originServerTs ?? 0
+    const mergedLast =
+      originServerTs >= prevLastTs ? lastReply : previous?.lastReply
+    byRoot.set(rootId, {
+      replyCount: nextCount,
+      lastReply: mergedLast,
+    })
+  }
+
+  const result = new Map<string, ChatThreadSummary>()
+  for (const [rootId, aggregate] of byRoot) {
+    result.set(rootId, {
+      replyCount: aggregate.replyCount,
+      lastReply: aggregate.lastReply,
+    })
+  }
+  return result
+}
+
 export function mapTimelineEventsToMessages({
   room,
   ownUserId,
   getMemberAvatarUrl,
   getMediaUrl,
-  buildNoticeText
-}: MapTimelineArgs): ChatTimelineMessage[] {
+  buildNoticeText,
+  mode = { kind: 'main' } as TimelineMappingMode,
+}: MapTimelineArgs & { mode?: TimelineMappingMode }): ChatTimelineMessage[] {
   const allTimelineEvents = room.getLiveTimeline().getEvents()
   const reactionSummaryByEventId = buildReactionSummaryByEventId(
     allTimelineEvents,
-    ownUserId
+    ownUserId,
   )
-  const timelineEvents = room
-    .getLiveTimeline()
-    .getEvents()
-    .filter((timelineEvent: Record<string, any>) => {
-      const eventType = timelineEvent.getType?.() ?? ''
-      return (
-        eventType === 'm.room.message' ||
-        eventType === 'm.room.encrypted' ||
-        eventType === 'm.room.member' ||
-        eventType === 'm.room.name' ||
-        eventType === 'm.room.avatar' ||
-        eventType === 'm.room.topic'
-      )
-    })
+  const threadSummariesByRoot =
+    mode.kind === 'main' ? buildThreadSummariesByRoot(room) : null
+
+  const typedTimelineEvents = filterTimelineEventsByType(
+    room.getLiveTimeline().getEvents(),
+  )
+
+  const timelineEvents =
+    mode.kind === 'main'
+      ? typedTimelineEvents.filter(shouldIncludeMessageInMainTimeline)
+      : typedTimelineEvents.filter((timelineEvent) => {
+          return shouldIncludeMessageInThreadView(
+            timelineEvent,
+            mode.rootEventId,
+          )
+        })
+
   const timelineEventsById = new Map<string, Record<string, any>>()
-  for (const timelineEvent of timelineEvents) {
+  for (const timelineEvent of typedTimelineEvents) {
     const timelineEventId = timelineEvent.getId?.()
     if (timelineEventId) {
       timelineEventsById.set(timelineEventId, timelineEvent)
@@ -129,7 +266,7 @@ export function mapTimelineEventsToMessages({
     }
   }
 
-  return timelineEvents.map((timelineEvent: Record<string, any>) => {
+  const mappedMessages = timelineEvents.map((timelineEvent: Record<string, any>) => {
     try {
       const eventType = timelineEvent.getType?.() ?? ''
       const senderUserId = timelineEvent.getSender?.() ?? ''
@@ -222,6 +359,78 @@ export function mapTimelineEventsToMessages({
       }
     }
   })
+
+  if (mode.kind !== 'main' || !threadSummariesByRoot) {
+    return mappedMessages
+  }
+
+  return mappedMessages.map((msg) => {
+    if (msg.kind !== 'message') {
+      return msg
+    }
+    const summary = threadSummariesByRoot.get(msg.id)
+    if (!summary) {
+      return msg
+    }
+    return { ...msg, threadSummary: summary }
+  })
+}
+
+export interface ThreadNavEntry {
+  rootEventId: string
+  title: string
+  replyCount: number
+  lastActivityTs: number
+}
+
+function threadTitleFromRootEvent(rootEvent: Record<string, any> | undefined): string {
+  if (!rootEvent) {
+    return 'Thread'
+  }
+  const senderUserId = rootEvent.getSender?.() ?? ''
+  const undecryptableMessage = isUndecryptableEvent(rootEvent)
+  const body = getMessageBody(rootEvent, senderUserId, undecryptableMessage)
+  const firstLine = body.split('\n')[0]?.trim() ?? ''
+  const clipped = firstLine.length > 120 ? `${firstLine.slice(0, 117)}...` : firstLine
+  return clipped || 'Thread'
+}
+
+/**
+ * Threads with at least one reply, for channel sidebar (newest activity first).
+ */
+export function buildRoomThreadNavEntries(
+  room: Record<string, any>,
+): ThreadNavEntry[] {
+  const summaries = buildThreadSummariesByRoot(room)
+  const typed = filterTimelineEventsByType(room.getLiveTimeline().getEvents())
+  const eventById = new Map<string, Record<string, any>>()
+  for (const timelineEvent of typed) {
+    const eventId = timelineEvent.getId?.()
+    if (eventId) {
+      eventById.set(eventId, timelineEvent)
+    }
+  }
+
+  const entries: ThreadNavEntry[] = []
+  for (const [rootId, summary] of summaries) {
+    if (summary.replyCount < 1) {
+      continue
+    }
+    const rootEvent = eventById.get(rootId)
+    const lastTs =
+      summary.lastReply?.originServerTs ?? Number(rootEvent?.getTs?.() ?? 0)
+    entries.push({
+      rootEventId: rootId,
+      title: threadTitleFromRootEvent(rootEvent),
+      replyCount: summary.replyCount,
+      lastActivityTs: lastTs,
+    })
+  }
+
+  entries.sort((entryA, entryB) => {
+    return entryB.lastActivityTs - entryA.lastActivityTs
+  })
+  return entries
 }
 
 export function resolveTimelineWindowSelection(

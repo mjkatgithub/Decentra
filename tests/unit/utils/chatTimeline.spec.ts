@@ -1,6 +1,8 @@
 import { describe, it } from 'vitest'
 import {
   buildReactionSummaryByEventId,
+  buildRoomThreadNavEntries,
+  buildThreadSummariesByRoot,
   buildUndecryptableMessageText,
   getMessageBody,
   isUndecryptableEvent,
@@ -419,5 +421,185 @@ describe('chatTimeline helpers', () => {
     selection.endIndex.should.equal(3)
     selection.anchorFound.should.equal(false)
     ;(selection.anchorIndex === null).should.equal(true)
+  })
+
+  it('excludes MSC3440 thread replies from main timeline', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_root',
+            getTs: () => 1000,
+            getContent: () => ({
+              body: 'root text',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@bob:example.org',
+            getId: () => 'evt_thread_reply',
+            getTs: () => 2000,
+            getContent: () => ({
+              body: 'in thread',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'evt_root',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: (userId: string) =>
+        ({ name: userId === '@alice:example.org' ? 'Alice' : 'Bob' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: undefined,
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => '',
+    })
+
+    messages.length.should.equal(1)
+    messages[0]!.id.should.equal('evt_root')
+    messages[0]!.threadSummary!.replyCount.should.equal(1)
+  })
+
+  it('maps thread mode to root and replies only', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_root',
+            getTs: () => 1000,
+            getContent: () => ({
+              body: 'root',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@bob:example.org',
+            getId: () => 'evt_reply',
+            getTs: () => 2000,
+            getContent: () => ({
+              body: 'reply',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'evt_root',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'User' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const threadMsgs = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: undefined,
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => '',
+      mode: { kind: 'thread', rootEventId: 'evt_root' },
+    })
+
+    threadMsgs.length.should.equal(2)
+    threadMsgs[0]!.id.should.equal('evt_root')
+    threadMsgs[1]!.id.should.equal('evt_reply')
+  })
+
+  it('buildThreadSummariesByRoot aggregates replies', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'evt_r',
+            getSender: () => '@a:example.org',
+            getTs: () => 1,
+            getContent: () => ({ body: 'r', msgtype: 'm.text' }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'evt_t1',
+            getSender: () => '@b:example.org',
+            getTs: () => 2,
+            getContent: () => ({
+              body: 't1',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'evt_r',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMember: () => ({ name: 'Bob' }),
+    }
+    const map = buildThreadSummariesByRoot(mockRoom as any)
+    map.get('evt_r')!.replyCount.should.equal(1)
+    map.get('evt_r')!.lastReply!.body.should.equal('t1')
+  })
+
+  it('buildRoomThreadNavEntries lists roots with replies', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'root_a',
+            getSender: () => '@a:example.org',
+            getTs: () => 10,
+            getContent: () => ({
+              body: 'channel topic',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'tr',
+            getSender: () => '@b:example.org',
+            getTs: () => 20,
+            getContent: () => ({
+              body: 'reply',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'root_a',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+    const entries = buildRoomThreadNavEntries(mockRoom as any)
+    entries.length.should.equal(1)
+    entries[0]!.rootEventId.should.equal('root_a')
+    entries[0]!.title.should.include('channel topic')
   })
 })

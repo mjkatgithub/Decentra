@@ -16,6 +16,8 @@ const props = defineProps<{
   roomId: string | null
   disabled?: boolean
   replyTo?: ReplyTarget | null
+  /** MSC3440 thread root; when set, sends as thread reply */
+  threadRootEventId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -32,13 +34,19 @@ async function handleSend() {
 
   loading.value = true
   try {
-    await sendMessage(
-      props.roomId,
-      body,
-      props.replyTo?.eventId
-        ? { eventId: props.replyTo.eventId }
-        : undefined
-    )
+    const threadRoot = props.threadRootEventId
+    if (threadRoot) {
+      await sendMessage(props.roomId, body, {
+        threadRootEventId: threadRoot,
+        replyTo: props.replyTo?.eventId
+          ? { eventId: props.replyTo.eventId }
+          : undefined,
+      })
+    } else if (props.replyTo?.eventId) {
+      await sendMessage(props.roomId, body, { eventId: props.replyTo.eventId })
+    } else {
+      await sendMessage(props.roomId, body)
+    }
     message.value = ''
     emit('send', body)
     if (props.replyTo) {

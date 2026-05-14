@@ -257,6 +257,54 @@ Then('I should see a missing-origin reply fallback', async function () {
     .toBeVisible({ timeout: 10000 })
 })
 
+When(
+  'I open the thread on message body {string}',
+  async function (messageText) {
+    const messageItem = messageContainerByBody(this.page, messageText)
+    await expect(messageItem).toBeVisible({ timeout: 15000 })
+    await messageItem.hover()
+    const threadButton = messageItem.getByRole('button', {
+      name: /Thread/i
+    }).first()
+    await expect(threadButton).toBeVisible({ timeout: 10000 })
+    await threadButton.click()
+  }
+)
+
+Then('I should see the thread side panel', async function () {
+  await expect(
+    this.page.getByRole('button', {
+      name: /Close thread panel|Thread schließen/i
+    }).first()
+  ).toBeVisible({ timeout: 15000 })
+})
+
+When(
+  'I send {string} from the thread composer',
+  async function (text) {
+    const input = this.page.getByPlaceholder(
+      /Write a message|Nachricht eingeben/i
+    )
+    await expect(input).toBeVisible({ timeout: 15000 })
+    await input.fill(text)
+    await input.press('Enter')
+  }
+)
+
+When('I close the thread side panel', async function () {
+  await this.page.getByRole('button', {
+    name: /Close thread panel|Thread schließen/i
+  }).first().click()
+})
+
+Then('I should not see the thread side panel', async function () {
+  await expect(
+    this.page.getByRole('button', {
+      name: /Close thread panel|Thread schließen/i
+    })
+  ).toHaveCount(0)
+})
+
 Then(
   'I should see my member status indicator as {string}',
   async function (presenceValue) {
