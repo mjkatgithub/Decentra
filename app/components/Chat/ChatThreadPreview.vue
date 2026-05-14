@@ -5,7 +5,6 @@ import type { ChatThreadSummary } from "~/utils/chatTimeline";
 
 const props = defineProps<{
   summary: ChatThreadSummary;
-  threadTitle: string;
 }>();
 
 const emit = defineEmits<{
@@ -24,54 +23,60 @@ const replyCountLabel = computed(() => {
   });
 });
 
-const relativeLabel = computed(() => {
-  const ts = props.summary.lastReply?.originServerTs;
-  if (!ts) {
+const lastReplySnippet = computed(() => {
+  const body = props.summary.lastReply?.body?.split("\n")[0]?.trim() ?? "";
+  if (!body) {
     return "";
   }
-  const diffSec = Math.round((Date.now() - ts) / 1000);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  if (diffSec < 60) {
-    return rtf.format(-Math.max(1, diffSec), "second");
-  }
-  const diffMin = Math.round(diffSec / 60);
-  if (diffMin < 60) {
-    return rtf.format(-diffMin, "minute");
-  }
-  const diffHr = Math.round(diffMin / 60);
-  if (diffHr < 48) {
-    return rtf.format(-diffHr, "hour");
-  }
-  const diffDay = Math.round(diffHr / 24);
-  return rtf.format(-diffDay, "day");
+  return body.length > 72 ? `${body.slice(0, 69)}...` : body;
 });
 
-const replyLine = computed(() => {
-  const line = props.summary.lastReply?.body?.split("\n")[0]?.trim() ?? "";
-  return line.length > 160 ? `${line.slice(0, 157)}...` : line;
+const lastReplySender = computed(() => {
+  return props.summary.lastReply?.senderName ?? "";
+});
+
+const lastReplyAvatarUrl = computed(() => {
+  return props.summary.lastReply?.avatarUrl;
 });
 </script>
 
 <template>
   <button
     type="button"
-    class="mt-2 w-full max-w-md rounded-lg border border-gray-200 bg-gray-50 p-3
-           text-left transition hover:bg-gray-100 dark:border-gray-700
-           dark:bg-gray-900/80 dark:hover:bg-gray-800"
+    class="mt-1 flex w-full max-w-xl items-center gap-2 rounded-md border
+           border-gray-200 bg-gray-50/90 px-2 py-1 text-left text-xs
+           transition hover:bg-gray-100 dark:border-gray-700
+           dark:bg-gray-900/70 dark:hover:bg-gray-800"
     @click="emit('open')"
   >
-    <p class="text-sm font-semibold text-gray-900 dark:text-gray-100">
-      {{ threadTitle }}
-    </p>
-    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+    <UIcon
+      name="i-lucide-messages-square"
+      class="size-4 shrink-0 text-gray-500 dark:text-gray-400"
+    />
+    <span class="shrink-0 font-medium text-gray-600 dark:text-gray-300">
       {{ replyCountLabel }}
-      <span v-if="relativeLabel"> · {{ relativeLabel }}</span>
-    </p>
-    <p
-      v-if="replyLine"
-      class="mt-1 line-clamp-2 text-xs text-gray-600 dark:text-gray-300"
-    >
-      {{ replyLine }}
-    </p>
+    </span>
+    <template v-if="lastReplySender && lastReplySnippet">
+      <img
+        v-if="lastReplyAvatarUrl"
+        :src="lastReplyAvatarUrl"
+        :alt="lastReplySender"
+        class="size-4 shrink-0 rounded-full object-cover"
+      />
+      <span
+        v-else
+        class="flex size-4 shrink-0 items-center justify-center rounded-full
+               bg-gray-200 text-[9px] font-semibold text-gray-700
+               dark:bg-gray-700 dark:text-gray-200"
+      >
+        {{ lastReplySender.trim().charAt(0).toUpperCase() || "?" }}
+      </span>
+      <span class="min-w-0 truncate text-gray-600 dark:text-gray-300">
+        <span class="font-medium text-gray-700 dark:text-gray-200">
+          {{ lastReplySender }}
+        </span>
+        {{ lastReplySnippet }}
+      </span>
+    </template>
   </button>
 </template>

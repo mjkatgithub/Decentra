@@ -78,11 +78,6 @@ function handlePickerReaction(emoji: string) {
   });
   emitToggleReaction(emoji, existingReaction?.ownReactionEventIds ?? []);
 }
-
-function threadPreviewTitle(): string {
-  const raw = props.message.body.split("\n")[0]?.trim() ?? "";
-  return raw.length > 120 ? `${raw.slice(0, 117)}...` : raw || "Thread";
-}
 </script>
 
 <template>
@@ -177,7 +172,6 @@ function threadPreviewTitle(): string {
         <ChatThreadPreview
           v-if="message.threadSummary && !isThreadView"
           :summary="message.threadSummary"
-          :thread-title="threadPreviewTitle()"
           @open="emit('openThreadPreview')"
         />
         <div

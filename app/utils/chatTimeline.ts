@@ -18,6 +18,7 @@ export interface ChatThreadLastReply {
   senderName: string
   body: string
   originServerTs: number
+  avatarUrl?: string
 }
 
 export interface ChatThreadSummary {
@@ -144,6 +145,9 @@ function shouldIncludeMessageInThreadView(
  */
 export function buildThreadSummariesByRoot(
   room: Record<string, any>,
+  getMemberAvatarUrl?: (
+    member: Record<string, any>,
+  ) => string | undefined,
 ): Map<string, ChatThreadSummary> {
   const raw = room.getLiveTimeline().getEvents()
   const byRoot = new Map<
@@ -178,6 +182,9 @@ export function buildThreadSummariesByRoot(
       senderName,
       body,
       originServerTs,
+      avatarUrl: senderMember && getMemberAvatarUrl
+        ? getMemberAvatarUrl(senderMember)
+        : undefined,
     }
     const prevLastTs = previous?.lastReply?.originServerTs ?? 0
     const mergedLast =
@@ -212,7 +219,11 @@ export function mapTimelineEventsToMessages({
     ownUserId,
   )
   const threadSummariesByRoot =
-    mode.kind === 'main' ? buildThreadSummariesByRoot(room) : null
+    mode.kind === 'main'
+      ? buildThreadSummariesByRoot(room, getMemberAvatarUrl)
+      : null
+  const threadRootEventId =
+    mode.kind === 'thread' ? mode.rootEventId : undefined
 
   const typedTimelineEvents = filterTimelineEventsByType(
     room.getLiveTimeline().getEvents(),
@@ -307,7 +318,12 @@ export function mapTimelineEventsToMessages({
       const mimetype = content.info?.mimetype
       let media: ChatTimelineMedia | undefined
       const replyTo = eventType === 'm.room.message' && !undecryptableMessage
-        ? buildReplyMetadata(content, room, timelineEventsById)
+        ? buildReplyMetadata(
+            content,
+            room,
+            timelineEventsById,
+            threadRootEventId,
+          )
         : undefined
 
       if (eventType === 'm.room.message' && content.msgtype === 'm.image' && mxcUrl) {
@@ -577,11 +593,26 @@ export function getMessageBody(
 function buildReplyMetadata(
   content: Record<string, any>,
   room: Record<string, any>,
-  timelineEventsById: Map<string, Record<string, any>>
+  timelineEventsById: Map<string, Record<string, any>>,
+  threadRootEventId?: string,
 ): ChatTimelineReply | undefined {
   const replyEventId = getReplyEventId(content)
   if (!replyEventId) {
     return undefined
+  }
+
+  if (threadRootEventId) {
+    if (replyEventId === threadRootEventId) {
+      return undefined
+    }
+    const relatesTo = content['m.relates_to']
+    if (
+      relatesTo &&
+      typeof relatesTo === 'object' &&
+      relatesTo.is_falling_back === true
+    ) {
+      return undefined
+    }
   }
 
   const replyTargetEvent = timelineEventsById.get(replyEventId)

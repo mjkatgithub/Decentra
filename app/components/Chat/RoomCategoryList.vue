@@ -28,6 +28,8 @@ const props = defineProps<{
   selectedRootSpaceId: string | null
   threadsByRoomId?: Record<string, ThreadNavEntry[]>
   activeThreadRootId?: string | null
+  /** Room id when a thread is open in the main pane (exclusive nav selection) */
+  activeMainThreadRoomId?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -103,6 +105,26 @@ function selectRoom(roomId: string) {
 
 function selectThread(roomId: string, rootEventId: string) {
   emit('selectThread', { roomId, rootEventId })
+}
+
+function isRoomNavSelected(roomId: string): boolean {
+  if (props.selectedRoomId !== roomId) {
+    return false
+  }
+  if (
+    props.activeMainThreadRoomId === roomId &&
+    props.activeThreadRootId
+  ) {
+    return false
+  }
+  return true
+}
+
+function isThreadNavSelected(rootEventId: string, roomId: string): boolean {
+  return (
+    props.activeThreadRootId === rootEventId &&
+    props.activeMainThreadRoomId === roomId
+  )
 }
 
 /**
@@ -341,7 +363,7 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                 <button
                   type="button"
                   class="w-full rounded-lg px-2 py-2 text-left text-sm transition"
-                  :class="selectedRoomId === room.roomId
+                  :class="isRoomNavSelected(room.roomId)
                     ? 'bg-primary-500/15 text-primary-500'
                     : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'"
                   :data-room-id="room.roomId"
@@ -357,8 +379,8 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                   type="button"
                   class="flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 pl-6
                          text-left text-sm transition"
-                  :class="props.activeThreadRootId === thread.rootEventId
-                    ? 'bg-gray-200 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
+                  :class="isThreadNavSelected(thread.rootEventId, room.roomId)
+                    ? 'bg-primary-500/15 text-primary-500'
                     : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'"
                   @click.stop="selectThread(room.roomId, thread.rootEventId)"
                 >

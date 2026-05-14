@@ -963,6 +963,12 @@ function selectSpace(spaceId: string) {
 }
 
 function selectRoom(roomId: string) {
+  if (
+    activeThread.value?.presentation === "main" &&
+    activeThread.value.roomId === roomId
+  ) {
+    closeActiveThread();
+  }
   selectedRoomId.value = roomId;
   if (isMobile.value) {
     leftSidebarOpen.value = false;
@@ -1225,7 +1231,16 @@ watch(
             selectedSpaceId === HOME_SPACE_ID ? null : selectedSpaceId
           "
           :threads-by-room-id="threadNavByRoomId"
-          :active-thread-root-id="activeThread?.rootEventId ?? null"
+          :active-thread-root-id="
+            activeThread?.presentation === 'main'
+              ? activeThread.rootEventId
+              : null
+          "
+          :active-main-thread-room-id="
+            activeThread?.presentation === 'main'
+              ? activeThread.roomId
+              : null
+          "
           @select-room="selectRoom"
           @select-thread="openThreadFromRoomNav"
           @open-space-settings="openSpaceSettings"
