@@ -791,9 +791,83 @@ describe('chatTimeline helpers', () => {
       hasUserReadEvent: () => false,
     }
 
-    const entries = buildRoomThreadNavEntries(mockRoom as any, { nowMs })
+    const entries = buildRoomThreadNavEntries(mockRoom as any, {
+      nowMs,
+      maxAgeDays: 2,
+    })
     entries.length.should.equal(1)
     entries[0]!.rootEventId.should.equal('root_new')
+  })
+
+  it('buildRoomThreadNavEntries can skip the recent-only filter', () => {
+    const nowMs = 10 * 24 * 60 * 60 * 1000
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'root_old',
+            getSender: () => '@a:example.org',
+            getTs: () => 1,
+            getContent: () => ({
+              body: 'old topic',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'reply_old',
+            getSender: () => '@b:example.org',
+            getTs: () => nowMs - (3 * 24 * 60 * 60 * 1000),
+            getContent: () => ({
+              body: 'old reply',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'root_old',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'root_new',
+            getSender: () => '@a:example.org',
+            getTs: () => 2,
+            getContent: () => ({
+              body: 'fresh topic',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getId: () => 'reply_new',
+            getSender: () => '@b:example.org',
+            getTs: () => nowMs - (60 * 60 * 1000),
+            getContent: () => ({
+              body: 'fresh reply',
+              msgtype: 'm.text',
+              'm.relates_to': {
+                rel_type: 'm.thread',
+                event_id: 'root_new',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const entries = buildRoomThreadNavEntries(mockRoom as any, {
+      nowMs,
+      maxAgeDays: null,
+    })
+    entries.length.should.equal(2)
   })
 
   it('hides superseded originals from the main timeline', () => {

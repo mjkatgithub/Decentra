@@ -602,12 +602,16 @@ export interface ThreadNavEntry {
   title: string
   replyCount: number
   lastActivityTs: number
+  lastReplySenderName?: string
+  lastReplyBody?: string
+  lastReplyAvatarUrl?: string
 }
 
 export const DEFAULT_THREAD_SIDEBAR_MAX_AGE_DAYS = 2
 
 export interface BuildRoomThreadNavOptions {
-  maxAgeDays?: number
+  /** Pass null to list every thread regardless of age. */
+  maxAgeDays?: number | null
   nowMs?: number
 }
 
@@ -653,12 +657,19 @@ export function buildRoomThreadNavEntries(
       title: threadTitleFromRootEvent(rootEvent),
       replyCount: summary.replyCount,
       lastActivityTs: lastTs,
+      lastReplySenderName: summary.lastReply?.senderName,
+      lastReplyBody: summary.lastReply?.body,
+      lastReplyAvatarUrl: summary.lastReply?.avatarUrl,
     })
   }
 
   entries.sort((entryA, entryB) => {
     return entryB.lastActivityTs - entryA.lastActivityTs
   })
+
+  if (options?.maxAgeDays === null) {
+    return entries
+  }
 
   const maxAgeDays =
     options?.maxAgeDays ?? DEFAULT_THREAD_SIDEBAR_MAX_AGE_DAYS

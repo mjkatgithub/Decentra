@@ -75,6 +75,7 @@ interface ChatMessage {
 }
 
 type ThreadPresentation = "sidebar" | "main";
+type RightSidebarView = "members" | "threads";
 
 interface ActiveThreadState {
   roomId: string;
@@ -156,6 +157,7 @@ const activeReplyTo = ref<ChatMessage["replyTo"] | null>(null);
 const loadMessagesTimerId = ref<number | null>(null);
 const leftSidebarOpen = ref(true);
 const rightSidebarOpen = ref(true);
+const rightSidebarView = ref<RightSidebarView>("members");
 const isMobile = ref(false);
 const viewportInitialized = ref(false);
 const spaceRailExpanded = ref(false);
@@ -441,6 +443,28 @@ const threadNavByRoomId = computed<Record<string, ThreadNavEntry[]>>(() => {
   return out;
 });
 
+const selectedRoomThreadEntries = computed<ThreadNavEntry[]>(() => {
+  void threadNavVersion.value;
+  const roomId = selectedRoomId.value;
+  const matrixClient = client.value;
+  if (!roomId || !matrixClient) {
+    return [];
+  }
+  const room = matrixClient.getRoom(roomId);
+  if (!room) {
+    return [];
+  }
+  return buildRoomThreadNavEntries(room, { maxAgeDays: null });
+});
+
+const roomThreadsPanelActive = computed(() => {
+  return rightSidebarView.value === "threads";
+});
+
+const membersPanelActive = computed(() => {
+  return rightSidebarView.value === "members";
+});
+
 const threadPanelTitle = computed(() => {
   const rootId = activeThread.value?.rootEventId;
   const rootMessage = rootId
@@ -506,6 +530,7 @@ watch(
 );
 
 watch(selectedRoomId, (roomId) => {
+  rightSidebarView.value = "members";
   hasMoreOlderMessages.value = true;
   activeReplyTo.value = null;
   if (
@@ -612,6 +637,54 @@ function closeActiveThread() {
   activeThread.value = null;
   threadPanelAllMessages.value = [];
   activeThreadReplyTo.value = null;
+}
+
+function closeRoomThreadsPanel() {
+  rightSidebarView.value = "members";
+}
+
+function toggleRoomThreadsPanel() {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  if (rightSidebarView.value === "threads" && rightSidebarOpen.value) {
+    rightSidebarView.value = "members";
+    return;
+  }
+  rightSidebarOpen.value = true;
+  rightSidebarView.value = "threads";
+  if (activeThread.value?.presentation === "sidebar") {
+    closeActiveThread();
+  }
+}
+
+function openMembersPanel() {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  if (rightSidebarOpen.value && rightSidebarView.value === "members") {
+    rightSidebarOpen.value = false;
+    return;
+  }
+  rightSidebarOpen.value = true;
+  rightSidebarView.value = "members";
+  if (activeThread.value?.presentation === "sidebar") {
+    closeActiveThread();
+  }
+}
+
+function openThreadFromRoomThreadList(rootEventId: string) {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  activeReplyTo.value = null;
+  activeThreadReplyTo.value = null;
+  activeThread.value = {
+    roomId: selectedRoomId.value,
+    rootEventId,
+    presentation: "sidebar",
+  };
+  loadThreadPanelMessages();
 }
 
 function setActiveThreadReplyTarget(
@@ -1062,10 +1135,6 @@ function toggleLeftSidebar() {
   leftSidebarOpen.value = !leftSidebarOpen.value;
 }
 
-function toggleRightSidebar() {
-  rightSidebarOpen.value = !rightSidebarOpen.value;
-}
-
 function toggleSpaceRail() {
   spaceRailExpanded.value = !spaceRailExpanded.value;
 }
@@ -1361,13 +1430,12 @@ watch(
           :to="'/settings/account'"
           :aria-label="translateText('layout.openAccountSettings')"
         />
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-panels-right-bottom"
-          :aria-label="translateText('layout.toggleMembers')"
-          @click="toggleRightSidebar"
+        <ChatRoomHeaderToolbar
+          v-if="selectedRoomId"
+          :threads-active="roomThreadsPanelActive && rightSidebarOpen"
+          :members-active="membersPanelActive && rightSidebarOpen"
+          @open-threads="toggleRoomThreadsPanel"
+          @open-members="openMembersPanel"
         />
         <UButton size="sm" color="neutral" variant="soft" @click="handleLogout">
           {{ translateText("chat.signOut") }}
@@ -1487,6 +1555,12 @@ watch(
         @reply="setActiveThreadReplyTarget"
         @cancel-reply="clearActiveThreadReply"
         @toggle-reaction="onToggleReaction"
+      />
+      <ChatRoomThreadListPanel
+        v-else-if="roomThreadsPanelActive && selectedRoomId"
+        :threads="selectedRoomThreadEntries"
+        @close="closeRoomThreadsPanel"
+        @open-thread="openThreadFromRoomThreadList"
       />
       <ChatMemberList v-else :members="memberItems" />
     </aside>
