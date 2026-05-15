@@ -2,6 +2,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import ChatMessageItem from "~/components/Chat/MessageItem.vue";
 import { useAppI18n } from "~/composables/useAppI18n";
+import type { ChatThreadSummary } from "~/utils/chatTimeline";
 
 interface MediaInfo {
   url: string;
@@ -41,6 +42,7 @@ interface MessageItem {
     displayName: string;
     avatarUrl?: string;
   }>;
+  threadSummary?: ChatThreadSummary;
 }
 
 type MediaResolver = (media: {
@@ -61,12 +63,18 @@ const props = defineProps<{
   scrollIntentToken?: number;
   preserveViewportOnPrepend?: boolean;
   infiniteScrollOffsetPx?: number;
+  /** Messages are rendered inside an active thread panel */
+  isThreadView?: boolean;
 }>();
 
 const emit = defineEmits<{
   reachTop: [];
   reachBottom: [];
   reply: [target: { eventId: string; senderName: string; body: string }];
+  openThread: [target: { eventId: string; senderName: string; body: string }];
+  openThreadPreview: [
+    target: { eventId: string; senderName: string; body: string },
+  ];
   toggleReaction: [payload: {
     messageId: string;
     emoji: string;
@@ -138,6 +146,22 @@ function closeLightbox() {
 
 function emitReplyTarget(msg: MessageItem) {
   emit("reply", {
+    eventId: msg.id,
+    senderName: msg.senderName,
+    body: msg.body,
+  });
+}
+
+function emitThreadTarget(msg: MessageItem) {
+  emit("openThread", {
+    eventId: msg.id,
+    senderName: msg.senderName,
+    body: msg.body,
+  });
+}
+
+function emitThreadPreviewTarget(msg: MessageItem) {
+  emit("openThreadPreview", {
     eventId: msg.id,
     senderName: msg.senderName,
     body: msg.body,
@@ -340,7 +364,10 @@ watch(
           :display-url="getDisplayUrl(msg)"
           :loading-media="Boolean(loadingMedia[msg.id])"
           :current-user-id="props.currentUserId"
+          :is-thread-view="props.isThreadView"
           @reply="emitReplyTarget(msg)"
+          @open-thread="emitThreadTarget(msg)"
+          @open-thread-preview="emitThreadPreviewTarget(msg)"
           @toggle-reaction="emit('toggleReaction', $event)"
           @open-lightbox="openLightbox(msg)"
         />

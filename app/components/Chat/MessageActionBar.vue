@@ -5,9 +5,12 @@ import { onBeforeUnmount, ref } from "vue";
 const emit = defineEmits<{
   reply: [];
   reactionPick: [emoji: string];
+  openThread: [];
 }>();
 const props = defineProps<{
   frequentScopeKey?: string;
+  /** When false, hides the “thread” control (e.g. inside thread view). */
+  showThreadButton?: boolean;
 }>();
 
 const { translateText } = useAppI18n();
@@ -89,6 +92,18 @@ onBeforeUnmount(() => {
         :title="translateText('chat.replyAction')"
         class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
         @click="emit('reply')"
+      />
+      <UButton
+        v-if="props.showThreadButton !== false"
+        type="button"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-messages-square"
+        :aria-label="translateText('chat.threadAction')"
+        :title="translateText('chat.threadAction')"
+        class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
+        @click="emit('openThread')"
       />
     </div>
     <div

@@ -47,6 +47,21 @@ Feature: Chat
     Then the lightbox should not be visible
     And I should see image fallback label "E2E_INVALID_IMAGE_FALLBACK"
 
+  Scenario: Thread sidebar open post and persist after reload
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    And I open the thread on message body "E2E_SEED_BASE_MESSAGE"
+    Then I should see the thread side panel
+    When I send "E2E_THREAD_SEND_1" from the thread composer
+    Then I should see message body "E2E_THREAD_SEND_1"
+    When I reload the current page
+    And I open the seeded test room
+    And I open the thread on message body "E2E_SEED_BASE_MESSAGE"
+    Then I should see message body "E2E_THREAD_SEND_1"
+    When I close the thread side panel
+    Then I should not see the thread side panel
+
   Scenario: Reply composer and fallback rendering
     When I open the login page
     And I sign in with configured credentials

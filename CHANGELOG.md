@@ -110,6 +110,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and recovery key bootstrap for cross-signing (#69)
 - Optional remote debug logging via `NUXT_PUBLIC_DEBUG_LOG_*` env vars and
   `.env.example` template (#69)
+- Message threads with Matrix MSC3440 `m.thread` relations: open from a
+  message, reply in thread context, and separate main vs thread timelines
+  (#10)
+- Thread side panel and in-main thread view with breadcrumb header; thread
+  preview rows on root messages; recent thread shortcuts under rooms in the
+  channel sidebar (last 2 days)
+- Room header toolbar (threads, pinned placeholder, members) and room-wide
+  thread list panel showing all threads regardless of sidebar age cutoff
+- `(edited)` label on replaced message bodies in thread and room timelines
+- `matrixThreadRelations` helpers, thread-aware timeline indexing in
+  `chatTimeline`, and unit coverage for thread mapping, summaries, and edits
+- Synapse E2E scenario: open thread, post reply, reopen and verify history
+  (#10)
 
 ### Changed
 
@@ -159,6 +172,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   feature text
 - Landing background logo loading now uses a bundler URL import to avoid
   runtime path resolution issues
+- Chat composer and Matrix send path accept optional thread root and reply
+  targets for in-thread replies (#10)
 
 ### Fixed
 
@@ -176,6 +191,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - E2EE decryption regressions after login/session changes were fixed by
   reusing remembered Matrix `device_id` for the same account and homeserver
   while preventing reuse across different homeservers
+- Thread membership inheritance through `m.in_reply_to` and `m.replace` so
+  replies and edits no longer appear in the main room timeline (#10)
+- Thread reply counters and sidebar thread navigation refresh when the room
+  timeline updates (#10)
 
 ## [0.1.0] - 2025-02-13
 

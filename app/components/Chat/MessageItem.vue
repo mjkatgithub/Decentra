@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import type { ChatThreadSummary } from "~/utils/chatTimeline";
+import ChatThreadPreview from "~/components/Chat/ChatThreadPreview.vue";
+import { useAppI18n } from "~/composables/useAppI18n";
+
 interface MediaInfo {
   url: string;
   mxcUrl: string;
@@ -37,6 +41,8 @@ interface MessageItem {
     displayName: string;
     avatarUrl?: string;
   }>;
+  threadSummary?: ChatThreadSummary;
+  isEdited?: boolean;
 }
 
 const props = defineProps<{
@@ -44,11 +50,17 @@ const props = defineProps<{
   displayUrl?: string;
   loadingMedia?: boolean;
   currentUserId?: string;
+  /** Hide thread affordances (when rendering inside thread panel) */
+  isThreadView?: boolean;
 }>();
+
+const { translateText } = useAppI18n();
 
 const emit = defineEmits<{
   reply: [];
   openLightbox: [];
+  openThread: [];
+  openThreadPreview: [];
   toggleReaction: [payload: {
     messageId: string;
     emoji: string;
@@ -95,8 +107,10 @@ function handlePickerReaction(emoji: string) {
   >
     <ChatMessageActionBar
       :frequent-scope-key="props.currentUserId"
+      :show-thread-button="!isThreadView"
       @reply="emit('reply')"
       @reaction-pick="handlePickerReaction"
+      @open-thread="emit('openThread')"
     />
     <div class="flex items-start gap-3">
       <img
@@ -116,6 +130,12 @@ function handlePickerReaction(emoji: string) {
         <div class="flex items-center gap-2">
           <span class="text-xs font-medium text-gray-500 dark:text-gray-400">
             {{ message.senderName }}
+          </span>
+          <span
+            v-if="message.isEdited"
+            class="text-xs text-gray-400 dark:text-gray-500"
+          >
+            ({{ translateText("chat.messageEdited") }})
           </span>
         </div>
 
@@ -159,6 +179,11 @@ function handlePickerReaction(emoji: string) {
         <p v-else class="text-sm wrap-break-word">
           {{ message.body }}
         </p>
+        <ChatThreadPreview
+          v-if="message.threadSummary && !isThreadView"
+          :summary="message.threadSummary"
+          @open="emit('openThreadPreview')"
+        />
         <div
           v-if="message.reactions && message.reactions.length > 0"
           class="mt-2 flex flex-wrap gap-1"

@@ -116,6 +116,7 @@ import {
   moveRoomBetweenParents,
   persistSpaceChildOrder
 } from './matrix/spaceStateHelpers'
+import { buildThreadRelatesTo } from '~/utils/matrixThreadRelations'
 
 export {
   MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
@@ -262,6 +263,24 @@ interface ImageInfo {
 
 interface MessageReplyOptions {
   eventId: string
+}
+
+/** Options for {@link sendMessage}; legacy shape `{ eventId }` is still reply-only */
+export interface SendTextMessageOptions {
+  replyTo?: MessageReplyOptions
+  threadRootEventId?: string
+}
+
+function normalizeSendTextOptions(
+  options?: MessageReplyOptions | SendTextMessageOptions,
+): SendTextMessageOptions {
+  if (!options) {
+    return {}
+  }
+  if ('threadRootEventId' in options || 'replyTo' in options) {
+    return options as SendTextMessageOptions
+  }
+  return { replyTo: options as MessageReplyOptions }
 }
 
 interface ReactionToggleOptions {
@@ -1026,26 +1045,35 @@ export function useMatrixClient() {
   async function sendMessage(
     roomId: string,
     body: string,
-    replyTo?: MessageReplyOptions
+    options?: MessageReplyOptions | SendTextMessageOptions,
   ): Promise<void> {
     if (!client.value) throw new Error('Not logged in')
+    const normalized = normalizeSendTextOptions(options)
     const content: Record<string, any> = {
       msgtype: MsgType.Text,
-      body
+      body,
     }
 
-    if (replyTo?.eventId) {
+    const threadRootId = normalized.threadRootEventId
+    const replyEventId = normalized.replyTo?.eventId
+
+    if (threadRootId) {
+      content['m.relates_to'] = buildThreadRelatesTo({
+        threadRootEventId: threadRootId,
+        inReplyToEventId: replyEventId,
+      })
+    } else if (replyEventId) {
       content['m.relates_to'] = {
         'm.in_reply_to': {
-          event_id: replyTo.eventId
-        }
+          event_id: replyEventId,
+        },
       }
     }
 
     await client.value.sendEvent(
       roomId,
       EventType.RoomMessage,
-      content as any
+      content as any,
     )
   }
 

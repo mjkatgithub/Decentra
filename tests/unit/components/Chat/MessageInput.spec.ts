@@ -32,6 +32,7 @@ function mountInput(
   overrideProps: Partial<{
     roomId: string | null
     disabled: boolean
+    threadRootEventId: string | null
     replyTo: {
       eventId: string
       senderName: string
@@ -190,5 +191,32 @@ describe('MessageInput', () => {
 
     const cancelReplyEvents = wrapper.emitted('cancelReply') || []
     cancelReplyEvents.length.should.equal(1)
+  })
+
+  it('sends thread reply with threadRootEventId and replyTo', async () => {
+    const sendImageMessage = vi.fn(async () => undefined)
+    const sendMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
+      sendMessage,
+      sendImageMessage
+    })
+
+    const wrapper = mountInput({
+      threadRootEventId: '$root-event',
+      replyTo: {
+        eventId: '$prev',
+        senderName: 'Bob',
+        body: 'Prior'
+      }
+    })
+
+    await wrapper.find('input[type="text"]').setValue('Thread line')
+    await wrapper.find('form').trigger('submit')
+
+    sendMessage.mock.calls.length.should.equal(1)
+    sendMessage.mock.calls[0]?.[2].should.deep.equal({
+      threadRootEventId: '$root-event',
+      replyTo: { eventId: '$prev' }
+    })
   })
 })

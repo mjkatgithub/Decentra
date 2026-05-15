@@ -12,8 +12,10 @@ import ChatDmStartPanel from "~/components/Chat/Onboarding/ChatDmStartPanel.vue"
 import ChatPublicRoomsPanel from "~/components/Chat/Onboarding/ChatPublicRoomsPanel.vue";
 import {
   buildReactionSummaryByEventId,
+  buildRoomThreadNavEntries,
   mapTimelineEventsToMessages,
   resolveTimelineWindowSelection,
+  type ThreadNavEntry,
 } from "~/utils/chatTimeline";
 import {
   buildSpaceRoomCategories,
@@ -61,6 +63,24 @@ interface ChatMessage {
     displayName: string;
     avatarUrl?: string;
   }>;
+  threadSummary?: {
+    replyCount: number;
+    lastReply?: {
+      eventId: string;
+      senderName: string;
+      body: string;
+      originServerTs: number;
+    };
+  };
+}
+
+type ThreadPresentation = "sidebar" | "main";
+type RightSidebarView = "members" | "threads";
+
+interface ActiveThreadState {
+  roomId: string;
+  rootEventId: string;
+  presentation: ThreadPresentation;
 }
 
 interface SpaceItem {
@@ -137,9 +157,16 @@ const activeReplyTo = ref<ChatMessage["replyTo"] | null>(null);
 const loadMessagesTimerId = ref<number | null>(null);
 const leftSidebarOpen = ref(true);
 const rightSidebarOpen = ref(true);
+const rightSidebarView = ref<RightSidebarView>("members");
 const isMobile = ref(false);
 const viewportInitialized = ref(false);
 const spaceRailExpanded = ref(false);
+const activeThread = ref<ActiveThreadState | null>(null);
+const threadPanelAllMessages = ref<ChatMessage[]>([]);
+const activeThreadReplyTo = ref<ChatMessage["replyTo"] | null>(null);
+const threadNavVersion = ref(0);
+let threadNavRefreshTimerId: number | null = null;
+const THREAD_NAV_REFRESH_MS = 250;
 
 function getRoomType(room: Record<string, any>): string | undefined {
   return (room as { getType?: () => string }).getType?.();
@@ -168,6 +195,21 @@ function getMatrixRoomId(room: unknown): string {
 
 function refreshRooms() {
   matrixRooms.value = getRooms();
+  scheduleThreadNavRefresh();
+}
+
+function scheduleThreadNavRefresh() {
+  if (!import.meta.client) {
+    threadNavVersion.value += 1;
+    return;
+  }
+  if (threadNavRefreshTimerId !== null) {
+    window.clearTimeout(threadNavRefreshTimerId);
+  }
+  threadNavRefreshTimerId = window.setTimeout(() => {
+    threadNavRefreshTimerId = null;
+    threadNavVersion.value += 1;
+  }, THREAD_NAV_REFRESH_MS);
 }
 
 const joinedSpaceIds = computed(() =>
@@ -378,6 +420,73 @@ const memberItems = computed<MemberItem[]>(() => {
     });
 });
 
+const threadNavByRoomId = computed<Record<string, ThreadNavEntry[]>>(() => {
+  void threadNavVersion.value;
+  const matrixClient = client.value;
+  if (!matrixClient) {
+    return {};
+  }
+  const out: Record<string, ThreadNavEntry[]> = {};
+  for (const room of matrixRooms.value) {
+    if (getRoomType(room) === "m.space") {
+      continue;
+    }
+    const joinedRoom = matrixClient.getRoom(room.roomId);
+    if (!joinedRoom) {
+      continue;
+    }
+    const entries = buildRoomThreadNavEntries(joinedRoom);
+    if (entries.length > 0) {
+      out[room.roomId] = entries;
+    }
+  }
+  return out;
+});
+
+const selectedRoomThreadEntries = computed<ThreadNavEntry[]>(() => {
+  void threadNavVersion.value;
+  const roomId = selectedRoomId.value;
+  const matrixClient = client.value;
+  if (!roomId || !matrixClient) {
+    return [];
+  }
+  const room = matrixClient.getRoom(roomId);
+  if (!room) {
+    return [];
+  }
+  return buildRoomThreadNavEntries(room, { maxAgeDays: null });
+});
+
+const roomThreadsPanelActive = computed(() => {
+  return rightSidebarView.value === "threads";
+});
+
+const membersPanelActive = computed(() => {
+  return rightSidebarView.value === "members";
+});
+
+const threadPanelTitle = computed(() => {
+  const rootId = activeThread.value?.rootEventId;
+  const rootMessage = rootId
+    ? threadPanelAllMessages.value.find((message) => message.id === rootId)
+    : undefined;
+  if (!rootMessage || rootMessage.kind !== "message") {
+    return translateText("chat.threadAction");
+  }
+  const line = rootMessage.body.split("\n")[0]?.trim() ?? "";
+  const clipped =
+    line.length > 100 ? `${line.slice(0, 97)}...` : line;
+  return clipped || translateText("chat.threadAction");
+});
+
+const threadPanelStartedBy = computed(() => {
+  const rootId = activeThread.value?.rootEventId;
+  const rootMessage = rootId
+    ? threadPanelAllMessages.value.find((message) => message.id === rootId)
+    : undefined;
+  return rootMessage?.senderName ?? "";
+});
+
 watch(
   spaceItems,
   (spaces) => {
@@ -421,9 +530,22 @@ watch(
 );
 
 watch(selectedRoomId, (roomId) => {
+  rightSidebarView.value = "members";
   hasMoreOlderMessages.value = true;
   activeReplyTo.value = null;
+  if (
+    activeThread.value &&
+    roomId &&
+    activeThread.value.roomId !== roomId
+  ) {
+    activeThread.value = null;
+    threadPanelAllMessages.value = [];
+    activeThreadReplyTo.value = null;
+  }
   if (!roomId) {
+    activeThread.value = null;
+    threadPanelAllMessages.value = [];
+    activeThreadReplyTo.value = null;
     allMessages.value = [];
     messages.value = [];
     return;
@@ -441,6 +563,138 @@ function setReplyTarget(replyTarget: {
 
 function clearReplyTarget() {
   activeReplyTo.value = null;
+}
+
+function loadThreadPanelMessages() {
+  const threadState = activeThread.value;
+  const matrixClient = client.value;
+  if (!threadState || !matrixClient) {
+    threadPanelAllMessages.value = [];
+    return;
+  }
+  const room = matrixClient.getRoom(threadState.roomId);
+  if (!room) {
+    threadPanelAllMessages.value = [];
+    return;
+  }
+  threadPanelAllMessages.value = mapTimelineEventsToMessages({
+    room,
+    ownUserId: matrixClient.getUserId() ?? undefined,
+    getMemberAvatarUrl: (member) => {
+      return getMemberAvatarUrl(member as unknown as Record<string, any>);
+    },
+    getMediaUrl,
+    buildNoticeText,
+    mode: {
+      kind: "thread",
+      rootEventId: threadState.rootEventId,
+    },
+  }) as ChatMessage[];
+}
+
+function syncThreadPanelIfActive(roomId: string) {
+  if (activeThread.value && activeThread.value.roomId === roomId) {
+    loadThreadPanelMessages();
+  }
+}
+
+function openThreadInSidebar(target: {
+  eventId: string;
+  senderName: string;
+  body: string;
+}) {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  activeReplyTo.value = null;
+  activeThreadReplyTo.value = null;
+  activeThread.value = {
+    roomId: selectedRoomId.value,
+    rootEventId: target.eventId,
+    presentation: "sidebar",
+  };
+  loadThreadPanelMessages();
+}
+
+function openThreadFromRoomNav(payload: {
+  roomId: string;
+  rootEventId: string;
+}) {
+  selectedRoomId.value = payload.roomId;
+  activeReplyTo.value = null;
+  activeThreadReplyTo.value = null;
+  activeThread.value = {
+    roomId: payload.roomId,
+    rootEventId: payload.rootEventId,
+    presentation: "main",
+  };
+  nextTick(() => {
+    loadThreadPanelMessages();
+  });
+}
+
+function closeActiveThread() {
+  activeThread.value = null;
+  threadPanelAllMessages.value = [];
+  activeThreadReplyTo.value = null;
+}
+
+function closeRoomThreadsPanel() {
+  rightSidebarView.value = "members";
+}
+
+function toggleRoomThreadsPanel() {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  if (rightSidebarView.value === "threads" && rightSidebarOpen.value) {
+    rightSidebarView.value = "members";
+    return;
+  }
+  rightSidebarOpen.value = true;
+  rightSidebarView.value = "threads";
+  if (activeThread.value?.presentation === "sidebar") {
+    closeActiveThread();
+  }
+}
+
+function openMembersPanel() {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  if (rightSidebarOpen.value && rightSidebarView.value === "members") {
+    rightSidebarOpen.value = false;
+    return;
+  }
+  rightSidebarOpen.value = true;
+  rightSidebarView.value = "members";
+  if (activeThread.value?.presentation === "sidebar") {
+    closeActiveThread();
+  }
+}
+
+function openThreadFromRoomThreadList(rootEventId: string) {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  activeReplyTo.value = null;
+  activeThreadReplyTo.value = null;
+  activeThread.value = {
+    roomId: selectedRoomId.value,
+    rootEventId,
+    presentation: "sidebar",
+  };
+  loadThreadPanelMessages();
+}
+
+function setActiveThreadReplyTarget(
+  replyTarget: NonNullable<ChatMessage["replyTo"]>,
+) {
+  activeThreadReplyTo.value = replyTarget;
+}
+
+function clearActiveThreadReply() {
+  activeThreadReplyTo.value = null;
 }
 
 function toMemberItem(member: Record<string, any>): MemberItem {
@@ -593,6 +847,8 @@ function loadMessages(
     stickToBottom.value = !hasNewerMessagesThanAnchor;
     applyWindow();
     scrollIntentToken.value += 1;
+    syncThreadPanelIfActive(roomId);
+    scheduleThreadNavRefresh();
     return;
   }
 
@@ -617,6 +873,8 @@ function loadMessages(
     windowEndIndex.value = fallbackSelection.endIndex;
   }
   applyWindow();
+  syncThreadPanelIfActive(roomId);
+  scheduleThreadNavRefresh();
 }
 
 function patchMessageReactions(roomId: string) {
@@ -638,6 +896,7 @@ function patchMessageReactions(roomId: string) {
     };
   });
   applyWindow();
+  syncThreadPanelIfActive(roomId);
 }
 
 function isReactionRelatedEvent(eventType: string): boolean {
@@ -798,6 +1057,12 @@ function selectSpace(spaceId: string) {
 }
 
 function selectRoom(roomId: string) {
+  if (
+    activeThread.value?.presentation === "main" &&
+    activeThread.value.roomId === roomId
+  ) {
+    closeActiveThread();
+  }
   selectedRoomId.value = roomId;
   if (isMobile.value) {
     leftSidebarOpen.value = false;
@@ -868,10 +1133,6 @@ function openSpaceSettings() {
 
 function toggleLeftSidebar() {
   leftSidebarOpen.value = !leftSidebarOpen.value;
-}
-
-function toggleRightSidebar() {
-  rightSidebarOpen.value = !rightSidebarOpen.value;
 }
 
 function toggleSpaceRail() {
@@ -956,6 +1217,10 @@ onBeforeUnmount(() => {
     window.clearTimeout(loadMessagesTimerId.value);
     loadMessagesTimerId.value = null;
   }
+  if (threadNavRefreshTimerId !== null) {
+    window.clearTimeout(threadNavRefreshTimerId);
+    threadNavRefreshTimerId = null;
+  }
   window.removeEventListener("resize", resizeHandler);
 });
 
@@ -975,6 +1240,15 @@ watch(
       timelineEvent: Record<string, any> | undefined,
       room: Record<string, any> | undefined,
     ) => {
+      if (room?.roomId) {
+        const eventType = timelineEvent?.getType?.() ?? "";
+        if (
+          eventType === "m.room.message" ||
+          isReactionRelatedEvent(eventType)
+        ) {
+          scheduleThreadNavRefresh();
+        }
+      }
       if (room?.roomId === selectedRoomId.value) {
         const eventType = timelineEvent?.getType?.() ?? "";
         if (isReactionRelatedEvent(eventType)) {
@@ -1059,7 +1333,19 @@ watch(
           :selected-root-space-id="
             selectedSpaceId === HOME_SPACE_ID ? null : selectedSpaceId
           "
+          :threads-by-room-id="threadNavByRoomId"
+          :active-thread-root-id="
+            activeThread?.presentation === 'main'
+              ? activeThread.rootEventId
+              : null
+          "
+          :active-main-thread-room-id="
+            activeThread?.presentation === 'main'
+              ? activeThread.roomId
+              : null
+          "
           @select-room="selectRoom"
+          @select-thread="openThreadFromRoomNav"
           @open-space-settings="openSpaceSettings"
           @persist-room-order="onPersistRoomOrder"
           @move-room-between-categories="onMoveRoomBetweenCategories"
@@ -1081,18 +1367,61 @@ watch(
           @click="toggleLeftSidebar"
         />
         <div class="min-w-0 flex-1">
-          <p
-            class="truncate text-sm font-semibold text-gray-800 dark:text-gray-100"
-          >
-            {{ selectedRoom?.name || translateText("chat.selectRoom") }}
-          </p>
-          <p
-            v-if="userId"
-            class="truncate text-xs text-gray-500 dark:text-gray-400"
-          >
-            {{ translateText("chat.loggedInAs") }} {{ userId }}
-          </p>
+          <template v-if="activeThread?.presentation === 'main'">
+            <div class="flex min-w-0 items-center gap-1 text-sm">
+              <UIcon
+                name="i-lucide-hash"
+                class="size-4 shrink-0 text-gray-500 dark:text-gray-400"
+              />
+              <span
+                class="truncate font-semibold text-gray-800 dark:text-gray-100"
+              >
+                {{ selectedRoom?.name }}
+              </span>
+              <UIcon
+                name="i-lucide-chevron-right"
+                class="size-4 shrink-0 text-gray-400"
+              />
+              <UIcon
+                name="i-lucide-messages-square"
+                class="size-4 shrink-0 text-gray-500 dark:text-gray-400"
+              />
+              <span
+                class="min-w-0 truncate font-semibold text-gray-800
+                       dark:text-gray-100"
+              >
+                {{ threadPanelTitle }}
+              </span>
+            </div>
+            <p class="truncate text-xs text-gray-500 dark:text-gray-400">
+              {{ translateText("chat.threadStartedBy") }}
+              {{ threadPanelStartedBy }}
+            </p>
+          </template>
+          <template v-else>
+            <p
+              class="truncate text-sm font-semibold text-gray-800
+                     dark:text-gray-100"
+            >
+              {{ selectedRoom?.name || translateText("chat.selectRoom") }}
+            </p>
+            <p
+              v-if="userId"
+              class="truncate text-xs text-gray-500 dark:text-gray-400"
+            >
+              {{ translateText("chat.loggedInAs") }} {{ userId }}
+            </p>
+          </template>
         </div>
+        <UButton
+          v-if="activeThread?.presentation === 'main'"
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          :aria-label="translateText('chat.threadBackToChannel')"
+          @click="closeActiveThread"
+        />
         <UButton
           size="sm"
           color="neutral"
@@ -1101,13 +1430,12 @@ watch(
           :to="'/settings/account'"
           :aria-label="translateText('layout.openAccountSettings')"
         />
-        <UButton
-          size="sm"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-panels-right-bottom"
-          :aria-label="translateText('layout.toggleMembers')"
-          @click="toggleRightSidebar"
+        <ChatRoomHeaderToolbar
+          v-if="selectedRoomId"
+          :threads-active="roomThreadsPanelActive && rightSidebarOpen"
+          :members-active="membersPanelActive && rightSidebarOpen"
+          @open-threads="toggleRoomThreadsPanel"
+          @open-members="openMembersPanel"
         />
         <UButton size="sm" color="neutral" variant="soft" @click="handleLogout">
           {{ translateText("chat.signOut") }}
@@ -1144,27 +1472,51 @@ watch(
         </p>
       </div>
       <template v-else>
-        <ChatMessageList
-          :messages="messages"
-          :current-user-id="userId ?? undefined"
-          :loading-older="loadingOlder"
-          :loading-newer="loadingNewer"
-          :center-on-message-id="centerOnMessageId"
-          :stick-to-bottom="stickToBottom"
-          :scroll-intent-token="scrollIntentToken"
-          :preserve-viewport-on-prepend="preserveViewportOnPrepend"
-          :resolve-media-blob-url="resolveMediaBlobUrl"
-          @reach-top="onReachTop"
-          @reach-bottom="onReachBottom"
-          @reply="setReplyTarget"
-          @toggle-reaction="onToggleReaction"
-        />
-        <ChatMessageInput
-          :room-id="selectedRoomId"
-          :disabled="!client"
-          :reply-to="activeReplyTo"
-          @cancel-reply="clearReplyTarget"
-        />
+        <template v-if="activeThread?.presentation === 'main'">
+          <ChatMessageList
+            :messages="threadPanelAllMessages"
+            :current-user-id="userId ?? undefined"
+            :resolve-media-blob-url="resolveMediaBlobUrl"
+            is-thread-view
+            @reply="setActiveThreadReplyTarget"
+            @toggle-reaction="onToggleReaction"
+          />
+          <ChatMessageInput
+            :room-id="selectedRoomId"
+            :disabled="!client"
+            :reply-to="activeThreadReplyTo"
+            :thread-root-event-id="activeThread.rootEventId"
+            @cancel-reply="clearActiveThreadReply"
+          />
+        </template>
+        <template v-else>
+          <ChatMessageList
+            :messages="messages"
+            :current-user-id="userId ?? undefined"
+            :loading-older="loadingOlder"
+            :loading-newer="loadingNewer"
+            :center-on-message-id="centerOnMessageId"
+            :stick-to-bottom="stickToBottom"
+            :scroll-intent-token="scrollIntentToken"
+            :preserve-viewport-on-prepend="preserveViewportOnPrepend"
+            :resolve-media-blob-url="resolveMediaBlobUrl"
+            @reach-top="onReachTop"
+            @reach-bottom="onReachBottom"
+            @reply="setReplyTarget"
+            @open-thread="openThreadInSidebar"
+            @open-thread-preview="openThreadInSidebar"
+            @toggle-reaction="onToggleReaction"
+          />
+          <ChatMessageInput
+            v-if="
+              !activeThread || activeThread.presentation !== 'sidebar'
+            "
+            :room-id="selectedRoomId"
+            :disabled="!client"
+            :reply-to="activeReplyTo"
+            @cancel-reply="clearReplyTarget"
+          />
+        </template>
       </template>
     </main>
 
@@ -1183,7 +1535,34 @@ watch(
           : 'translate-x-0',
       ]"
     >
-      <ChatMemberList :members="memberItems" />
+      <ChatThreadPanel
+        v-if="
+          activeThread?.presentation === 'sidebar' &&
+            selectedRoomId &&
+            activeThread.roomId === selectedRoomId
+        "
+        class="h-full min-h-0"
+        :room-id="selectedRoomId"
+        :root-event-id="activeThread.rootEventId"
+        :title="threadPanelTitle"
+        :started-by-name="threadPanelStartedBy"
+        :messages="threadPanelAllMessages"
+        :current-user-id="userId ?? undefined"
+        :disabled="!client"
+        :reply-to="activeThreadReplyTo"
+        :resolve-media-blob-url="resolveMediaBlobUrl"
+        @close="closeActiveThread"
+        @reply="setActiveThreadReplyTarget"
+        @cancel-reply="clearActiveThreadReply"
+        @toggle-reaction="onToggleReaction"
+      />
+      <ChatRoomThreadListPanel
+        v-else-if="roomThreadsPanelActive && selectedRoomId"
+        :threads="selectedRoomThreadEntries"
+        @close="closeRoomThreadsPanel"
+        @open-thread="openThreadFromRoomThreadList"
+      />
+      <ChatMemberList v-else :members="memberItems" />
     </aside>
   </div>
 </template>
