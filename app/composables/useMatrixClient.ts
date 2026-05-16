@@ -8,6 +8,7 @@ import {
   Preset,
   Visibility
 } from 'matrix-js-sdk'
+import { findLatestReadableRoomMessageEvent } from '~/utils/roomUnread'
 import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
 import { readonly, shallowRef } from 'vue'
@@ -1042,6 +1043,35 @@ export function useMatrixClient() {
     return client.value?.getRoom(roomId) ?? null
   }
 
+  async function markRoomAsRead(roomId: string): Promise<void> {
+    const matrixClient = client.value
+    if (!matrixClient) {
+      return
+    }
+    const room = matrixClient.getRoom(roomId)
+    if (!room) {
+      return
+    }
+    const latestMessageEvent = findLatestReadableRoomMessageEvent(room)
+    if (!latestMessageEvent) {
+      return
+    }
+    const eventId = latestMessageEvent.getId()
+    if (!eventId) {
+      return
+    }
+    try {
+      await matrixClient.sendReadReceipt(latestMessageEvent)
+      await matrixClient.setRoomReadMarkers(
+        roomId,
+        eventId,
+        latestMessageEvent,
+      )
+    } catch (thrownError) {
+      console.error('markRoomAsRead failed', thrownError)
+    }
+  }
+
   async function sendMessage(
     roomId: string,
     body: string,
@@ -1500,6 +1530,7 @@ export function useMatrixClient() {
     finalizeDelegatedMatrixOidcFromRedirectPayload,
     getRooms,
     getRoom,
+    markRoomAsRead,
     sendMessage,
     sendImageMessage,
     sendReaction,

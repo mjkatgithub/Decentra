@@ -6,6 +6,7 @@ import type { ThreadNavEntry } from '~/utils/chatTimeline'
 interface RoomItem {
   roomId: string
   name: string
+  hasUnread?: boolean
 }
 
 interface RoomSectionItem {
@@ -105,6 +106,13 @@ function selectRoom(roomId: string) {
 
 function selectThread(roomId: string, rootEventId: string) {
   emit('selectThread', { roomId, rootEventId })
+}
+
+function roomNavAriaLabel(room: RoomItem): string {
+  if (room.hasUnread) {
+    return translateText('layout.channelUnreadAria', { name: room.name })
+  }
+  return room.name
 }
 
 function isRoomNavSelected(roomId: string): boolean {
@@ -362,14 +370,27 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
               >
                 <button
                   type="button"
-                  class="w-full rounded-lg px-2 py-2 text-left text-sm transition"
+                  class="flex w-full items-center justify-between gap-2
+                         rounded-lg px-2 py-2 text-left text-sm transition"
                   :class="isRoomNavSelected(room.roomId)
                     ? 'bg-primary-500/15 text-primary-500'
                     : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'"
                   :data-room-id="room.roomId"
+                  :data-unread="room.hasUnread ? 'true' : 'false'"
+                  :aria-label="roomNavAriaLabel(room)"
                   @click="selectRoom(room.roomId)"
                 >
-                  <span class="truncate"># {{ room.name }}</span>
+                  <span
+                    class="min-w-0 truncate"
+                    :class="room.hasUnread ? 'font-semibold' : ''"
+                  >
+                    # {{ room.name }}
+                  </span>
+                  <span
+                    v-if="room.hasUnread"
+                    class="size-2 shrink-0 rounded-full bg-primary-500"
+                    aria-hidden="true"
+                  />
                 </button>
                 <button
                   v-for="thread in (

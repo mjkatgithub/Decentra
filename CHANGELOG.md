@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Unread message indicators in the channel list with Matrix SDK
+  notification counts, read-receipt marking when viewing a room, and
+  live updates on incoming events (#34)
 - Matrix space hierarchy in the channel column: subspaces as collapsible
   category headers (chevron toggle), rooms grouped under `m.space.child`
   order, and a root-level "General" segment for direct space children (#5)
