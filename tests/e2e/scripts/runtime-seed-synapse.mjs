@@ -10,6 +10,8 @@ loadE2EEnv(workspaceRoot)
 
 const homeserver = process.env.E2E_LOCAL_HOMESERVER || 'http://127.0.0.1:8008'
 const roomName = process.env.E2E_TEST_ROOM_NAME || 'Decentra E2E Room'
+const sideRoomName =
+  process.env.E2E_SIDE_TEST_ROOM_NAME || 'Decentra E2E Side Room'
 const primaryLocalpart = process.env.E2E_PRIMARY_LOCALPART || 'e2e-alice'
 const primaryPassword = process.env.E2E_PRIMARY_PASSWORD || 'e2e-alice-pass'
 const secondaryLocalpart = process.env.E2E_SECONDARY_LOCALPART || 'e2e-bob'
@@ -130,10 +132,29 @@ async function main() {
   })
   const roomId = roomResponse.room_id
 
+  const sideRoomResponse = await withAuth(
+    primarySession.access_token,
+    '/_matrix/client/v3/createRoom',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        name: sideRoomName,
+        invite: [secondarySession.user_id],
+        preset: 'private_chat',
+      }),
+    },
+  )
+  const sideRoomId = sideRoomResponse.room_id
+
   await withAuth(
     secondarySession.access_token,
     `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/join`,
-    { method: 'POST', body: '{}' }
+    { method: 'POST', body: '{}' },
+  )
+  await withAuth(
+    secondarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(sideRoomId)}/join`,
+    { method: 'POST', body: '{}' },
   )
   await withAuth(
     primarySession.access_token,
@@ -188,7 +209,10 @@ async function main() {
     `E2E_MATRIX_PASSWORD=${primaryPassword}`,
     `E2E_SECOND_MATRIX_USERNAME=${secondarySession.user_id}`,
     `E2E_SECOND_MATRIX_PASSWORD=${secondaryPassword}`,
-    `E2E_TEST_ROOM_NAME=${roomName}`
+    `E2E_TEST_ROOM_NAME=${roomName}`,
+    `E2E_TEST_ROOM_ID=${roomId}`,
+    `E2E_SIDE_TEST_ROOM_NAME=${sideRoomName}`,
+    `E2E_SIDE_TEST_ROOM_ID=${sideRoomId}`,
   ].join('\n')
   writeFileSync(generatedEnvPath, `${generatedEnv}\n`, 'utf8')
   console.log('Synapse E2E seeding completed')

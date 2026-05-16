@@ -103,7 +103,7 @@ interface RoomCategoryGroup {
   rootChildAnchorIds: string[];
   /** Power-level: may send m.space.child on the parent of these rooms */
   canReorderRooms: boolean;
-  rooms: Array<{ roomId: string; name: string }>;
+  rooms: Array<{ roomId: string; name: string; hasUnread?: boolean }>;
 }
 
 interface MemberItem {
@@ -127,6 +127,7 @@ const {
   toggleReaction,
   reorderSpaceChildren,
   moveChannelBetweenSpaceParents,
+  markRoomAsRead,
 } = useMatrixClient();
 const { translateText } = useAppI18n();
 const {
@@ -144,6 +145,16 @@ const selectedSpaceId = ref<string | null>(null);
 const allMessages = ref<ChatMessage[]>([]);
 const messages = ref<ChatMessage[]>([]);
 const matrixRooms = ref<Array<Record<string, any>>>([]);
+const {
+  unreadByRoomId,
+  refreshUnread,
+  scheduleMarkActiveRoomRead,
+} = useRoomUnread({
+  client,
+  matrixRooms,
+  selectedRoomId,
+  markRoomAsRead,
+});
 const loadingOlder = ref(false);
 const loadingNewer = ref(false);
 const hasMoreOlderMessages = ref(true);
@@ -196,6 +207,15 @@ function getMatrixRoomId(room: unknown): string {
 function refreshRooms() {
   matrixRooms.value = getRooms();
   scheduleThreadNavRefresh();
+  refreshUnread();
+}
+
+function toCategoryRoomItem(room: { roomId: string; name: string }) {
+  return {
+    roomId: room.roomId,
+    name: room.name,
+    hasUnread: unreadByRoomId.value[room.roomId]?.hasUnread ?? false,
+  };
 }
 
 function scheduleThreadNavRefresh() {
@@ -291,6 +311,7 @@ const hasJoinedNonSpaceRooms = computed(() => {
 });
 
 const roomCategories = computed<RoomCategoryGroup[]>(() => {
+  unreadByRoomId.value;
   if (selectedSpaceId.value === HOME_SPACE_ID) {
     return buildHomeSections();
   }
@@ -321,10 +342,7 @@ function buildHomeSections(): RoomCategoryGroup[] {
       kind: "root",
       rootChildAnchorIds: [],
       canReorderRooms: false,
-      rooms: directRooms.map((room) => ({
-        roomId: room.roomId,
-        name: room.name,
-      })),
+      rooms: directRooms.map((room) => toCategoryRoomItem(room)),
     });
   }
   if (unassignedRooms.length > 0) {
@@ -334,10 +352,7 @@ function buildHomeSections(): RoomCategoryGroup[] {
       kind: "root",
       rootChildAnchorIds: [],
       canReorderRooms: false,
-      rooms: unassignedRooms.map((room) => ({
-        roomId: room.roomId,
-        name: room.name,
-      })),
+      rooms: unassignedRooms.map((room) => toCategoryRoomItem(room)),
     });
   }
 
@@ -383,7 +398,7 @@ function buildSpaceSections(): RoomCategoryGroup[] {
       subspaceRoomId: category.subspaceRoomId,
       rootChildAnchorIds: category.rootChildAnchorIds,
       canReorderRooms,
-      rooms: category.rooms,
+      rooms: category.rooms.map((room) => toCategoryRoomItem(room)),
     };
   });
 }
@@ -551,6 +566,13 @@ watch(selectedRoomId, (roomId) => {
     return;
   }
   loadMessages(roomId, { resetWindow: true });
+  scheduleMarkActiveRoomRead();
+});
+
+watch(stickToBottom, (isAtBottom) => {
+  if (isAtBottom) {
+    scheduleMarkActiveRoomRead();
+  }
 });
 
 function setReplyTarget(replyTarget: {
@@ -1030,6 +1052,8 @@ async function onReachBottom() {
     return;
   }
   if (windowEndIndex.value >= allMessages.value.length) {
+    stickToBottom.value = true;
+    scheduleMarkActiveRoomRead();
     return;
   }
   loadingNewer.value = true;
@@ -1039,6 +1063,10 @@ async function onReachBottom() {
       windowEndIndex.value + SCROLL_WINDOW_EXPAND_STEP,
     );
     applyWindow();
+    if (windowEndIndex.value >= allMessages.value.length) {
+      stickToBottom.value = true;
+      scheduleMarkActiveRoomRead();
+    }
   } finally {
     loadingNewer.value = false;
   }
@@ -1247,6 +1275,12 @@ watch(
           isReactionRelatedEvent(eventType)
         ) {
           scheduleThreadNavRefresh();
+        }
+        if (
+          room.roomId !== selectedRoomId.value &&
+          eventType === "m.room.message"
+        ) {
+          refreshUnread();
         }
       }
       if (room?.roomId === selectedRoomId.value) {

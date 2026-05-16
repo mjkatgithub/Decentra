@@ -73,6 +73,32 @@ Feature: Chat
     And I should see a rendered reply for "E2E_REPLY_TO_VALID_EVENT"
     And I should see a missing-origin reply fallback
 
+  Scenario: Unread indicator for inactive channel
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the side seeded test room
+    And the secondary user sends "E2E_UNREAD_MARKER_MSG" to the main test room
+    Then the main test room should show an unread indicator
+
+  Scenario: Opening channel clears unread indicator
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the side seeded test room
+    And the secondary user sends "E2E_UNREAD_CLEAR_MSG" to the main test room
+    Then the main test room should show an unread indicator
+    When I open the seeded test room
+    Then the main test room should not show an unread indicator
+
+  Scenario: Unread indicator survives reload
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the side seeded test room
+    And the secondary user sends "E2E_UNREAD_RELOAD_MSG" to the main test room
+    Then the main test room should show an unread indicator
+    When I reload the current page
+    And I open the side seeded test room
+    Then the main test room should show an unread indicator
+
   Scenario: Add and remove message reaction
     When I open the login page
     And I sign in with configured credentials
