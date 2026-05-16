@@ -25,6 +25,7 @@ import {
   submitSignupTermsAcceptance,
   useMatrixClient
 } from '~/composables/useMatrixClient'
+import { authFormInputUi } from '~/constants/authFormInputUi'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 const loading = ref(true)
@@ -288,6 +289,8 @@ onMounted(() => {
             >
               <UInput
                 v-model="registrationTokenField"
+                class="w-full"
+                :ui="authFormInputUi"
                 type="password"
                 autocomplete="off"
               />

@@ -11,6 +11,8 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.homeserver': 'Homeserver',
     'auth.username': 'Username',
     'auth.password': 'Password',
+    'auth.secretShowPassword': 'Show password',
+    'auth.secretHidePassword': 'Hide password',
     'auth.signInFailed': 'Sign in failed',
     'auth.signUpFailed': 'Sign up failed',
     'auth.signUpUnavailable': 'Sign-up is not available on this homeserver',
@@ -218,6 +220,8 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'Prefer emoji verification when you have a second trusted client; use ' +
       'the recovery key only when that is not possible.',
     'settings.verificationRecoveryKeyLabel': 'Recovery or security key',
+    'settings.secretShowRecoveryKey': 'Show recovery key',
+    'settings.secretHideRecoveryKey': 'Hide recovery key',
     'settings.verificationRecoverySubmit': 'Restore encryption',
     'settings.verificationRecoverySuccess':
       'Encryption secrets were restored and this session is now verified. ' +
@@ -317,6 +321,8 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'auth.homeserver': 'Homeserver',
     'auth.username': 'Benutzername',
     'auth.password': 'Passwort',
+    'auth.secretShowPassword': 'Passwort anzeigen',
+    'auth.secretHidePassword': 'Passwort verbergen',
     'auth.signInFailed': 'Anmeldung fehlgeschlagen',
     'auth.signUpFailed': 'Registrierung fehlgeschlagen',
     'auth.signUpUnavailable': 'Registrierung ist auf diesem Homeserver nicht verfuegbar',
@@ -538,6 +544,8 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'Nutze zuerst die Emoji-Verifizierung, wenn du einen zweiten vertrauenswuerdigen ' +
       'Client hast; den Recovery-Key nur, wenn das nicht moeglich ist.',
     'settings.verificationRecoveryKeyLabel': 'Recovery- oder Security-Key',
+    'settings.secretShowRecoveryKey': 'Recovery-Key anzeigen',
+    'settings.secretHideRecoveryKey': 'Recovery-Key verbergen',
     'settings.verificationRecoverySubmit': 'Verschluesselung wiederherstellen',
     'settings.verificationRecoverySuccess':
       'Schluessel wurden wiederhergestellt und diese Session ist jetzt ' +

@@ -4,6 +4,7 @@ import {
   HOMESERVER_CONNECTION_HINT_ERROR,
   useMatrixClient
 } from '~/composables/useMatrixClient'
+import { authFormInputUi } from '~/constants/authFormInputUi'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 const baseUrl = ref('https://matrix.org')
@@ -86,16 +87,21 @@ function clearForm() {
           </h1>
         </template>
 
-        <div class="space-y-4">
+        <div class="auth-form-fields space-y-4">
           <UAlert
             v-if="signupSuccess"
             color="success"
             :title="translateText('auth.signUpSuccess')"
           />
 
-          <UFormField :label="translateText('auth.homeserver')">
+          <UFormField
+            class="w-full"
+            :label="translateText('auth.homeserver')"
+          >
             <UInput
               v-model="baseUrl"
+              class="w-full"
+              :ui="authFormInputUi"
               placeholder="https://matrix.org"
               type="url"
               required
@@ -109,19 +115,28 @@ function clearForm() {
           />
 
           <form class="space-y-4" @submit.prevent="handleLogin">
-            <UFormField :label="translateText('auth.username')">
+            <UFormField
+              class="w-full"
+              :label="translateText('auth.username')"
+            >
               <UInput
                 v-model="username"
+                class="w-full"
+                :ui="authFormInputUi"
                 placeholder="@user:matrix.org"
                 required
               />
             </UFormField>
 
-            <UFormField :label="translateText('auth.password')">
-              <UInput
+            <UFormField
+              class="w-full"
+              :label="translateText('auth.password')"
+            >
+              <AuthMaskedSecretInput
                 v-model="password"
-                type="password"
-                placeholder="••••••••"
+                secret-kind="password"
+                autocomplete="current-password"
+                placeholder="********"
                 required
               />
             </UFormField>

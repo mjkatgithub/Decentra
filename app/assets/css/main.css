@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+/* Auth forms: UInput root is inline-flex and shrinks without w-full */
+.auth-form-fields div:has(> input),
+.auth-form-fields div:has(> textarea) {
+  width: 100%;
+}
+
 .decentra-shell {
   background-image:
     radial-gradient(circle at 12% 8%, rgb(56 189 248 / 12%), transparent 40%),
