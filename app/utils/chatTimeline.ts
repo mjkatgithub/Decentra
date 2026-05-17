@@ -1,4 +1,5 @@
 import {
+  collectMessageContentRecords,
   getInReplyToEventId,
   readMessageRelationSnapshot,
 } from '~/utils/matrixThreadRelations'
@@ -48,6 +49,10 @@ export interface ChatTimelineMessage {
   /** Present on root messages that have thread replies (MSC3440) */
   threadSummary?: ChatThreadSummary
   isEdited?: boolean
+  /** Event id to pass to m.replace when editing (original, not latest replace) */
+  editTargetEventId?: string
+  /** Chronological position (original ts for m.replace replacements) */
+  originServerTs?: number
 }
 
 export interface ChatTimelineReaction {
@@ -116,6 +121,20 @@ type TimelineEventRecord = Record<string, any>
 interface MessageRelationIndex {
   threadRootByMessageId: Map<string, string>
   supersededMessageIds: Set<string>
+  displayTsByEventId: Map<string, number>
+}
+
+function sortTimelineMessagesByOriginTs(
+  messages: ChatTimelineMessage[],
+): ChatTimelineMessage[] {
+  return [...messages].sort((leftMessage, rightMessage) => {
+    const leftTs = leftMessage.originServerTs ?? 0
+    const rightTs = rightMessage.originServerTs ?? 0
+    if (leftTs !== rightTs) {
+      return leftTs - rightTs
+    }
+    return 0
+  })
 }
 
 function resolveThreadRootFromEventId(
@@ -275,7 +294,28 @@ function buildMessageRelationIndex(
     }
   }
 
-  return { threadRootByMessageId, supersededMessageIds }
+  const displayTsByEventId = new Map<string, number>()
+  for (const timelineEvent of messageEvents) {
+    const eventId = timelineEvent.getId?.() ?? ''
+    if (!eventId || supersededMessageIds.has(eventId)) {
+      continue
+    }
+    const ownTs = Number(timelineEvent.getTs?.() ?? 0)
+    const snapshot = readMessageRelationSnapshot(timelineEvent)
+    if (snapshot.replaceTargetId) {
+      const targetEvent = eventsById.get(snapshot.replaceTargetId)
+      const targetTs = Number(targetEvent?.getTs?.() ?? 0)
+      displayTsByEventId.set(eventId, targetTs > 0 ? targetTs : ownTs)
+      continue
+    }
+    displayTsByEventId.set(eventId, ownTs)
+  }
+
+  return {
+    threadRootByMessageId,
+    supersededMessageIds,
+    displayTsByEventId,
+  }
 }
 
 function shouldIncludeMessageInMainTimeline(
@@ -562,6 +602,11 @@ export function mapTimelineEventsToMessages({
         reactions,
         readBy,
         isEdited: relationSnapshot?.isReplacement === true,
+        editTargetEventId: eventType === 'm.room.message' && !undecryptableMessage
+          ? (relationSnapshot?.replaceTargetId ?? currentEventId)
+          : undefined,
+        originServerTs: relationIndex.displayTsByEventId.get(currentEventId)
+          ?? Number(timelineEvent.getTs?.() ?? 0),
       }
     } catch {
       const senderUserId = timelineEvent.getSender?.() ?? ''
@@ -576,16 +621,19 @@ export function mapTimelineEventsToMessages({
         avatarUrl: senderMember ? getMemberAvatarUrl(senderMember) : undefined,
         body: buildUndecryptableMessageText(senderName),
         reactions: [],
-        readBy: []
+        readBy: [],
+        originServerTs: Number(timelineEvent.getTs?.() ?? 0),
       }
     }
   })
 
+  const sortedMessages = sortTimelineMessagesByOriginTs(mappedMessages)
+
   if (mode.kind !== 'main' || !threadSummariesByRoot) {
-    return mappedMessages
+    return sortedMessages
   }
 
-  return mappedMessages.map((msg) => {
+  return sortedMessages.map((msg) => {
     if (msg.kind !== 'message') {
       return msg
     }
@@ -801,6 +849,23 @@ export function buildUndecryptableMessageText(senderName: string): string {
   return `${senderName} sent an encrypted message that could not be decrypted.`
 }
 
+function readTextBodyFromContentRecord(
+  contentRecord: Record<string, unknown>,
+): string | undefined {
+  const newContent = contentRecord['m.new_content']
+  if (newContent && typeof newContent === 'object') {
+    const newBody = (newContent as Record<string, unknown>).body
+    if (typeof newBody === 'string' && newBody.trim().length > 0) {
+      return newBody
+    }
+  }
+  const body = contentRecord.body
+  if (typeof body === 'string' && body.trim().length > 0) {
+    return body
+  }
+  return undefined
+}
+
 export function getMessageBody(
   timelineEvent: Record<string, any>,
   senderName: string,
@@ -809,10 +874,11 @@ export function getMessageBody(
   if (undecryptableMessage) {
     return buildUndecryptableMessageText(senderName)
   }
-  const content = timelineEvent.getContent?.() ?? {}
-  const body = content.body
-  if (typeof body === 'string' && body.trim().length > 0) {
-    return body
+  for (const contentRecord of collectMessageContentRecords(timelineEvent)) {
+    const body = readTextBodyFromContentRecord(contentRecord)
+    if (body) {
+      return body
+    }
   }
   return 'Unsupported message content.'
 }

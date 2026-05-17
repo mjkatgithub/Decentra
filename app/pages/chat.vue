@@ -23,6 +23,7 @@ import {
   isRootSpaceRoom,
   isRoomUnderAncestorSpace,
 } from "~/utils/spaceRoomCategories";
+import { canUserSendRoomMessage } from "~/utils/matrixRoomMessagePermissions";
 import { canUserSendSpaceChildState } from "~/utils/matrixSpaceHierarchyPermissions";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
@@ -72,6 +73,8 @@ interface ChatMessage {
       originServerTs: number;
     };
   };
+  isEdited?: boolean;
+  editTargetEventId?: string;
 }
 
 type ThreadPresentation = "sidebar" | "main";
@@ -141,6 +144,15 @@ const route = useRoute();
 const onboardingSubView = ref<null | "dm" | "public">(null);
 
 const selectedRoomId = ref<string | null>(null);
+const canSendMessagesInActiveRoom = computed(() => {
+  const matrixClient = client.value;
+  const roomId = selectedRoomId.value;
+  const matrixUserId = userId.value;
+  if (!matrixClient || !roomId || !matrixUserId) {
+    return false;
+  }
+  return canUserSendRoomMessage(matrixClient, roomId, matrixUserId);
+});
 const selectedSpaceId = ref<string | null>(null);
 const allMessages = ref<ChatMessage[]>([]);
 const messages = ref<ChatMessage[]>([]);
@@ -165,6 +177,7 @@ const stickToBottom = ref(false);
 const scrollIntentToken = ref(0);
 const preserveViewportOnPrepend = ref(false);
 const activeReplyTo = ref<ChatMessage["replyTo"] | null>(null);
+const activeEditTo = ref<{ eventId: string; body: string } | null>(null);
 const loadMessagesTimerId = ref<number | null>(null);
 const leftSidebarOpen = ref(true);
 const rightSidebarOpen = ref(true);
@@ -175,6 +188,7 @@ const spaceRailExpanded = ref(false);
 const activeThread = ref<ActiveThreadState | null>(null);
 const threadPanelAllMessages = ref<ChatMessage[]>([]);
 const activeThreadReplyTo = ref<ChatMessage["replyTo"] | null>(null);
+const activeThreadEditTo = ref<{ eventId: string; body: string } | null>(null);
 const threadNavVersion = ref(0);
 let threadNavRefreshTimerId: number | null = null;
 const THREAD_NAV_REFRESH_MS = 250;
@@ -548,6 +562,7 @@ watch(selectedRoomId, (roomId) => {
   rightSidebarView.value = "members";
   hasMoreOlderMessages.value = true;
   activeReplyTo.value = null;
+  activeEditTo.value = null;
   if (
     activeThread.value &&
     roomId &&
@@ -556,11 +571,13 @@ watch(selectedRoomId, (roomId) => {
     activeThread.value = null;
     threadPanelAllMessages.value = [];
     activeThreadReplyTo.value = null;
+    activeThreadEditTo.value = null;
   }
   if (!roomId) {
     activeThread.value = null;
     threadPanelAllMessages.value = [];
     activeThreadReplyTo.value = null;
+    activeThreadEditTo.value = null;
     allMessages.value = [];
     messages.value = [];
     return;
@@ -580,11 +597,21 @@ function setReplyTarget(replyTarget: {
   senderName: string;
   body: string;
 }) {
+  activeEditTo.value = null;
   activeReplyTo.value = replyTarget;
 }
 
 function clearReplyTarget() {
   activeReplyTo.value = null;
+}
+
+function setEditTarget(editTarget: { eventId: string; body: string }) {
+  activeReplyTo.value = null;
+  activeEditTo.value = editTarget;
+}
+
+function clearEditTarget() {
+  activeEditTo.value = null;
 }
 
 function loadThreadPanelMessages() {
@@ -629,7 +656,9 @@ function openThreadInSidebar(target: {
     return;
   }
   activeReplyTo.value = null;
+  activeEditTo.value = null;
   activeThreadReplyTo.value = null;
+  activeThreadEditTo.value = null;
   activeThread.value = {
     roomId: selectedRoomId.value,
     rootEventId: target.eventId,
@@ -644,7 +673,9 @@ function openThreadFromRoomNav(payload: {
 }) {
   selectedRoomId.value = payload.roomId;
   activeReplyTo.value = null;
+  activeEditTo.value = null;
   activeThreadReplyTo.value = null;
+  activeThreadEditTo.value = null;
   activeThread.value = {
     roomId: payload.roomId,
     rootEventId: payload.rootEventId,
@@ -659,6 +690,7 @@ function closeActiveThread() {
   activeThread.value = null;
   threadPanelAllMessages.value = [];
   activeThreadReplyTo.value = null;
+  activeThreadEditTo.value = null;
 }
 
 function closeRoomThreadsPanel() {
@@ -700,7 +732,9 @@ function openThreadFromRoomThreadList(rootEventId: string) {
     return;
   }
   activeReplyTo.value = null;
+  activeEditTo.value = null;
   activeThreadReplyTo.value = null;
+  activeThreadEditTo.value = null;
   activeThread.value = {
     roomId: selectedRoomId.value,
     rootEventId,
@@ -712,11 +746,21 @@ function openThreadFromRoomThreadList(rootEventId: string) {
 function setActiveThreadReplyTarget(
   replyTarget: NonNullable<ChatMessage["replyTo"]>,
 ) {
+  activeThreadEditTo.value = null;
   activeThreadReplyTo.value = replyTarget;
 }
 
 function clearActiveThreadReply() {
   activeThreadReplyTo.value = null;
+}
+
+function setActiveThreadEditTarget(editTarget: { eventId: string; body: string }) {
+  activeThreadReplyTo.value = null;
+  activeThreadEditTo.value = editTarget;
+}
+
+function clearActiveThreadEditTarget() {
+  activeThreadEditTo.value = null;
 }
 
 function toMemberItem(member: Record<string, any>): MemberItem {
@@ -837,6 +881,9 @@ function loadMessages(
     return;
   }
   const previousVisibleMessages = messages.value;
+  const previousVisibleIds = new Set(
+    previousVisibleMessages.map((message) => message.id),
+  );
   const mappedMessages = mapTimelineEventsToMessages({
     room,
     ownUserId: client.value?.getUserId() ?? undefined,
@@ -872,6 +919,31 @@ function loadMessages(
     syncThreadPanelIfActive(roomId);
     scheduleThreadNavRefresh();
     return;
+  }
+
+  const mappedMessageIds = new Set(
+    mappedMessages.map((message) => message.id),
+  );
+  const hasSupersededVisibleMessage = [...previousVisibleIds].some(
+    (messageId) => !mappedMessageIds.has(messageId),
+  );
+  if (hasSupersededVisibleMessage) {
+    const anchorMessage = previousVisibleMessages.find((message) => {
+      return mappedMessageIds.has(message.id);
+    });
+    if (anchorMessage) {
+      const anchorIndex = mappedMessages.findIndex((message) => {
+        return message.id === anchorMessage.id;
+      });
+      if (anchorIndex >= 0) {
+        windowStartIndex.value = anchorIndex;
+        windowEndIndex.value = mappedMessages.length;
+        applyWindow();
+        syncThreadPanelIfActive(roomId);
+        scheduleThreadNavRefresh();
+        return;
+      }
+    }
   }
 
   const previousFirstMessageId = previousVisibleMessages[0]?.id;
@@ -954,6 +1026,19 @@ function scheduleLoadMessages(roomId: string) {
     loadMessagesTimerId.value = null;
     loadMessages(roomId, { resetWindow: false });
   }, 120);
+}
+
+function onComposerSend() {
+  const roomId = selectedRoomId.value;
+  if (!roomId) {
+    return;
+  }
+  if (loadMessagesTimerId.value !== null) {
+    window.clearTimeout(loadMessagesTimerId.value);
+    loadMessagesTimerId.value = null;
+  }
+  loadMessages(roomId, { resetWindow: false });
+  syncThreadPanelIfActive(roomId);
 }
 
 function buildNoticeText(
@@ -1510,23 +1595,29 @@ watch(
           <ChatMessageList
             :messages="threadPanelAllMessages"
             :current-user-id="userId ?? undefined"
+            :can-send-messages="canSendMessagesInActiveRoom"
             :resolve-media-blob-url="resolveMediaBlobUrl"
             is-thread-view
             @reply="setActiveThreadReplyTarget"
+            @edit="setActiveThreadEditTarget"
             @toggle-reaction="onToggleReaction"
           />
           <ChatMessageInput
             :room-id="selectedRoomId"
             :disabled="!client"
             :reply-to="activeThreadReplyTo"
+            :edit-to="activeThreadEditTo"
             :thread-root-event-id="activeThread.rootEventId"
             @cancel-reply="clearActiveThreadReply"
+            @cancel-edit="clearActiveThreadEditTarget"
+            @send="onComposerSend"
           />
         </template>
         <template v-else>
           <ChatMessageList
             :messages="messages"
             :current-user-id="userId ?? undefined"
+            :can-send-messages="canSendMessagesInActiveRoom"
             :loading-older="loadingOlder"
             :loading-newer="loadingNewer"
             :center-on-message-id="centerOnMessageId"
@@ -1537,6 +1628,7 @@ watch(
             @reach-top="onReachTop"
             @reach-bottom="onReachBottom"
             @reply="setReplyTarget"
+            @edit="setEditTarget"
             @open-thread="openThreadInSidebar"
             @open-thread-preview="openThreadInSidebar"
             @toggle-reaction="onToggleReaction"
@@ -1548,7 +1640,10 @@ watch(
             :room-id="selectedRoomId"
             :disabled="!client"
             :reply-to="activeReplyTo"
+            :edit-to="activeEditTo"
             @cancel-reply="clearReplyTarget"
+            @cancel-edit="clearEditTarget"
+            @send="onComposerSend"
           />
         </template>
       </template>
@@ -1582,12 +1677,17 @@ watch(
         :started-by-name="threadPanelStartedBy"
         :messages="threadPanelAllMessages"
         :current-user-id="userId ?? undefined"
+        :can-send-messages="canSendMessagesInActiveRoom"
         :disabled="!client"
         :reply-to="activeThreadReplyTo"
+        :edit-to="activeThreadEditTo"
         :resolve-media-blob-url="resolveMediaBlobUrl"
         @close="closeActiveThread"
         @reply="setActiveThreadReplyTarget"
+        @edit="setActiveThreadEditTarget"
         @cancel-reply="clearActiveThreadReply"
+        @cancel-edit="clearActiveThreadEditTarget"
+        @send="onComposerSend"
         @toggle-reaction="onToggleReaction"
       />
       <ChatRoomThreadListPanel

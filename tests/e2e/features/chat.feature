@@ -62,6 +62,22 @@ Feature: Chat
     When I close the thread side panel
     Then I should not see the thread side panel
 
+  Scenario: Edit sent message and persist after reload
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    When I send "E2E_EDIT_ORIGINAL" from the message composer
+    Then I should see message body "E2E_EDIT_ORIGINAL"
+    When I click edit on message body "E2E_EDIT_ORIGINAL"
+    Then I should see the edit composer active
+    When I submit the edit composer with "E2E_EDIT_UPDATED"
+    Then I should see message body "E2E_EDIT_UPDATED"
+    And I should see the edited label on message body "E2E_EDIT_UPDATED"
+    When I reload the current page
+    And I open the seeded test room
+    Then I should see message body "E2E_EDIT_UPDATED"
+    And I should see the edited label on message body "E2E_EDIT_UPDATED"
+
   Scenario: Reply composer and fallback rendering
     When I open the login page
     And I sign in with configured credentials

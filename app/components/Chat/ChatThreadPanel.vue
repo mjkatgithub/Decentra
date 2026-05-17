@@ -35,6 +35,7 @@ interface ThreadMessage {
     displayName: string;
     avatarUrl?: string;
   }>;
+  editTargetEventId?: string;
 }
 
 type MediaResolver = (media: {
@@ -51,15 +52,20 @@ const props = defineProps<{
   startedByName: string;
   messages: ThreadMessage[];
   currentUserId?: string;
+  canSendMessages?: boolean;
   disabled?: boolean;
   replyTo?: ThreadMessage["replyTo"] | null;
+  editTo?: { eventId: string; body: string } | null;
   resolveMediaBlobUrl?: MediaResolver;
 }>();
 
 const emit = defineEmits<{
   close: [];
   reply: [target: { eventId: string; senderName: string; body: string }];
+  edit: [target: { eventId: string; body: string }];
   cancelReply: [];
+  cancelEdit: [];
+  send: [];
   toggleReaction: [
     payload: {
       messageId: string;
@@ -105,10 +111,12 @@ const { translateText } = useAppI18n();
         class="min-h-0 flex-1"
         :messages="messages"
         :current-user-id="currentUserId"
+        :can-send-messages="canSendMessages"
         :resolve-media-blob-url="resolveMediaBlobUrl"
         is-thread-view
         :infinite-scroll-offset-px="80"
         @reply="emit('reply', $event)"
+        @edit="emit('edit', $event)"
         @toggle-reaction="emit('toggleReaction', $event)"
       />
     </div>
@@ -117,8 +125,11 @@ const { translateText } = useAppI18n();
       :room-id="roomId"
       :disabled="disabled"
       :reply-to="replyTo ?? null"
+      :edit-to="editTo ?? null"
       :thread-root-event-id="rootEventId"
       @cancel-reply="emit('cancelReply')"
+      @cancel-edit="emit('cancelEdit')"
+      @send="emit('send')"
     />
   </div>
 </template>
