@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Touch-friendly message actions on phones and tablets: tap a message row to
+  show the reply, reaction, and thread bar; dismiss via tap outside or
+  Escape; desktop keeps hover/focus reveal gated by `hover-capable` media
+  queries (#81)
 - Edit own sent text messages via Matrix `m.replace` with updated timeline
   body, edited label, power-level gating, and EN/DE composer UI (#75)
 - Unread message indicators in the channel list with Matrix SDK
