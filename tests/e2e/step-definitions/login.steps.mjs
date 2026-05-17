@@ -1,5 +1,6 @@
 import { Given, When, Then } from '@cucumber/cucumber'
 import { expect } from '@playwright/test'
+import { passwordField } from '../support/password-field.mjs'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
@@ -15,7 +16,7 @@ async function submitLogin(page, homeserverValue, usernameValue, passwordValue) 
   await page.goto(`${BASE_URL}/login`)
   await page.getByLabel(/Homeserver|Homeserver-URL/i).fill(homeserverValue)
   await page.getByLabel(/Username|Benutzername/i).fill(usernameValue)
-  await page.getByLabel(/Password|Passwort/i).fill(passwordValue)
+  await passwordField(page).fill(passwordValue)
   await page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
   await expect(page).toHaveURL(/\/chat/, { timeout: 45000 })
 }
@@ -41,7 +42,7 @@ When(
   'I log in with {string} and {string}',
   async function (username, password) {
     await this.page.getByLabel(/Username|Benutzername/i).fill(username)
-    await this.page.getByLabel(/Password|Passwort/i).fill(password)
+    await passwordField(this.page).fill(password)
     await this.page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
   }
 )
@@ -68,7 +69,7 @@ When('I log in with configured credentials', async function () {
 
   await this.page.getByLabel(/Homeserver|Homeserver-URL/i).fill(homeserverValue)
   await this.page.getByLabel(/Username|Benutzername/i).fill(usernameValue)
-  await this.page.getByLabel(/Password|Passwort/i).fill(passwordValue)
+  await passwordField(this.page).fill(passwordValue)
   await this.page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
 })
 
@@ -109,6 +110,5 @@ Then('I should see the signup form', async function () {
     .toBeVisible()
   await expect(this.page.getByLabel(/Username|Benutzername/i))
     .toBeVisible()
-  await expect(this.page.getByLabel(/Password|Passwort/i))
-    .toBeVisible()
+  await expect(passwordField(this.page)).toBeVisible()
 })

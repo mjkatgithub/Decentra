@@ -34,6 +34,7 @@ import {
   fetchMatrixDelegatedClientHints,
   resolveTrustedAppHttpsOrigin
 } from '~/composables/matrix/matrixOidcNative'
+import { authFormInputUi } from '~/constants/authFormInputUi'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 type SignupStep =
@@ -396,10 +397,15 @@ function clearForm() {
           </h1>
         </template>
 
-        <div class="space-y-4">
-          <UFormField :label="translateText('auth.homeserver')">
+        <div class="auth-form-fields space-y-4">
+          <UFormField
+            class="w-full"
+            :label="translateText('auth.homeserver')"
+          >
             <UInput
               v-model="baseUrl"
+              class="w-full"
+              :ui="authFormInputUi"
               placeholder="https://matrix.org"
               type="url"
               required
@@ -451,28 +457,42 @@ function clearForm() {
             class="space-y-4"
             @submit.prevent="handleSignup"
           >
-            <UFormField :label="translateText('auth.email')">
+            <UFormField
+              class="w-full"
+              :label="translateText('auth.email')"
+            >
               <UInput
                 v-model="email"
+                class="w-full"
+                :ui="authFormInputUi"
                 placeholder="name@example.org"
                 type="email"
                 required
               />
             </UFormField>
 
-            <UFormField :label="translateText('auth.username')">
+            <UFormField
+              class="w-full"
+              :label="translateText('auth.username')"
+            >
               <UInput
                 v-model="username"
+                class="w-full"
+                :ui="authFormInputUi"
                 placeholder="@user:matrix.org"
                 required
               />
             </UFormField>
 
-            <UFormField :label="translateText('auth.password')">
-              <UInput
+            <UFormField
+              class="w-full"
+              :label="translateText('auth.password')"
+            >
+              <AuthMaskedSecretInput
                 v-model="password"
-                type="password"
-                placeholder="••••••••"
+                secret-kind="password"
+                autocomplete="new-password"
+                placeholder="********"
                 required
               />
             </UFormField>
@@ -530,6 +550,8 @@ function clearForm() {
           >
             <UInput
               v-model="registrationTokenInput"
+              class="w-full"
+              :ui="authFormInputUi"
               type="password"
               autocomplete="off"
             />

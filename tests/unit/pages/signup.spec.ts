@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import SignupPage from '~/pages/signup.vue'
+import AuthMaskedSecretInput from '~/components/auth/MaskedSecretInput.vue'
 
 vi.mock('~/composables/matrix/matrixOidcNative', () => {
   return {
@@ -218,6 +219,11 @@ const NuxtLinkStub = {
   template: '<a><slot /></a>'
 }
 
+const UIconStub = {
+  props: ['name'],
+  template: '<span class="icon-stub" />'
+}
+
 const ClientOnlyStub = {
   template: '<span><slot /></span>'
 }
@@ -262,10 +268,14 @@ describe('signup page', () => {
           UInput: UInputStub,
           UAlert: UAlertStub,
           UButton: UButtonStub,
+          UIcon: UIconStub,
           NuxtLink: NuxtLinkStub,
           ClientOnly: ClientOnlyStub,
           SignupRecaptchaStep: SignupRecaptchaStepStub,
           SignupTermsStep: SignupTermsStepStub
+        },
+        components: {
+          AuthMaskedSecretInput
         }
       }
     })
@@ -286,6 +296,7 @@ describe('signup page', () => {
     await homeserverInput!.setValue('https://matrix.example.org')
     await usernameInput!.setValue('@alice:example.org')
     await passwordInput!.setValue('secret')
+    expect((passwordInput!.element as HTMLInputElement).value).toBe('******')
     await wrapper.find('form').trigger('submit.prevent')
 
     expect(startEmailRegistrationMock).toHaveBeenCalledWith(

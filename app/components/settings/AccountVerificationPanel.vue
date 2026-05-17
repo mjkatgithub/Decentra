@@ -771,18 +771,17 @@ async function submitRecoveryKey() {
       <p class="text-xs text-gray-500 dark:text-gray-400">
         {{ translateText('settings.verificationRecoveryHint') }}
       </p>
-      <label class="flex flex-col gap-2 text-sm">
-        <span class="font-medium">
-          {{ translateText('settings.verificationRecoveryKeyLabel') }}
-        </span>
-        <textarea
+      <UFormField
+        :label="translateText('settings.verificationRecoveryKeyLabel')"
+      >
+        <AuthMaskedSecretInput
           v-model="recoveryKeyInput"
-          rows="3"
+          secret-kind="recoveryKey"
+          multiline
+          :rows="3"
           autocomplete="off"
-          class="resize-y rounded-lg border border-gray-300 bg-white px-3 py-2
-                 font-mono text-xs dark:border-gray-700 dark:bg-gray-900"
         />
-      </label>
+      </UFormField>
       <UButton
         size="sm"
         color="primary"
