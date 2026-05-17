@@ -43,6 +43,7 @@ const lastReplyAvatarUrl = computed(() => {
 <template>
   <button
     type="button"
+    data-thread-preview
     class="mt-1 flex w-full max-w-xl items-center gap-2 rounded-md border
            border-gray-200 bg-gray-50/90 px-2 py-1 text-left text-xs
            transition hover:bg-gray-100 dark:border-gray-700

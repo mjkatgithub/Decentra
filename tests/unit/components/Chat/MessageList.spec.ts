@@ -1,6 +1,13 @@
-import { afterEach, beforeEach, describe, it } from 'vitest'
+import { afterEach, beforeEach, describe, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import ChatMessageList from '~/components/Chat/MessageList.vue'
+
+const canUseHover = ref(false)
+
+vi.mock('~/composables/useHoverCapable', () => ({
+  useHoverCapable: () => ({ canUseHover })
+}))
 
 const UButtonStub = {
   props: ['type', 'disabled'],
@@ -58,6 +65,7 @@ class IntersectionObserverMock {
 
 describe('MessageList', () => {
   beforeEach(() => {
+    canUseHover.value = false
     intersectionObserverRecords.length = 0
     globalThis.IntersectionObserver =
       IntersectionObserverMock as unknown as typeof IntersectionObserver
@@ -236,7 +244,91 @@ describe('MessageList', () => {
     const messageContainer = wrapper.find('[data-message-id="evt-hover"]')
     messageContainer.exists().should.equal(true)
     messageContainer.classes().should.include('group')
-    messageContainer.classes().should.include('hover:bg-gray-50')
+    messageContainer.classes().should.include('hover-capable:hover:bg-gray-50')
+  })
+
+  it('marks a message selected after activate on touch', async () => {
+    const wrapper = mountMessageList({
+      messages: [
+        {
+          id: 'evt-touch',
+          kind: 'message',
+          senderId: '@alice:example.org',
+          senderName: 'Alice',
+          body: 'Tap me'
+        }
+      ]
+    })
+
+    const messageContainer = wrapper.find('[data-message-id="evt-touch"]')
+    await messageContainer.trigger('pointerdown', {
+      clientX: 10,
+      clientY: 10
+    })
+    await messageContainer.trigger('pointerup', {
+      clientX: 12,
+      clientY: 11
+    })
+    await wrapper.vm.$nextTick()
+
+    messageContainer.attributes('data-message-selected').should.equal('true')
+    messageContainer.attributes('aria-selected').should.equal('true')
+  })
+
+  it('clears selection on Escape', async () => {
+    const wrapper = mountMessageList({
+      attachTo: document.body,
+      messages: [
+        {
+          id: 'evt-escape',
+          kind: 'message',
+          senderId: '@alice:example.org',
+          senderName: 'Alice',
+          body: 'Escape me'
+        }
+      ]
+    })
+
+    const messageContainer = wrapper.find('[data-message-id="evt-escape"]')
+    await messageContainer.trigger('pointerdown', { clientX: 0, clientY: 0 })
+    await messageContainer.trigger('pointerup', { clientX: 0, clientY: 0 })
+    await wrapper.vm.$nextTick()
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+
+    messageContainer.element.hasAttribute('data-message-selected')
+      .should.equal(false)
+    wrapper.unmount()
+  })
+
+  it('clears selection on outside pointerdown', async () => {
+    const wrapper = mountMessageList({
+      attachTo: document.body,
+      messages: [
+        {
+          id: 'evt-outside',
+          kind: 'message',
+          senderId: '@alice:example.org',
+          senderName: 'Alice',
+          body: 'Outside me'
+        }
+      ]
+    })
+
+    const messageContainer = wrapper.find('[data-message-id="evt-outside"]')
+    await messageContainer.trigger('pointerdown', { clientX: 0, clientY: 0 })
+    await messageContainer.trigger('pointerup', { clientX: 0, clientY: 0 })
+    await wrapper.vm.$nextTick()
+
+    document.body.dispatchEvent(
+      new PointerEvent('pointerdown', { bubbles: true })
+    )
+    await wrapper.vm.$nextTick()
+
+    messageContainer.element.hasAttribute('data-message-selected')
+      .should.equal(false)
+    wrapper.unmount()
   })
 
   it('emits reachTop when top sentinel intersects', async () => {

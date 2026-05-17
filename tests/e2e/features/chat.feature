@@ -84,6 +84,14 @@ Feature: Chat
     And I open the seeded test room
     And I click reply on message body "E2E_SEED_BASE_MESSAGE"
     Then I should see the reply composer with preview "E2E_SEED_BASE_MESSAGE"
+
+  Scenario: Reply via tap on mobile viewport
+    When I open the login page
+    And I sign in with configured credentials
+    And I use the mobile chat viewport
+    And I open the seeded test room
+    And I tap reply on message body "E2E_SEED_BASE_MESSAGE" on mobile
+    Then I should see the reply composer with preview "E2E_SEED_BASE_MESSAGE"
     When I cancel reply mode
     Then reply mode should be inactive
     And I should see a rendered reply for "E2E_REPLY_TO_VALID_EVENT"

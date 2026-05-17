@@ -1,6 +1,13 @@
-import { describe, it } from 'vitest'
+import { beforeEach, describe, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import ChatMessageItem from '~/components/Chat/MessageItem.vue'
+
+const canUseHover = ref(true)
+
+vi.mock('~/composables/useHoverCapable', () => ({
+  useHoverCapable: () => ({ canUseHover })
+}))
 
 const ChatMessageActionBarStub = {
   emits: ['reply', 'reaction-pick'],
@@ -30,6 +37,71 @@ function createMessage(overrides: Record<string, unknown> = {}) {
 }
 
 describe('MessageItem', () => {
+  beforeEach(() => {
+    canUseHover.value = true
+  })
+
+  it('exposes selected state for accessibility', () => {
+    const wrapper = mount(ChatMessageItem, {
+      props: {
+        message: createMessage(),
+        isSelected: true
+      },
+      global: {
+        stubs: {
+          ChatMessageActionBar: ChatMessageActionBarStub
+        }
+      }
+    })
+
+    const row = wrapper.get('[data-message-id="evt-message"]')
+    row.attributes('aria-selected').should.equal('true')
+    row.attributes('data-message-selected').should.equal('true')
+    row.classes().should.include('bg-gray-100')
+  })
+
+  it('emits activate on touch pointerup within tap threshold', async () => {
+    canUseHover.value = false
+    const wrapper = mount(ChatMessageItem, {
+      props: {
+        message: createMessage()
+      },
+      global: {
+        stubs: {
+          ChatMessageActionBar: ChatMessageActionBarStub
+        }
+      }
+    })
+
+    const row = wrapper.get('[data-message-id="evt-message"]')
+    await row.trigger('pointerdown', { clientX: 4, clientY: 4 })
+    await row.trigger('pointerup', { clientX: 6, clientY: 5 })
+
+    const activateEvents = wrapper.emitted('activate') ?? []
+    activateEvents.length.should.equal(1)
+  })
+
+  it('does not emit activate when pointer moves beyond tap threshold', async () => {
+    canUseHover.value = false
+    const wrapper = mount(ChatMessageItem, {
+      props: {
+        message: createMessage()
+      },
+      global: {
+        stubs: {
+          ChatMessageActionBar: ChatMessageActionBarStub
+        }
+      }
+    })
+
+    const row = wrapper.get('[data-message-id="evt-message"]')
+    await row.trigger('pointerdown', { clientX: 0, clientY: 0 })
+    await row.trigger('pointerup', { clientX: 40, clientY: 0 })
+
+    const activateEvents = wrapper.emitted('activate') ?? []
+    activateEvents.length.should.equal(0)
+  })
+
   it('renders reaction chips with count and own-state class', () => {
     const wrapper = mount(ChatMessageItem, {
       props: {

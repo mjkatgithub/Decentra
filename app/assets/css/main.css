@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
+@custom-variant hover-capable (@media (hover: hover) and (pointer: fine));
+
 /* Auth forms: UInput root is inline-flex and shrinks without w-full */
 .auth-form-fields div:has(> input),
 .auth-form-fields div:has(> textarea) {

@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import type { ChatThreadSummary } from "~/utils/chatTimeline";
 import ChatThreadPreview from "~/components/Chat/ChatThreadPreview.vue";
-import { computed } from "vue";
+import { useHoverCapable } from "~/composables/useHoverCapable";
+import {
+  isInteractiveMessageRowTarget,
+  isWithinMessageRowTapThreshold,
+} from "~/utils/messageRowPointer";
+import { computed, ref } from "vue";
 import { useAppI18n } from "~/composables/useAppI18n";
 
 interface MediaInfo {
@@ -55,11 +60,14 @@ const props = defineProps<{
   canSendMessages?: boolean;
   /** Hide thread affordances (when rendering inside thread panel) */
   isThreadView?: boolean;
+  isSelected?: boolean;
 }>();
 
 const { translateText } = useAppI18n();
+const { canUseHover } = useHoverCapable();
 
 const emit = defineEmits<{
+  activate: [];
   reply: [];
   edit: [];
   openLightbox: [];
@@ -102,6 +110,37 @@ function handlePickerReaction(emoji: string) {
   });
   emitToggleReaction(emoji, existingReaction?.ownReactionEventIds ?? []);
 }
+
+const pointerStartX = ref(0);
+const pointerStartY = ref(0);
+
+function onMessageRowPointerDown(pointerEvent: PointerEvent) {
+  if (canUseHover.value) {
+    return;
+  }
+  pointerStartX.value = pointerEvent.clientX;
+  pointerStartY.value = pointerEvent.clientY;
+}
+
+function onMessageRowPointerUp(pointerEvent: PointerEvent) {
+  if (canUseHover.value) {
+    return;
+  }
+  if (isInteractiveMessageRowTarget(pointerEvent.target)) {
+    return;
+  }
+  if (
+    !isWithinMessageRowTapThreshold(
+      pointerStartX.value,
+      pointerStartY.value,
+      pointerEvent.clientX,
+      pointerEvent.clientY,
+    )
+  ) {
+    return;
+  }
+  emit("activate");
+}
 </script>
 
 <template>
@@ -119,13 +158,22 @@ function handlePickerReaction(emoji: string) {
   <div
     v-else
     :data-message-id="message.id"
+    :data-message-selected="isSelected ? 'true' : undefined"
+    :aria-selected="isSelected ? 'true' : 'false'"
     :class="[
       'group relative -mx-2 rounded-lg px-2 py-1',
       'transition-colors duration-150',
-      'hover:bg-gray-50 dark:hover:bg-gray-900/60'
+      'hover-capable:hover:bg-gray-50',
+      'hover-capable:dark:hover:bg-gray-900/60',
+      isSelected
+        ? 'bg-gray-100 dark:bg-gray-800/80'
+        : '',
     ]"
+    @pointerdown="onMessageRowPointerDown"
+    @pointerup="onMessageRowPointerUp"
   >
     <ChatMessageActionBar
+      :visible="isSelected"
       :frequent-scope-key="props.currentUserId"
       :show-thread-button="!isThreadView"
       :show-edit-button="showEditButton"

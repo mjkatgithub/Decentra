@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import ChatMessageItem from "~/components/Chat/MessageItem.vue";
 import { useAppI18n } from "~/composables/useAppI18n";
 import type { ChatThreadSummary } from "~/utils/chatTimeline";
@@ -98,6 +104,53 @@ const bottomObserver = ref<IntersectionObserver | null>(null);
 const lastTopEmitAt = ref(0);
 const lastBottomEmitAt = ref(0);
 const observerCooldownMs = 200;
+const selectedMessageId = ref<string | null>(null);
+
+function selectMessage(messageId: string) {
+  selectedMessageId.value = messageId;
+}
+
+function clearSelection() {
+  selectedMessageId.value = null;
+}
+
+function isSelectionTarget(node: Node | null): boolean {
+  if (!(node instanceof Element)) {
+    return false;
+  }
+  return Boolean(
+    node.closest("[data-message-id]") ||
+      node.closest("[data-message-action-bar]"),
+  );
+}
+
+function onDocumentPointerDown(pointerEvent: PointerEvent) {
+  if (selectedMessageId.value === null) {
+    return;
+  }
+  const target = pointerEvent.target;
+  if (!(target instanceof Node)) {
+    return;
+  }
+  if (isSelectionTarget(target)) {
+    return;
+  }
+  clearSelection();
+}
+
+function onDocumentKeyDown(keyEvent: KeyboardEvent) {
+  if (keyEvent.key !== "Escape" || selectedMessageId.value === null) {
+    return;
+  }
+  clearSelection();
+}
+
+function onScrollContainerClick(clickEvent: MouseEvent) {
+  if (clickEvent.target !== scrollContainer.value) {
+    return;
+  }
+  clearSelection();
+}
 
 function needsBlobFetch(media: MediaInfo): boolean {
   return (
@@ -338,13 +391,33 @@ watch(
 );
 
 onMounted(async () => {
+  document.addEventListener("pointerdown", onDocumentPointerDown);
+  document.addEventListener("keydown", onDocumentKeyDown);
   await nextTick();
   setupObservers();
 });
 
 onBeforeUnmount(() => {
   disconnectObservers();
+  document.removeEventListener("pointerdown", onDocumentPointerDown);
+  document.removeEventListener("keydown", onDocumentKeyDown);
 });
+
+watch(
+  () => props.messages,
+  (messages) => {
+    if (selectedMessageId.value === null) {
+      return;
+    }
+    const stillPresent = messages.some((message) => {
+      return message.id === selectedMessageId.value;
+    });
+    if (!stillPresent) {
+      clearSelection();
+    }
+  },
+  { deep: false },
+);
 
 watch(
   [topSentinel, bottomSentinel, scrollContainer],
@@ -360,6 +433,7 @@ watch(
   <div
     ref="scrollContainer"
     class="flex flex-1 flex-col overflow-y-auto p-4"
+    @click="onScrollContainerClick"
   >
     <div ref="topSentinel" class="h-px w-full" />
     <template v-if="messages.length === 0">
@@ -376,6 +450,8 @@ watch(
           :current-user-id="props.currentUserId"
           :can-send-messages="props.canSendMessages"
           :is-thread-view="props.isThreadView"
+          :is-selected="selectedMessageId === msg.id"
+          @activate="selectMessage(msg.id)"
           @reply="emitReplyTarget(msg)"
           @edit="emitEditTarget(msg)"
           @open-thread="emitThreadTarget(msg)"
