@@ -126,6 +126,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `chatTimeline`, and unit coverage for thread mapping, summaries, and edits
 - Synapse E2E scenario: open thread, post reply, reopen and verify history
   (#10)
+- Masked secret inputs with show/hide toggle for login and sign-up passwords
+  and account recovery keys: reusable `MaskedSecretInput` component,
+  `useMaskedSecretDisplay` composable, `*` masking (not native password
+  bullets), EN/DE `aria-label` / `aria-pressed`, and unit coverage (#79)
 
 ### Changed
 
@@ -177,6 +181,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runtime path resolution issues
 - Chat composer and Matrix send path accept optional thread root and reply
   targets for in-thread replies (#10)
+- Login, sign-up, and account verification secret fields now share full-width
+  Nuxt UI input styling via `authFormInputUi` and app config; password and
+  recovery-key toggles are icon-only (no button border/background) (#79)
 
 ### Fixed
 
