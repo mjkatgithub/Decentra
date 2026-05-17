@@ -32,6 +32,7 @@ interface ChatMessage {
   id: string;
   kind: "message" | "notice";
   isDecryptionError?: boolean;
+  isMessageDeleted?: boolean;
   senderId: string;
   senderName: string;
   avatarUrl?: string;
@@ -634,6 +635,7 @@ function loadThreadPanelMessages() {
     },
     getMediaUrl,
     buildNoticeText,
+    buildDeletedMessageText,
     mode: {
       kind: "thread",
       rootEventId: threadState.rootEventId,
@@ -892,6 +894,7 @@ function loadMessages(
     },
     getMediaUrl,
     buildNoticeText,
+    buildDeletedMessageText,
   });
   allMessages.value = mappedMessages;
 
@@ -995,6 +998,10 @@ function patchMessageReactions(roomId: string) {
 
 function isReactionRelatedEvent(eventType: string): boolean {
   return eventType === "m.reaction" || eventType === "m.room.redaction";
+}
+
+function buildDeletedMessageText(): string {
+  return translateText("chat.messageDeleted");
 }
 
 async function onToggleReaction(payload: {
@@ -1370,8 +1377,13 @@ watch(
       }
       if (room?.roomId === selectedRoomId.value) {
         const eventType = timelineEvent?.getType?.() ?? "";
-        if (isReactionRelatedEvent(eventType)) {
+        if (eventType === "m.reaction") {
           patchMessageReactions(room.roomId);
+          return;
+        }
+        if (eventType === "m.room.redaction") {
+          patchMessageReactions(room.roomId);
+          scheduleLoadMessages(room.roomId);
           return;
         }
         scheduleLoadMessages(room.roomId);
@@ -1386,8 +1398,13 @@ watch(
         selectedRoomId.value
       ) {
         const eventType = event?.getType?.() ?? "";
-        if (isReactionRelatedEvent(eventType)) {
+        if (eventType === "m.reaction") {
           patchMessageReactions(selectedRoomId.value);
+          return;
+        }
+        if (eventType === "m.room.redaction") {
+          patchMessageReactions(selectedRoomId.value);
+          scheduleLoadMessages(selectedRoomId.value);
           return;
         }
         scheduleLoadMessages(selectedRoomId.value);

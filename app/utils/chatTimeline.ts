@@ -34,6 +34,7 @@ export interface ChatTimelineMessage {
   id: string
   kind: 'message' | 'notice'
   isDecryptionError?: boolean
+  isMessageDeleted?: boolean
   senderId: string
   senderName: string
   avatarUrl?: string
@@ -89,6 +90,7 @@ interface MapTimelineArgs {
     timelineEvent: Record<string, any>,
     room: Record<string, any>
   ) => string
+  buildDeletedMessageText: () => string
 }
 
 export type TimelineMappingMode =
@@ -347,6 +349,7 @@ function shouldIncludeMessageInThreadView(
   timelineEvent: TimelineEventRecord,
   rootEventId: string,
   relationIndex: MessageRelationIndex,
+  redactedEventIds: Set<string>,
 ): boolean {
   const eventType = timelineEvent.getType?.() ?? ''
   const eventId = timelineEvent.getId?.() ?? ''
@@ -356,10 +359,15 @@ function shouldIncludeMessageInThreadView(
   if (eventId === rootEventId) {
     return true
   }
-  if (eventType !== 'm.room.message') {
+  const isChatMessageType =
+    eventType === 'm.room.message' || eventType === 'm.room.encrypted'
+  if (!isChatMessageType) {
     return false
   }
-  if (isUndecryptableEvent(timelineEvent)) {
+  if (
+    isUndecryptableEvent(timelineEvent) &&
+    !isRedactedMessageEvent(timelineEvent, redactedEventIds)
+  ) {
     return false
   }
   if (relationIndex.threadRootByMessageId.get(eventId) === rootEventId) {
@@ -377,8 +385,10 @@ export function buildThreadSummariesByRoot(
   getMemberAvatarUrl?: (
     member: Record<string, any>,
   ) => string | undefined,
+  buildDeletedMessageText: () => string = () => 'Message deleted',
 ): Map<string, ChatThreadSummary> {
   const raw = room.getLiveTimeline().getEvents()
+  const redactedEventIds = getRedactedEventIds(raw)
   const messageEvents = collectMessageTimelineEvents(raw)
   const relationIndex = buildMessageRelationIndex(messageEvents)
   const byRoot = new Map<
@@ -398,10 +408,20 @@ export function buildThreadSummariesByRoot(
     const senderUserId = timelineEvent.getSender?.() ?? ''
     const senderMember = room.getMember(senderUserId)
     const senderName = senderMember?.name || senderUserId
+    const redactedMessage = isRedactedMessageEvent(
+      timelineEvent,
+      redactedEventIds,
+    )
+    const undecryptableMessage =
+      !redactedMessage && isUndecryptableEvent(timelineEvent)
     const body = getMessageBody(
       timelineEvent,
       senderName,
-      false,
+      undecryptableMessage,
+      {
+        redactedMessage,
+        deletedMessageText: buildDeletedMessageText(),
+      },
     )
     const originServerTs = Number(timelineEvent.getTs?.() ?? 0)
     const previous = byRoot.get(rootId)
@@ -440,9 +460,12 @@ export function mapTimelineEventsToMessages({
   getMemberAvatarUrl,
   getMediaUrl,
   buildNoticeText,
+  buildDeletedMessageText,
   mode = { kind: 'main' } as TimelineMappingMode,
 }: MapTimelineArgs & { mode?: TimelineMappingMode }): ChatTimelineMessage[] {
   const allTimelineEvents = room.getLiveTimeline().getEvents()
+  const redactedEventIds = getRedactedEventIds(allTimelineEvents)
+  const deletedMessageText = buildDeletedMessageText()
   const messageEvents = collectMessageTimelineEvents(allTimelineEvents)
   const relationIndex = buildMessageRelationIndex(messageEvents)
   const reactionSummaryByEventId = buildReactionSummaryByEventId(
@@ -451,7 +474,11 @@ export function mapTimelineEventsToMessages({
   )
   const threadSummariesByRoot =
     mode.kind === 'main'
-      ? buildThreadSummariesByRoot(room, getMemberAvatarUrl)
+      ? buildThreadSummariesByRoot(
+          room,
+          getMemberAvatarUrl,
+          buildDeletedMessageText,
+        )
       : null
   const threadRootEventId =
     mode.kind === 'thread' ? mode.rootEventId : undefined
@@ -473,6 +500,7 @@ export function mapTimelineEventsToMessages({
             timelineEvent,
             mode.rootEventId,
             relationIndex,
+            redactedEventIds,
           )
         })
 
@@ -525,14 +553,24 @@ export function mapTimelineEventsToMessages({
       const senderMember = room.getMember(senderUserId)
       const senderName = senderMember?.name || senderUserId
       const currentEventId = timelineEvent.getId?.() ?? ''
-      const undecryptableMessage = isUndecryptableEvent(timelineEvent)
-      const isMessageEvent = eventType === 'm.room.message' || undecryptableMessage
+      const redactedMessage = isRedactedMessageEvent(
+        timelineEvent,
+        redactedEventIds,
+      )
+      const undecryptableMessage =
+        !redactedMessage && isUndecryptableEvent(timelineEvent)
+      const isMessageEvent =
+        eventType === 'm.room.message' || undecryptableMessage || redactedMessage
       const body = isMessageEvent
-        ? getMessageBody(timelineEvent, senderName, undecryptableMessage)
+        ? getMessageBody(timelineEvent, senderName, undecryptableMessage, {
+            redactedMessage,
+            deletedMessageText,
+          })
         : buildNoticeText(timelineEvent, room)
 
       const readBy = eventType === 'm.room.message' &&
         !undecryptableMessage &&
+        !redactedMessage &&
         currentEventId
         ? roomMembers
           .filter((member: Record<string, any>) => member.userId !== senderUserId)
@@ -566,6 +604,8 @@ export function mapTimelineEventsToMessages({
             content,
             room,
             timelineEventsById,
+            redactedEventIds,
+            deletedMessageText,
             threadRootEventId,
           )
         : undefined
@@ -587,12 +627,18 @@ export function mapTimelineEventsToMessages({
         }
       }
 
+      const messageKind: ChatTimelineMessage['kind'] =
+        eventType === 'm.room.message' &&
+        !undecryptableMessage &&
+        !redactedMessage
+          ? 'message'
+          : 'notice'
+
       return {
         id: currentEventId,
-        kind: eventType === 'm.room.message' && !undecryptableMessage
-          ? 'message'
-          : 'notice',
+        kind: messageKind,
         isDecryptionError: undecryptableMessage,
+        isMessageDeleted: redactedMessage,
         senderId: senderUserId,
         senderName,
         avatarUrl: senderMember ? getMemberAvatarUrl(senderMember) : undefined,
@@ -602,7 +648,9 @@ export function mapTimelineEventsToMessages({
         reactions,
         readBy,
         isEdited: relationSnapshot?.isReplacement === true,
-        editTargetEventId: eventType === 'm.room.message' && !undecryptableMessage
+        editTargetEventId: eventType === 'm.room.message' &&
+          !undecryptableMessage &&
+          !redactedMessage
           ? (relationSnapshot?.replaceTargetId ?? currentEventId)
           : undefined,
         originServerTs: relationIndex.displayTsByEventId.get(currentEventId)
@@ -612,18 +660,27 @@ export function mapTimelineEventsToMessages({
       const senderUserId = timelineEvent.getSender?.() ?? ''
       const senderMember = room.getMember(senderUserId)
       const senderName = senderMember?.name || senderUserId
-      return {
-        id: timelineEvent.getId?.() ?? `${timelineEvent.getTs?.() ?? Date.now()}`,
+      const currentEventId = timelineEvent.getId?.() ?? ''
+      const redactedMessage = isRedactedMessageEvent(
+        timelineEvent,
+        redactedEventIds,
+      )
+      const fallbackNotice: ChatTimelineMessage = {
+        id: currentEventId || `${timelineEvent.getTs?.() ?? Date.now()}`,
         kind: 'notice',
-        isDecryptionError: true,
+        isDecryptionError: !redactedMessage,
+        isMessageDeleted: redactedMessage,
         senderId: senderUserId,
         senderName,
         avatarUrl: senderMember ? getMemberAvatarUrl(senderMember) : undefined,
-        body: buildUndecryptableMessageText(senderName),
+        body: redactedMessage
+          ? deletedMessageText
+          : buildUndecryptableMessageText(senderName),
         reactions: [],
         readBy: [],
         originServerTs: Number(timelineEvent.getTs?.() ?? 0),
       }
+      return fallbackNotice
     }
   })
 
@@ -663,13 +720,22 @@ export interface BuildRoomThreadNavOptions {
   nowMs?: number
 }
 
-function threadTitleFromRootEvent(rootEvent: Record<string, any> | undefined): string {
+function threadTitleFromRootEvent(
+  rootEvent: Record<string, any> | undefined,
+  redactedEventIds: Set<string>,
+  deletedMessageText: string,
+): string {
   if (!rootEvent) {
     return 'Thread'
   }
   const senderUserId = rootEvent.getSender?.() ?? ''
-  const undecryptableMessage = isUndecryptableEvent(rootEvent)
-  const body = getMessageBody(rootEvent, senderUserId, undecryptableMessage)
+  const redactedMessage = isRedactedMessageEvent(rootEvent, redactedEventIds)
+  const undecryptableMessage =
+    !redactedMessage && isUndecryptableEvent(rootEvent)
+  const body = getMessageBody(rootEvent, senderUserId, undecryptableMessage, {
+    redactedMessage,
+    deletedMessageText,
+  })
   const firstLine = body.split('\n')[0]?.trim() ?? ''
   const clipped = firstLine.length > 120 ? `${firstLine.slice(0, 117)}...` : firstLine
   return clipped || 'Thread'
@@ -682,8 +748,10 @@ export function buildRoomThreadNavEntries(
   room: Record<string, any>,
   options?: BuildRoomThreadNavOptions,
 ): ThreadNavEntry[] {
+  const allEvents = room.getLiveTimeline().getEvents()
+  const redactedEventIds = getRedactedEventIds(allEvents)
   const summaries = buildThreadSummariesByRoot(room)
-  const typed = filterTimelineEventsByType(room.getLiveTimeline().getEvents())
+  const typed = filterTimelineEventsByType(allEvents)
   const eventById = new Map<string, Record<string, any>>()
   for (const timelineEvent of typed) {
     const eventId = timelineEvent.getId?.()
@@ -702,7 +770,11 @@ export function buildRoomThreadNavEntries(
       summary.lastReply?.originServerTs ?? Number(rootEvent?.getTs?.() ?? 0)
     entries.push({
       rootEventId: rootId,
-      title: threadTitleFromRootEvent(rootEvent),
+      title: threadTitleFromRootEvent(
+        rootEvent,
+        redactedEventIds,
+        'Message deleted',
+      ),
       replyCount: summary.replyCount,
       lastActivityTs: lastTs,
       lastReplySenderName: summary.lastReply?.senderName,
@@ -866,11 +938,23 @@ function readTextBodyFromContentRecord(
   return undefined
 }
 
+export interface GetMessageBodyOptions {
+  redactedMessage?: boolean
+  deletedMessageText?: string
+}
+
 export function getMessageBody(
   timelineEvent: Record<string, any>,
   senderName: string,
-  undecryptableMessage: boolean
+  undecryptableMessage: boolean,
+  messageBodyOptions?: GetMessageBodyOptions,
 ): string {
+  if (
+    messageBodyOptions?.redactedMessage &&
+    messageBodyOptions.deletedMessageText
+  ) {
+    return messageBodyOptions.deletedMessageText
+  }
   if (undecryptableMessage) {
     return buildUndecryptableMessageText(senderName)
   }
@@ -887,6 +971,8 @@ function buildReplyMetadata(
   content: Record<string, any>,
   room: Record<string, any>,
   timelineEventsById: Map<string, Record<string, any>>,
+  redactedEventIds: Set<string>,
+  deletedMessageText: string,
   threadRootEventId?: string,
 ): ChatTimelineReply | undefined {
   const replyEventId = getInReplyToEventId(
@@ -922,16 +1008,26 @@ function buildReplyMetadata(
   const replySenderId = replyTargetEvent.getSender?.() ?? ''
   const replySenderMember = room.getMember?.(replySenderId)
   const replySenderName = replySenderMember?.name || replySenderId || 'Unknown user'
-  const replyUndecryptable = isUndecryptableEvent(replyTargetEvent)
+  const replyRedacted = isRedactedMessageEvent(
+    replyTargetEvent,
+    redactedEventIds,
+  )
+  const replyUndecryptable =
+    !replyRedacted && isUndecryptableEvent(replyTargetEvent)
 
   return {
     eventId: replyEventId,
     senderName: replySenderName,
-    body: getMessageBody(replyTargetEvent, replySenderName, replyUndecryptable)
+    body: getMessageBody(replyTargetEvent, replySenderName, replyUndecryptable, {
+      redactedMessage: replyRedacted,
+      deletedMessageText,
+    }),
   }
 }
 
-function getRedactedEventIds(timelineEvents: TimelineEventRecord[]): Set<string> {
+export function getRedactedEventIds(
+  timelineEvents: TimelineEventRecord[],
+): Set<string> {
   const redactedEventIds = new Set<string>()
   for (const timelineEvent of timelineEvents) {
     const eventType = timelineEvent.getType?.() ?? ''
@@ -946,6 +1042,20 @@ function getRedactedEventIds(timelineEvents: TimelineEventRecord[]): Set<string>
     }
   }
   return redactedEventIds
+}
+
+export function isRedactedMessageEvent(
+  timelineEvent: TimelineEventRecord,
+  redactedEventIds: Set<string>,
+): boolean {
+  const eventId = timelineEvent.getId?.() ?? ''
+  if (eventId && redactedEventIds.has(eventId)) {
+    return true
+  }
+  if (timelineEvent.isRedacted?.()) {
+    return true
+  }
+  return false
 }
 
 function getReactionData(

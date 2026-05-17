@@ -4,6 +4,8 @@ import {
   resolveTimelineWindowSelection
 } from '~/utils/chatTimeline'
 
+const buildDeletedMessageText = () => 'Message deleted'
+
 function createTimelineEvent(
   id: string,
   type: string,
@@ -64,6 +66,7 @@ describe('chatTimeline integration', () => {
       ownUserId: '@me:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => 'Room updated'
     })
 
@@ -75,6 +78,45 @@ describe('chatTimeline integration', () => {
     mapped[1]?.isDecryptionError.should.equal(true)
     mapped[1]?.body.should.include('could not be decrypted')
     mapped[2]?.body.should.equal('Room updated')
+  })
+
+  it('maps redacted encrypted message to deleted tombstone', () => {
+    const encryptedEvent = {
+      ...createTimelineEvent(
+        'evt_redacted_enc',
+        'm.room.encrypted',
+        '@alice:example.org',
+      ),
+      isDecryptionFailure: () => true,
+    }
+    const redactionEvent = {
+      getId: () => 'evt_redact',
+      getType: () => 'm.room.redaction',
+      getRedacts: () => 'evt_redacted_enc',
+      getContent: () => ({}),
+    }
+    const room = {
+      getLiveTimeline: () => ({
+        getEvents: () => [encryptedEvent, redactionEvent],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const mapped = mapTimelineEventsToMessages({
+      room,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildDeletedMessageText,
+      buildNoticeText: () => 'ignored',
+    })
+
+    mapped.length.should.equal(1)
+    mapped[0]!.body.should.equal('Message deleted')
+    mapped[0]!.isMessageDeleted!.should.equal(true)
+    mapped[0]!.isDecryptionError!.should.equal(false)
   })
 
   it('maps mixed timeline with text and image messages', () => {
@@ -112,6 +154,7 @@ describe('chatTimeline integration', () => {
       ownUserId: '@me:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: (mxc: string) => `http://cdn/${mxc.split('//')[1]}`,
+      buildDeletedMessageText,
       buildNoticeText: () => 'ignored'
     })
 
@@ -149,6 +192,7 @@ describe('chatTimeline integration', () => {
       ownUserId: '@me:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => 'ignored'
     })
 
@@ -218,6 +262,7 @@ describe('chatTimeline integration', () => {
       ownUserId: '@me:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => ''
     })
 

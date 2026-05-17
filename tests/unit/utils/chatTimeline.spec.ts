@@ -5,10 +5,14 @@ import {
   buildThreadSummariesByRoot,
   buildUndecryptableMessageText,
   getMessageBody,
+  getRedactedEventIds,
+  isRedactedMessageEvent,
   isUndecryptableEvent,
   mapTimelineEventsToMessages,
   resolveTimelineWindowSelection
 } from '~/utils/chatTimeline'
+
+const buildDeletedMessageText = () => 'Message deleted'
 
 describe('chatTimeline helpers', () => {
   it('detects undecryptable encrypted events', () => {
@@ -67,6 +71,39 @@ describe('chatTimeline helpers', () => {
     body.should.equal('edited message')
   })
 
+  it('returns tombstone text for redacted messages', () => {
+    const body = getMessageBody(
+      { getContent: () => ({}) },
+      'Alice',
+      true,
+      { redactedMessage: true, deletedMessageText: 'Message deleted' },
+    )
+    body.should.equal('Message deleted')
+    body.should.not.include('could not be decrypted')
+  })
+
+  it('collects redacted event ids from redaction events', () => {
+    const ids = getRedactedEventIds([
+      {
+        getType: () => 'm.room.redaction',
+        getRedacts: () => 'msg_target',
+      },
+    ])
+    ids.has('msg_target').should.equal(true)
+  })
+
+  it('detects redacted messages via event id set or SDK flag', () => {
+    const redactedIds = new Set(['msg_a'])
+    isRedactedMessageEvent(
+      { getId: () => 'msg_a' },
+      redactedIds,
+    ).should.equal(true)
+    isRedactedMessageEvent(
+      { getId: () => 'msg_b', isRedacted: () => true },
+      new Set(),
+    ).should.equal(true)
+  })
+
   it('maps m.image messages with mxcUrl and isEncrypted', () => {
     const mockRoom = {
       getLiveTimeline: () => ({
@@ -95,6 +132,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: '@bob:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: (mxc: string) => `http://server/thumb/${mxc.split('//')[1]}`,
+      buildDeletedMessageText,
       buildNoticeText: () => ''
     })
 
@@ -133,6 +171,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: '@bob:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => 'http://server/thumb/gif123',
+      buildDeletedMessageText,
       buildNoticeText: () => ''
     })
 
@@ -182,6 +221,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: '@bob:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => 'http://server/thumb/enc',
+      buildDeletedMessageText,
       buildNoticeText: () => ''
     })
 
@@ -239,6 +279,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: '@me:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => ''
     })
 
@@ -278,6 +319,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: '@me:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => ''
     })
 
@@ -285,6 +327,190 @@ describe('chatTimeline helpers', () => {
     messages[0]!.replyTo!.eventId.should.equal('evt_not_found')
     messages[0]!.replyTo!.senderName.should.equal('Unknown user')
     messages[0]!.replyTo!.body.should.equal('Original message unavailable.')
+  })
+
+  it('maps redacted encrypted message to deleted tombstone', () => {
+    const encryptedEvent = {
+      getType: () => 'm.room.encrypted',
+      getWireType: () => 'm.room.encrypted',
+      getSender: () => '@alice:example.org',
+      getId: () => 'evt_enc_deleted',
+      getTs: () => 1000,
+      isDecryptionFailure: () => true,
+    }
+    const redactionEvent = {
+      getType: () => 'm.room.redaction',
+      getRedacts: () => 'evt_enc_deleted',
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [encryptedEvent, redactionEvent],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildDeletedMessageText,
+      buildNoticeText: () => '',
+    })
+
+    messages.length.should.equal(1)
+    messages[0]!.body.should.equal('Message deleted')
+    messages[0]!.isMessageDeleted!.should.equal(true)
+    messages[0]!.isDecryptionError!.should.equal(false)
+    messages[0]!.body.should.not.include('could not be decrypted')
+  })
+
+  it('maps redacted plaintext with empty body to tombstone', () => {
+    const deletedMessage = {
+      getType: () => 'm.room.message',
+      getSender: () => '@alice:example.org',
+      getId: () => 'evt_plain_deleted',
+      getTs: () => 1000,
+      getContent: () => ({}),
+      isDecryptionFailure: () => false,
+    }
+    const redactionEvent = {
+      getType: () => 'm.room.redaction',
+      getRedacts: () => 'evt_plain_deleted',
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [deletedMessage, redactionEvent],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildDeletedMessageText,
+      buildNoticeText: () => '',
+    })
+
+    messages.length.should.equal(1)
+    messages[0]!.body.should.equal('Message deleted')
+    messages[0]!.isMessageDeleted!.should.equal(true)
+    messages[0]!.body.should.not.equal('Unsupported message content.')
+  })
+
+  it('shows tombstone in reply preview when target was redacted', () => {
+    const originalEvent = {
+      getType: () => 'm.room.encrypted',
+      getWireType: () => 'm.room.encrypted',
+      getSender: () => '@alice:example.org',
+      getId: () => 'evt_redacted_target',
+      getTs: () => 1000,
+      isDecryptionFailure: () => true,
+    }
+    const replyEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@bob:example.org',
+      getId: () => 'evt_reply_redacted',
+      getTs: () => 2000,
+      getContent: () => ({
+        body: 'Still here',
+        msgtype: 'm.text',
+        'm.relates_to': {
+          'm.in_reply_to': { event_id: 'evt_redacted_target' },
+        },
+      }),
+      isDecryptionFailure: () => false,
+    }
+    const redactionEvent = {
+      getType: () => 'm.room.redaction',
+      getRedacts: () => 'evt_redacted_target',
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [originalEvent, replyEvent, redactionEvent],
+      }),
+      getMembers: () => [],
+      getMember: (userId: string) => {
+        if (userId === '@alice:example.org') {
+          return { name: 'Alice' }
+        }
+        return { name: 'Bob' }
+      },
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildDeletedMessageText,
+      buildNoticeText: () => '',
+    })
+
+    const reply = messages.find((message) => message.id === 'evt_reply_redacted')
+    reply!.replyTo!.body.should.equal('Message deleted')
+  })
+
+  it('includes redacted encrypted reply in thread view', () => {
+    const rootEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@alice:example.org',
+      getId: () => 'evt_thread_root',
+      getTs: () => 1000,
+      getContent: () => ({ body: 'Root', msgtype: 'm.text' }),
+      isDecryptionFailure: () => false,
+    }
+    const encryptedReply = {
+      getType: () => 'm.room.encrypted',
+      getWireType: () => 'm.room.encrypted',
+      getSender: () => '@bob:example.org',
+      getId: () => 'evt_thread_reply_enc',
+      getTs: () => 2000,
+      isDecryptionFailure: () => true,
+      getContent: () => ({
+        'm.relates_to': {
+          rel_type: 'm.thread',
+          event_id: 'evt_thread_root',
+          is_falling_back: true,
+          'm.in_reply_to': { event_id: 'evt_thread_root' },
+        },
+      }),
+    }
+    const redactionEvent = {
+      getType: () => 'm.room.redaction',
+      getRedacts: () => 'evt_thread_reply_enc',
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [rootEvent, encryptedReply, redactionEvent],
+      }),
+      getMembers: () => [],
+      getMember: (userId: string) => ({ name: userId }),
+      hasUserReadEvent: () => false,
+    }
+
+    const threadMessages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildDeletedMessageText,
+      buildNoticeText: () => '',
+      mode: { kind: 'thread', rootEventId: 'evt_thread_root' },
+    })
+
+    const deletedReply = threadMessages.find(
+      (message) => message.id === 'evt_thread_reply_enc',
+    )
+    deletedReply!.body.should.equal('Message deleted')
+    deletedReply!.isMessageDeleted!.should.equal(true)
   })
 
   it('aggregates reactions by emoji and own user', () => {
@@ -404,6 +630,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: '@me:example.org',
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => ''
     })
     messages.length.should.equal(1)
@@ -488,6 +715,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
     })
 
@@ -538,6 +766,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
       mode: { kind: 'thread', rootEventId: 'evt_root' },
     })
@@ -590,6 +819,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
       mode: { kind: 'thread', rootEventId: 'evt_root' },
     })
@@ -934,6 +1164,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
     })
 
@@ -987,6 +1218,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
     })
 
@@ -1047,6 +1279,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
     })
 
@@ -1128,6 +1361,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
     })
 
@@ -1139,6 +1373,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
       mode: { kind: 'thread', rootEventId: 'evt_root' },
     })
@@ -1206,6 +1441,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
     })
 
@@ -1217,6 +1453,7 @@ describe('chatTimeline helpers', () => {
       ownUserId: undefined,
       getMemberAvatarUrl: () => undefined,
       getMediaUrl: () => undefined,
+      buildDeletedMessageText,
       buildNoticeText: () => '',
       mode: { kind: 'thread', rootEventId: 'evt_root' },
     })

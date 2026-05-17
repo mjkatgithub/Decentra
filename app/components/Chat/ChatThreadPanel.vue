@@ -7,6 +7,7 @@ interface ThreadMessage {
   id: string;
   kind: "message" | "notice";
   isDecryptionError?: boolean;
+  isMessageDeleted?: boolean;
   senderId: string;
   senderName: string;
   avatarUrl?: string;

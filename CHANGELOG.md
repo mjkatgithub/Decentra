@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Deleted-message tombstone in chat timeline and thread panel when
+  messages are redacted, instead of a misleading decryption-failure
+  notice (#82)
 - Touch-friendly message actions on phones and tablets: tap a message row to
   show the reply, reaction, and thread bar; dismiss via tap outside or
   Escape; desktop keeps hover/focus reveal gated by `hover-capable` media
