@@ -1,5 +1,6 @@
 import { When, Then } from '@cucumber/cucumber'
 import { expect } from '@playwright/test'
+import { passwordField } from '../support/password-field.mjs'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const MAILHOG_BASE =
@@ -77,8 +78,7 @@ When('I self-register with a new address on the e2e homeserver', async function 
     .fill(E2E_HS)
   await this.page.getByLabel(/Username|Benutzername/i).first()
     .fill(this.signupLocalpart)
-  await this.page.getByLabel(/Password|Passwort/i).first()
-    .fill(E2E_PASSWORD)
+  await passwordField(this.page).fill(E2E_PASSWORD)
   await this.page.getByRole('button', { name: /Sign up|Registrieren/i })
     .last()
     .click()
