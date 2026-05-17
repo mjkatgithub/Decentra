@@ -61,6 +61,7 @@ describe('MessageInput', () => {
     const sendMessage = vi.fn(async () => undefined)
     ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
       sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
       sendImageMessage
     })
 
@@ -86,6 +87,7 @@ describe('MessageInput', () => {
     const sendMessage = vi.fn(async () => undefined)
     ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
       sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
       sendImageMessage
     })
 
@@ -118,6 +120,7 @@ describe('MessageInput', () => {
     const sendMessage = vi.fn(async () => undefined)
     ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
       sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
       sendImageMessage
     })
 
@@ -144,6 +147,7 @@ describe('MessageInput', () => {
     const sendMessage = vi.fn(async () => undefined)
     ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
       sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
       sendImageMessage
     })
 
@@ -172,6 +176,7 @@ describe('MessageInput', () => {
     const sendMessage = vi.fn(async () => undefined)
     ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
       sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
       sendImageMessage
     })
 
@@ -198,6 +203,7 @@ describe('MessageInput', () => {
     const sendMessage = vi.fn(async () => undefined)
     ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
       sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
       sendImageMessage
     })
 
@@ -218,5 +224,60 @@ describe('MessageInput', () => {
       threadRootEventId: '$root-event',
       replyTo: { eventId: '$prev' }
     })
+  })
+
+  it('prefills and sends edit message with sendEditMessage', async () => {
+    const sendEditMessage = vi.fn(async () => undefined)
+    const sendMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
+      sendMessage,
+      sendEditMessage,
+      sendImageMessage: vi.fn(async () => undefined)
+    })
+
+    const wrapper = mountInput({
+      editTo: {
+        eventId: 'evt-original',
+        body: 'Original text'
+      }
+    })
+
+    const input = wrapper.find('input[type="text"]')
+    ;(input.element as HTMLInputElement).value.should.equal('Original text')
+    await input.setValue('Updated text')
+    await wrapper.find('form').trigger('submit')
+
+    sendEditMessage.mock.calls.length.should.equal(1)
+    sendEditMessage.mock.calls[0]?.[0].should.equal('!room:example.org')
+    sendEditMessage.mock.calls[0]?.[1].should.equal('Updated text')
+    sendEditMessage.mock.calls[0]?.[2].should.equal('evt-original')
+
+    const cancelEditEvents = wrapper.emitted('cancelEdit') || []
+    cancelEditEvents.length.should.equal(1)
+  })
+
+  it('emits cancelEdit when clicking cancel edit button', async () => {
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
+      sendMessage: vi.fn(async () => undefined),
+      sendEditMessage: vi.fn(async () => undefined),
+      sendImageMessage: vi.fn(async () => undefined)
+    })
+
+    const wrapper = mountInput({
+      editTo: {
+        eventId: 'evt-original',
+        body: 'Original text'
+      }
+    })
+    const cancelButton = wrapper.findAll('button')
+      .find((buttonWrapper) => {
+        return buttonWrapper.text().includes('Cancel edit')
+          || buttonWrapper.text().includes('Bearbeitung abbrechen')
+      })
+    cancelButton?.exists().should.equal(true)
+    await cancelButton?.trigger('click')
+
+    const cancelEditEvents = wrapper.emitted('cancelEdit') || []
+    cancelEditEvents.length.should.equal(1)
   })
 })

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useAppI18n } from '~/composables/useAppI18n'
 
 const message = ref('')
@@ -12,10 +12,16 @@ interface ReplyTarget {
   body: string
 }
 
+interface EditTarget {
+  eventId: string
+  body: string
+}
+
 const props = defineProps<{
   roomId: string | null
   disabled?: boolean
   replyTo?: ReplyTarget | null
+  editTo?: EditTarget | null
   /** MSC3440 thread root; when set, sends as thread reply */
   threadRootEventId?: string | null
 }>()
@@ -23,10 +29,21 @@ const props = defineProps<{
 const emit = defineEmits<{
   send: [body: string]
   cancelReply: []
+  cancelEdit: []
 }>()
 
-const { sendMessage, sendImageMessage } = useMatrixClient()
+const { sendMessage, sendEditMessage, sendImageMessage } = useMatrixClient()
 const { translateText } = useAppI18n()
+
+watch(
+  () => props.editTo,
+  (editTarget) => {
+    if (editTarget) {
+      message.value = editTarget.body
+    }
+  },
+  { immediate: true },
+)
 
 async function handleSend() {
   const body = message.value.trim()
@@ -34,6 +51,14 @@ async function handleSend() {
 
   loading.value = true
   try {
+    if (props.editTo?.eventId) {
+      await sendEditMessage(props.roomId, body, props.editTo.eventId)
+      message.value = ''
+      emit('send', body)
+      emit('cancelEdit')
+      return
+    }
+
     const threadRoot = props.threadRootEventId
     if (threadRoot) {
       await sendMessage(props.roomId, body, {
@@ -58,7 +83,9 @@ async function handleSend() {
 }
 
 function openFilePicker() {
-  if (!props.roomId || props.disabled || loading.value) return
+  if (!props.roomId || props.disabled || loading.value || props.editTo) {
+    return
+  }
   fileInput.value?.click()
 }
 
@@ -81,7 +108,9 @@ async function onFileChange(event: Event) {
 }
 
 async function onPaste(event: ClipboardEvent) {
-  if (!props.roomId || props.disabled || loading.value) return
+  if (!props.roomId || props.disabled || loading.value || props.editTo) {
+    return
+  }
   const clipboardItems = event.clipboardData?.items
   if (!clipboardItems) return
   for (const clipboardItem of clipboardItems) {
@@ -102,12 +131,37 @@ async function onPaste(event: ClipboardEvent) {
 <template>
   <div class="border-t border-gray-200 p-4 dark:border-gray-700">
     <div
-      v-if="replyTo"
-      class="mb-3 rounded-md border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-900"
+      v-if="editTo"
+      class="mb-3 rounded-md border border-gray-200 bg-gray-50 p-2
+             dark:border-gray-700 dark:bg-gray-900"
+    >
+      <div class="flex items-start justify-between gap-2">
+        <p class="text-xs font-medium text-gray-600 dark:text-gray-300">
+          {{ translateText('chat.editingMessage') }}
+        </p>
+        <UButton
+          type="button"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          :disabled="loading"
+          :aria-label="translateText('chat.cancelEdit')"
+          @click="emit('cancelEdit')"
+        >
+          {{ translateText('chat.cancelEdit') }}
+        </UButton>
+      </div>
+    </div>
+    <div
+      v-else-if="replyTo"
+      class="mb-3 rounded-md border border-gray-200 bg-gray-50 p-2
+             dark:border-gray-700 dark:bg-gray-900"
     >
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
-          <p class="text-xs font-medium text-gray-600 dark:text-gray-300">
+          <p
+            class="text-xs font-medium text-gray-600 dark:text-gray-300"
+          >
             {{ translateText('chat.replyingTo') }} {{ replyTo.senderName }}
           </p>
           <p class="truncate text-xs text-gray-500 dark:text-gray-400">
@@ -120,6 +174,7 @@ async function onPaste(event: ClipboardEvent) {
           color="neutral"
           variant="ghost"
           :disabled="loading"
+          :aria-label="translateText('chat.cancelReply')"
           @click="emit('cancelReply')"
         >
           {{ translateText('chat.cancelReply') }}
@@ -132,7 +187,7 @@ async function onPaste(event: ClipboardEvent) {
         type="file"
         accept="image/*"
         class="hidden"
-        :disabled="disabled || !roomId || loading"
+        :disabled="disabled || !roomId || loading || Boolean(editTo)"
         @change="onFileChange"
       >
       <UButton
@@ -140,7 +195,7 @@ async function onPaste(event: ClipboardEvent) {
         icon="i-lucide-image-up"
         color="neutral"
         variant="soft"
-        :disabled="disabled || !roomId || loading"
+        :disabled="disabled || !roomId || loading || Boolean(editTo)"
         :aria-label="translateText('chat.sendImage')"
         @click="openFilePicker"
       />

@@ -45,6 +45,28 @@ describe('chatTimeline helpers', () => {
     body.should.equal('hello world')
   })
 
+  it('prefers m.new_content body over outer placeholder body', () => {
+    const body = getMessageBody(
+      {
+        getContent: () => ({
+          body: '* edited message',
+          msgtype: 'm.text',
+          'm.new_content': {
+            msgtype: 'm.text',
+            body: 'edited message',
+          },
+          'm.relates_to': {
+            rel_type: 'm.replace',
+            event_id: 'evt_original',
+          },
+        }),
+      },
+      'Alice',
+      false,
+    )
+    body.should.equal('edited message')
+  })
+
   it('maps m.image messages with mxcUrl and isEncrypted', () => {
     const mockRoom = {
       getLiveTimeline: () => ({
@@ -918,6 +940,121 @@ describe('chatTimeline helpers', () => {
     messages.length.should.equal(1)
     messages[0]!.id.should.equal('evt_replace')
     messages[0]!.body.should.equal('new body')
+    messages[0]!.isEdited.should.equal(true)
+    messages[0]!.editTargetEventId.should.equal('evt_original')
+  })
+
+  it('maps editTargetEventId to original id on replace events', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_original',
+            getTs: () => 1000,
+            getContent: () => ({
+              body: 'first',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_replace',
+            getTs: () => 2000,
+            getContent: () => ({
+              body: 'second',
+              msgtype: 'm.text',
+              'm.new_content': { msgtype: 'm.text', body: 'second' },
+              'm.relates_to': {
+                rel_type: 'm.replace',
+                event_id: 'evt_original',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: undefined,
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => '',
+    })
+
+    messages[0]!.editTargetEventId.should.equal('evt_original')
+  })
+
+  it('sorts replacement messages by original timestamp', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_old',
+            getTs: () => 1000,
+            getContent: () => ({
+              body: 'jojo',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_newer',
+            getTs: () => 5000,
+            getContent: () => ({
+              body: 'asdf',
+              msgtype: 'm.text',
+            }),
+            isDecryptionFailure: () => false,
+          },
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_replace',
+            getTs: () => 99999,
+            getContent: () => ({
+              body: 'jojo edited',
+              msgtype: 'm.text',
+              'm.new_content': { msgtype: 'm.text', body: 'jojo edited' },
+              'm.relates_to': {
+                rel_type: 'm.replace',
+                event_id: 'evt_old',
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: undefined,
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => undefined,
+      buildNoticeText: () => '',
+    })
+
+    messages.length.should.equal(2)
+    messages[0]!.body.should.equal('jojo edited')
+    messages[0]!.originServerTs.should.equal(1000)
+    messages[1]!.body.should.equal('asdf')
+    messages[1]!.originServerTs.should.equal(5000)
   })
 
   it('inherits thread membership through edits and in-reply-to', () => {

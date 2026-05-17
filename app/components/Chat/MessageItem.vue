@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ChatThreadSummary } from "~/utils/chatTimeline";
 import ChatThreadPreview from "~/components/Chat/ChatThreadPreview.vue";
+import { computed } from "vue";
 import { useAppI18n } from "~/composables/useAppI18n";
 
 interface MediaInfo {
@@ -43,6 +44,7 @@ interface MessageItem {
   }>;
   threadSummary?: ChatThreadSummary;
   isEdited?: boolean;
+  editTargetEventId?: string;
 }
 
 const props = defineProps<{
@@ -50,6 +52,7 @@ const props = defineProps<{
   displayUrl?: string;
   loadingMedia?: boolean;
   currentUserId?: string;
+  canSendMessages?: boolean;
   /** Hide thread affordances (when rendering inside thread panel) */
   isThreadView?: boolean;
 }>();
@@ -58,6 +61,7 @@ const { translateText } = useAppI18n();
 
 const emit = defineEmits<{
   reply: [];
+  edit: [];
   openLightbox: [];
   openThread: [];
   openThreadPreview: [];
@@ -67,6 +71,22 @@ const emit = defineEmits<{
     ownReactionEventIds: string[];
   }];
 }>();
+
+const showEditButton = computed(() => {
+  if (!props.canSendMessages || !props.currentUserId) {
+    return false;
+  }
+  if (props.message.senderId !== props.currentUserId) {
+    return false;
+  }
+  if (props.message.kind !== "message" || props.message.isDecryptionError) {
+    return false;
+  }
+  if (props.message.media) {
+    return false;
+  }
+  return true;
+});
 
 function emitToggleReaction(emoji: string, ownReactionEventIds: string[] = []) {
   emit("toggleReaction", {
@@ -108,7 +128,9 @@ function handlePickerReaction(emoji: string) {
     <ChatMessageActionBar
       :frequent-scope-key="props.currentUserId"
       :show-thread-button="!isThreadView"
+      :show-edit-button="showEditButton"
       @reply="emit('reply')"
+      @edit="emit('edit')"
       @reaction-pick="handlePickerReaction"
       @open-thread="emit('openThread')"
     />

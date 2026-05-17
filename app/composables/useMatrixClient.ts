@@ -117,6 +117,7 @@ import {
   moveRoomBetweenParents,
   persistSpaceChildOrder
 } from './matrix/spaceStateHelpers'
+import { buildTextEditContent } from '~/utils/matrixMessageEdit'
 import { buildThreadRelatesTo } from '~/utils/matrixThreadRelations'
 
 export {
@@ -1107,6 +1108,26 @@ export function useMatrixClient() {
     )
   }
 
+  async function sendEditMessage(
+    roomId: string,
+    newBody: string,
+    targetEventId: string,
+  ): Promise<void> {
+    if (!client.value) {
+      throw new Error('Not logged in')
+    }
+    const trimmedBody = newBody.trim()
+    if (!trimmedBody) {
+      throw new Error('Edit body cannot be empty')
+    }
+    const content = buildTextEditContent(trimmedBody, targetEventId)
+    await client.value.sendEvent(
+      roomId,
+      EventType.RoomMessage,
+      content as any,
+    )
+  }
+
   async function sendImageMessage(
     roomId: string,
     imageFile: File | Blob,
@@ -1532,6 +1553,7 @@ export function useMatrixClient() {
     getRoom,
     markRoomAsRead,
     sendMessage,
+    sendEditMessage,
     sendImageMessage,
     sendReaction,
     redactEvent,

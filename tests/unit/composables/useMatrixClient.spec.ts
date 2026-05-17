@@ -723,6 +723,51 @@ describe('useMatrixClient', () => {
     )
   })
 
+  it('sends text message edit with m.replace and m.new_content', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123',
+      })),
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      sendEvent: vi.fn(async () => undefined),
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendEditMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+
+    await sendEditMessage(
+      '!room:example.org',
+      'Updated text',
+      'evt-original',
+    )
+
+    expect(matrixClient.sendEvent).toHaveBeenCalledWith(
+      '!room:example.org',
+      'm.room.message',
+      expect.objectContaining({
+        msgtype: 'm.text',
+        body: 'Updated text',
+        'm.new_content': {
+          msgtype: 'm.text',
+          body: 'Updated text',
+        },
+        'm.relates_to': {
+          rel_type: 'm.replace',
+          event_id: 'evt-original',
+        },
+      }),
+    )
+  })
+
   it('sends thread reply with MSC3440 relates_to', async () => {
     const authClient = {
       loginRequest: vi.fn(async () => ({

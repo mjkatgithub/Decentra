@@ -43,6 +43,7 @@ interface MessageItem {
     avatarUrl?: string;
   }>;
   threadSummary?: ChatThreadSummary;
+  editTargetEventId?: string;
 }
 
 type MediaResolver = (media: {
@@ -56,6 +57,7 @@ const props = defineProps<{
   messages: MessageItem[];
   resolveMediaBlobUrl?: MediaResolver;
   currentUserId?: string;
+  canSendMessages?: boolean;
   loadingOlder?: boolean;
   loadingNewer?: boolean;
   centerOnMessageId?: string;
@@ -71,6 +73,7 @@ const emit = defineEmits<{
   reachTop: [];
   reachBottom: [];
   reply: [target: { eventId: string; senderName: string; body: string }];
+  edit: [target: { eventId: string; body: string }];
   openThread: [target: { eventId: string; senderName: string; body: string }];
   openThreadPreview: [
     target: { eventId: string; senderName: string; body: string },
@@ -148,6 +151,13 @@ function emitReplyTarget(msg: MessageItem) {
   emit("reply", {
     eventId: msg.id,
     senderName: msg.senderName,
+    body: msg.body,
+  });
+}
+
+function emitEditTarget(msg: MessageItem) {
+  emit("edit", {
+    eventId: msg.editTargetEventId ?? msg.id,
     body: msg.body,
   });
 }
@@ -364,8 +374,10 @@ watch(
           :display-url="getDisplayUrl(msg)"
           :loading-media="Boolean(loadingMedia[msg.id])"
           :current-user-id="props.currentUserId"
+          :can-send-messages="props.canSendMessages"
           :is-thread-view="props.isThreadView"
           @reply="emitReplyTarget(msg)"
+          @edit="emitEditTarget(msg)"
           @open-thread="emitThreadTarget(msg)"
           @open-thread-preview="emitThreadPreviewTarget(msg)"
           @toggle-reaction="emit('toggleReaction', $event)"

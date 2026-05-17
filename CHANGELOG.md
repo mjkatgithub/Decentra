@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Edit own sent text messages via Matrix `m.replace` with updated timeline
+  body, edited label, power-level gating, and EN/DE composer UI (#75)
 - Unread message indicators in the channel list with Matrix SDK
   notification counts, read-receipt marking when viewing a room, and
   live updates on incoming events (#34)

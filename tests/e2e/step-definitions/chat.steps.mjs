@@ -149,6 +149,53 @@ Then('I should see image fallback label {string}', async function (fallbackLabel
     .toBeVisible({ timeout: 20000 })
 })
 
+When('I send {string} from the message composer', async function (text) {
+  const input = this.page.getByPlaceholder(
+    /Write a message|Nachricht eingeben/i
+  ).last()
+  await expect(input).toBeVisible({ timeout: 15000 })
+  await input.fill(text)
+  await input.press('Enter')
+})
+
+When('I click edit on message body {string}', async function (messageText) {
+  const messageItem = messageContainerByBody(this.page, messageText)
+  await expect(messageItem).toBeVisible({ timeout: 15000 })
+  await messageItem.hover()
+  const editButton = messageItem
+    .getByRole('button', { name: /Edit|Bearbeiten/i })
+    .first()
+  await expect(editButton).toBeVisible({ timeout: 10000 })
+  await editButton.click()
+})
+
+When('I submit the edit composer with {string}', async function (text) {
+  const input = this.page.getByPlaceholder(
+    /Write a message|Nachricht eingeben/i
+  ).last()
+  await expect(input).toBeVisible({ timeout: 15000 })
+  await input.fill(text)
+  await input.press('Enter')
+})
+
+Then('I should see the edit composer active', async function () {
+  await expect(
+    this.page.getByRole('button', {
+      name: /Cancel edit|Bearbeitung abbrechen/i
+    })
+  ).toBeVisible({ timeout: 10000 })
+})
+
+Then(
+  'I should see the edited label on message body {string}',
+  async function (messageText) {
+    const messageItem = messageContainerByBody(this.page, messageText)
+    await expect(messageItem).toBeVisible({ timeout: 15000 })
+    await expect(messageItem.getByText(/\(edited\)|\(bearbeitet\)/i))
+      .toBeVisible({ timeout: 10000 })
+  }
+)
+
 When('I click reply on message body {string}', async function (messageText) {
   const messageItem = messageContainerByBody(this.page, messageText)
   await expect(messageItem).toBeVisible({ timeout: 15000 })
