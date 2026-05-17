@@ -26,6 +26,7 @@ interface MessageItem {
   id: string;
   kind: "message" | "notice";
   isDecryptionError?: boolean;
+  isMessageDeleted?: boolean;
   senderId: string;
   senderName: string;
   avatarUrl?: string;
@@ -148,7 +149,7 @@ function onMessageRowPointerUp(pointerEvent: PointerEvent) {
     v-if="message.kind === 'notice'"
     class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300"
     :class="
-      message.isDecryptionError
+      message.isDecryptionError && !message.isMessageDeleted
         ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-200'
         : ''
     "
