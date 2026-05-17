@@ -48,6 +48,15 @@ function messageContainerByBody(page, messageText) {
   }).first()
 }
 
+async function revealMessageActions(messageItem, options = {}) {
+  const preferTap = options.preferTap === true
+  if (preferTap) {
+    await messageItem.tap()
+    return
+  }
+  await messageItem.hover()
+}
+
 When('I open the chat page', async function () {
   await this.page.goto(`${BASE_URL}/chat`)
 })
@@ -161,7 +170,7 @@ When('I send {string} from the message composer', async function (text) {
 When('I click edit on message body {string}', async function (messageText) {
   const messageItem = messageContainerByBody(this.page, messageText)
   await expect(messageItem).toBeVisible({ timeout: 15000 })
-  await messageItem.hover()
+  await revealMessageActions(messageItem)
   const editButton = messageItem
     .getByRole('button', { name: /Edit|Bearbeiten/i })
     .first()
@@ -199,7 +208,7 @@ Then(
 When('I click reply on message body {string}', async function (messageText) {
   const messageItem = messageContainerByBody(this.page, messageText)
   await expect(messageItem).toBeVisible({ timeout: 15000 })
-  await messageItem.hover()
+  await revealMessageActions(messageItem)
   const replyButton = messageItem
     .getByRole('button', { name: /Reply|Antworten/i })
     .first()
@@ -207,12 +216,31 @@ When('I click reply on message body {string}', async function (messageText) {
   await replyButton.click()
 })
 
+When('I use the mobile chat viewport', async function () {
+  await this.page.setViewportSize({ width: 390, height: 844 })
+  await this.page.emulateMedia({ media: 'screen' })
+})
+
+When(
+  'I tap reply on message body {string} on mobile',
+  async function (messageText) {
+    const messageItem = messageContainerByBody(this.page, messageText)
+    await expect(messageItem).toBeVisible({ timeout: 15000 })
+    await revealMessageActions(messageItem, { preferTap: true })
+    const replyButton = messageItem
+      .getByRole('button', { name: /Reply|Antworten/i })
+      .first()
+    await expect(replyButton).toBeVisible({ timeout: 10000 })
+    await replyButton.tap()
+  }
+)
+
 When(
   'I add reaction {string} on message body {string}',
   async function (emoji, messageText) {
     const messageItem = messageContainerByBody(this.page, messageText)
     await expect(messageItem).toBeVisible({ timeout: 15000 })
-    await messageItem.hover()
+    await revealMessageActions(messageItem)
 
     const reactionButton = messageItem.getByRole('button', {
       name: /Add reaction/i
@@ -309,7 +337,7 @@ When(
   async function (messageText) {
     const messageItem = messageContainerByBody(this.page, messageText)
     await expect(messageItem).toBeVisible({ timeout: 15000 })
-    await messageItem.hover()
+    await revealMessageActions(messageItem)
     const threadButton = messageItem.getByRole('button', {
       name: /Thread/i
     }).first()

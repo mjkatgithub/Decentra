@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useAppI18n } from "~/composables/useAppI18n";
-import { onBeforeUnmount, ref } from "vue";
+import { useHoverCapable } from "~/composables/useHoverCapable";
+import { computed, onBeforeUnmount, ref } from "vue";
 
 const emit = defineEmits<{
   reply: [];
@@ -13,11 +14,33 @@ const props = defineProps<{
   /** When false, hides the “thread” control (e.g. inside thread view). */
   showThreadButton?: boolean;
   showEditButton?: boolean;
+  /** Pin bar visible (touch selection) regardless of hover. */
+  visible?: boolean;
 }>();
+
+const { canUseHover } = useHoverCapable();
 
 const { translateText } = useAppI18n();
 const pickerOpen = ref(false);
 const pickerRoot = ref<HTMLElement | null>(null);
+
+const touchTargetClass = computed(() => {
+  return canUseHover.value
+    ? ""
+    : "min-h-11 min-w-11 justify-center";
+});
+
+const barVisibleClass = computed(() => {
+  if (props.visible) {
+    return "pointer-events-auto opacity-100";
+  }
+  return [
+    "pointer-events-none opacity-0",
+    "hover-capable:group-hover:pointer-events-auto",
+    "hover-capable:group-hover:opacity-100",
+    "group-focus-within:pointer-events-auto group-focus-within:opacity-100",
+  ];
+});
 
 function emitReaction(emoji: string) {
   const trimmedEmoji = emoji.trim();
@@ -60,11 +83,10 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="pickerRoot"
+    data-message-action-bar
     :class="[
-      'pointer-events-none absolute -top-3 right-0 z-10 opacity-0',
-      'transition-opacity duration-150',
-      'group-hover:pointer-events-auto group-hover:opacity-100',
-      'group-focus-within:pointer-events-auto group-focus-within:opacity-100'
+      'absolute -top-3 right-0 z-10 transition-opacity duration-150',
+      barVisibleClass,
     ]"
   >
     <div
@@ -80,8 +102,13 @@ onBeforeUnmount(() => {
         variant="ghost"
         icon="i-lucide-smile"
         aria-label="Add reaction"
+        :aria-expanded="pickerOpen"
         title="Reaktion hinzufügen"
-        class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
+        :class="[
+          'text-gray-500 hover:text-gray-700 dark:text-gray-300',
+          'dark:hover:text-gray-100',
+          touchTargetClass,
+        ]"
         @click.stop="togglePicker"
       />
       <UButton
@@ -92,7 +119,11 @@ onBeforeUnmount(() => {
         icon="i-lucide-reply"
         :aria-label="translateText('chat.replyAction')"
         :title="translateText('chat.replyAction')"
-        class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
+        :class="[
+          'text-gray-500 hover:text-gray-700 dark:text-gray-300',
+          'dark:hover:text-gray-100',
+          touchTargetClass,
+        ]"
         @click="emit('reply')"
       />
       <UButton
@@ -104,7 +135,11 @@ onBeforeUnmount(() => {
         icon="i-lucide-pencil"
         :aria-label="translateText('chat.editAction')"
         :title="translateText('chat.editAction')"
-        class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
+        :class="[
+          'text-gray-500 hover:text-gray-700 dark:text-gray-300',
+          'dark:hover:text-gray-100',
+          touchTargetClass,
+        ]"
         @click="emit('edit')"
       />
       <UButton
@@ -116,7 +151,11 @@ onBeforeUnmount(() => {
         icon="i-lucide-messages-square"
         :aria-label="translateText('chat.threadAction')"
         :title="translateText('chat.threadAction')"
-        class="text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-gray-100"
+        :class="[
+          'text-gray-500 hover:text-gray-700 dark:text-gray-300',
+          'dark:hover:text-gray-100',
+          touchTargetClass,
+        ]"
         @click="emit('openThread')"
       />
     </div>
