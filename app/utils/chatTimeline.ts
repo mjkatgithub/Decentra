@@ -81,6 +81,23 @@ export interface TimelineWindowSelection {
   anchorFound: boolean
 }
 
+export interface PreservedTimelineWindowInput {
+  previousStartIndex: number
+  previousEndIndex: number
+  previousEventCount: number
+  previousFirstMessageId?: string
+  previousLastMessageId?: string
+  nextEventIds: string[]
+  windowSize: number
+  stickToBottom: boolean
+}
+
+export interface PreservedTimelineWindowSelection {
+  startIndex: number
+  endIndex: number
+  shouldScrollToBottom: boolean
+}
+
 interface MapTimelineArgs {
   room: Record<string, any>
   ownUserId: string | undefined
@@ -841,6 +858,56 @@ export function resolveTimelineWindowSelection(
     endIndex,
     anchorIndex,
     anchorFound: true
+  }
+}
+
+export function resolvePreservedTimelineWindow(
+  input: PreservedTimelineWindowInput
+): PreservedTimelineWindowSelection {
+  const {
+    previousEndIndex,
+    previousEventCount,
+    previousFirstMessageId,
+    previousLastMessageId,
+    nextEventIds,
+    windowSize,
+    stickToBottom
+  } = input
+
+  const totalEvents = nextEventIds.length
+  const wasShowingLatest = previousEndIndex >= previousEventCount
+
+  const nextStartIndex = previousFirstMessageId
+    ? nextEventIds.findIndex((eventId) => eventId === previousFirstMessageId)
+    : -1
+  const nextLastIndex = previousLastMessageId
+    ? nextEventIds.findIndex((eventId) => eventId === previousLastMessageId)
+    : -1
+
+  let startIndex: number
+  let endIndex: number
+
+  if (nextStartIndex >= 0 && nextLastIndex >= nextStartIndex) {
+    startIndex = nextStartIndex
+    endIndex = nextLastIndex + 1
+  } else {
+    const fallbackSelection = resolveTimelineWindowSelection(nextEventIds, {
+      windowSize
+    })
+    startIndex = fallbackSelection.startIndex
+    endIndex = fallbackSelection.endIndex
+  }
+
+  if (wasShowingLatest || stickToBottom) {
+    endIndex = totalEvents
+  }
+
+  const shouldScrollToBottom = stickToBottom && wasShowingLatest
+
+  return {
+    startIndex,
+    endIndex,
+    shouldScrollToBottom
   }
 }
 

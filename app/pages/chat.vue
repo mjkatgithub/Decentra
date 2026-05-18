@@ -14,6 +14,7 @@ import {
   buildReactionSummaryByEventId,
   buildRoomThreadNavEntries,
   mapTimelineEventsToMessages,
+  resolvePreservedTimelineWindow,
   resolveTimelineWindowSelection,
   type ThreadNavEntry,
 } from "~/utils/chatTimeline";
@@ -886,6 +887,9 @@ function loadMessages(
   const previousVisibleIds = new Set(
     previousVisibleMessages.map((message) => message.id),
   );
+  const previousEventCount = allMessages.value.length;
+  const previousWindowStartIndex = windowStartIndex.value;
+  const previousWindowEndIndex = windowEndIndex.value;
   const mappedMessages = mapTimelineEventsToMessages({
     room,
     ownUserId: client.value?.getUserId() ?? undefined,
@@ -949,27 +953,24 @@ function loadMessages(
     }
   }
 
-  const previousFirstMessageId = previousVisibleMessages[0]?.id;
-  const previousLastMessageId =
-    previousVisibleMessages[previousVisibleMessages.length - 1]?.id;
-  const nextStartIndex = previousFirstMessageId
-    ? mappedMessages.findIndex((message) => message.id === previousFirstMessageId)
-    : -1;
-  const nextLastIndex = previousLastMessageId
-    ? mappedMessages.findIndex((message) => message.id === previousLastMessageId)
-    : -1;
-  if (nextStartIndex >= 0 && nextLastIndex >= nextStartIndex) {
-    windowStartIndex.value = nextStartIndex;
-    windowEndIndex.value = nextLastIndex + 1;
-  } else {
-    const fallbackSelection = resolveTimelineWindowSelection(
-      mappedMessages.map((message) => message.id),
-      { windowSize: INITIAL_TIMELINE_WINDOW_SIZE },
-    );
-    windowStartIndex.value = fallbackSelection.startIndex;
-    windowEndIndex.value = fallbackSelection.endIndex;
-  }
+  const preservedWindow = resolvePreservedTimelineWindow({
+    previousStartIndex: previousWindowStartIndex,
+    previousEndIndex: previousWindowEndIndex,
+    previousEventCount,
+    previousFirstMessageId: previousVisibleMessages[0]?.id,
+    previousLastMessageId:
+      previousVisibleMessages[previousVisibleMessages.length - 1]?.id,
+    nextEventIds: mappedMessages.map((message) => message.id),
+    windowSize: INITIAL_TIMELINE_WINDOW_SIZE,
+    stickToBottom: stickToBottom.value,
+  });
+  windowStartIndex.value = preservedWindow.startIndex;
+  windowEndIndex.value = preservedWindow.endIndex;
   applyWindow();
+  if (preservedWindow.shouldScrollToBottom) {
+    centerOnMessageId.value = undefined;
+    scrollIntentToken.value += 1;
+  }
   syncThreadPanelIfActive(roomId);
   scheduleThreadNavRefresh();
 }
@@ -1043,6 +1044,9 @@ function onComposerSend() {
   if (loadMessagesTimerId.value !== null) {
     window.clearTimeout(loadMessagesTimerId.value);
     loadMessagesTimerId.value = null;
+  }
+  if (windowEndIndex.value >= allMessages.value.length) {
+    stickToBottom.value = true;
   }
   loadMessages(roomId, { resetWindow: false });
   syncThreadPanelIfActive(roomId);

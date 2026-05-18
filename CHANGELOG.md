@@ -196,6 +196,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Sent messages now appear immediately at the bottom of the room timeline
+  without manual scrolling by extending the visible window and scroll intent
+  when the user was already at the latest events (#76)
 - Space-to-room parent mapping now uses Matrix `m.space.parent` state
 - Space avatar resolution now supports Matrix mxc avatar URLs with fallback
 - Homeserver base URL normalization now upgrades public http to https to avoid
