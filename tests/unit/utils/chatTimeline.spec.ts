@@ -9,6 +9,7 @@ import {
   isRedactedMessageEvent,
   isUndecryptableEvent,
   mapTimelineEventsToMessages,
+  resolvePreservedTimelineWindow,
   resolveTimelineWindowSelection
 } from '~/utils/chatTimeline'
 
@@ -670,6 +671,79 @@ describe('chatTimeline helpers', () => {
     selection.endIndex.should.equal(3)
     selection.anchorFound.should.equal(false)
     ;(selection.anchorIndex === null).should.equal(true)
+  })
+
+  it('extends window to latest when append at bottom', () => {
+    const selection = resolvePreservedTimelineWindow({
+      previousStartIndex: 0,
+      previousEndIndex: 5,
+      previousEventCount: 5,
+      previousFirstMessageId: 'evt1',
+      previousLastMessageId: 'evt5',
+      nextEventIds: ['evt1', 'evt2', 'evt3', 'evt4', 'evt5', 'evt6'],
+      windowSize: 80,
+      stickToBottom: true
+    })
+    selection.startIndex.should.equal(0)
+    selection.endIndex.should.equal(6)
+    selection.shouldScrollToBottom.should.equal(true)
+  })
+
+  it('does not extend window when scrolled above latest', () => {
+    const selection = resolvePreservedTimelineWindow({
+      previousStartIndex: 0,
+      previousEndIndex: 3,
+      previousEventCount: 10,
+      previousFirstMessageId: 'evt1',
+      previousLastMessageId: 'evt3',
+      nextEventIds: [
+        'evt1',
+        'evt2',
+        'evt3',
+        'evt4',
+        'evt5',
+        'evt6',
+        'evt7',
+        'evt8',
+        'evt9',
+        'evt10',
+        'evt11'
+      ],
+      windowSize: 80,
+      stickToBottom: false
+    })
+    selection.startIndex.should.equal(0)
+    selection.endIndex.should.equal(3)
+    selection.shouldScrollToBottom.should.equal(false)
+  })
+
+  it('extends window without scroll when latest but not stickToBottom', () => {
+    const selection = resolvePreservedTimelineWindow({
+      previousStartIndex: 0,
+      previousEndIndex: 3,
+      previousEventCount: 3,
+      previousFirstMessageId: 'evt1',
+      previousLastMessageId: 'evt3',
+      nextEventIds: ['evt1', 'evt2', 'evt3', 'evt4'],
+      windowSize: 80,
+      stickToBottom: false
+    })
+    selection.endIndex.should.equal(4)
+    selection.shouldScrollToBottom.should.equal(false)
+  })
+
+  it('uses fallback window when previous ids are missing', () => {
+    const selection = resolvePreservedTimelineWindow({
+      previousStartIndex: 0,
+      previousEndIndex: 2,
+      previousEventCount: 10,
+      nextEventIds: ['evt1', 'evt2', 'evt3', 'evt4', 'evt5'],
+      windowSize: 3,
+      stickToBottom: false
+    })
+    selection.startIndex.should.equal(2)
+    selection.endIndex.should.equal(5)
+    selection.shouldScrollToBottom.should.equal(false)
   })
 
   it('excludes MSC3440 thread replies from main timeline', () => {

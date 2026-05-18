@@ -62,6 +62,13 @@ Feature: Chat
     When I close the thread side panel
     Then I should not see the thread side panel
 
+  Scenario: Sent message appears immediately without manual scroll
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    When I send "E2E_SEND_VISIBLE_IMMEDIATE" from the message composer
+    Then I should see message body "E2E_SEND_VISIBLE_IMMEDIATE"
+
   Scenario: Edit sent message and persist after reload
     When I open the login page
     And I sign in with configured credentials

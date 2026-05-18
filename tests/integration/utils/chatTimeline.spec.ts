@@ -1,6 +1,7 @@
 import { describe, it } from 'vitest'
 import {
   mapTimelineEventsToMessages,
+  resolvePreservedTimelineWindow,
   resolveTimelineWindowSelection
 } from '~/utils/chatTimeline'
 
@@ -284,5 +285,31 @@ describe('chatTimeline integration', () => {
     selection.startIndex.should.equal(1)
     selection.endIndex.should.equal(5)
     selection.anchorFound.should.equal(true)
+  })
+
+  it('extends preserved window when user was at timeline end', () => {
+    const selection = resolvePreservedTimelineWindow({
+      previousStartIndex: 2,
+      previousEndIndex: 8,
+      previousEventCount: 8,
+      previousFirstMessageId: 'evt3',
+      previousLastMessageId: 'evt8',
+      nextEventIds: [
+        'evt1',
+        'evt2',
+        'evt3',
+        'evt4',
+        'evt5',
+        'evt6',
+        'evt7',
+        'evt8',
+        'evt9'
+      ],
+      windowSize: 80,
+      stickToBottom: true
+    })
+    selection.startIndex.should.equal(2)
+    selection.endIndex.should.equal(9)
+    selection.shouldScrollToBottom.should.equal(true)
   })
 })
