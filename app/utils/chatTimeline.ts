@@ -122,6 +122,7 @@ function eventTypesForChatTimeline(): Set<string> {
     'm.room.name',
     'm.room.avatar',
     'm.room.topic',
+    'm.room.pinned_events',
   ])
 }
 

@@ -54,6 +54,7 @@ const props = defineProps<{
   messages: ThreadMessage[];
   currentUserId?: string;
   canSendMessages?: boolean;
+  pinnedEventIds?: string[];
   disabled?: boolean;
   replyTo?: ThreadMessage["replyTo"] | null;
   editTo?: { eventId: string; body: string } | null;
@@ -113,6 +114,7 @@ const { translateText } = useAppI18n();
         :messages="messages"
         :current-user-id="currentUserId"
         :can-send-messages="canSendMessages"
+        :pinned-event-ids="pinnedEventIds"
         :resolve-media-blob-url="resolveMediaBlobUrl"
         is-thread-view
         :infinite-scroll-offset-px="80"

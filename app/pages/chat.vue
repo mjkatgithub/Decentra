@@ -1242,6 +1242,28 @@ function buildNoticeText(
   if (eventType === "m.room.topic") {
     return `${senderName} updated the room topic`;
   }
+  if (eventType === "m.room.pinned_events") {
+    const previousContent = timelineEvent.getPrevContent?.() ?? {};
+    const previousPinned = Array.isArray(previousContent.pinned)
+      ? previousContent.pinned
+      : [];
+    const nextPinned = Array.isArray(content.pinned) ? content.pinned : [];
+    const addedIds = nextPinned.filter((eventId) => {
+      return !previousPinned.includes(eventId);
+    });
+    const removedIds = previousPinned.filter((eventId) => {
+      return !nextPinned.includes(eventId);
+    });
+    if (addedIds.length === 1 && removedIds.length === 0) {
+      return translateText("chat.noticePinnedMessage", { name: senderName });
+    }
+    if (removedIds.length === 1 && addedIds.length === 0) {
+      return translateText("chat.noticeUnpinnedMessage", { name: senderName });
+    }
+    return translateText("chat.noticeUpdatedPinnedMessages", {
+      name: senderName,
+    });
+  }
   return `${senderName} updated room settings`;
 }
 
@@ -1770,6 +1792,7 @@ watch(
             :messages="threadPanelAllMessages"
             :current-user-id="userId ?? undefined"
             :can-send-messages="canSendMessagesInActiveRoom"
+            :pinned-event-ids="activeRoomPinnedEventIds"
             :resolve-media-blob-url="resolveMediaBlobUrl"
             is-thread-view
             @reply="setActiveThreadReplyTarget"
@@ -1856,6 +1879,7 @@ watch(
         :messages="threadPanelAllMessages"
         :current-user-id="userId ?? undefined"
         :can-send-messages="canSendMessagesInActiveRoom"
+        :pinned-event-ids="activeRoomPinnedEventIds"
         :disabled="!client"
         :reply-to="activeThreadReplyTo"
         :edit-to="activeThreadEditTo"

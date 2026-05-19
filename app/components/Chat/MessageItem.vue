@@ -284,6 +284,19 @@ function onMessageRowPointerUp(pointerEvent: PointerEvent) {
         <p v-else class="text-sm wrap-break-word">
           {{ message.body }}
         </p>
+        <div
+          v-if="props.isPinned"
+          class="mt-1.5 inline-flex items-center gap-1 rounded-md
+                 bg-gray-100 px-2 py-0.5 text-xs font-medium
+                 text-gray-600 dark:bg-gray-800/80 dark:text-gray-400"
+          data-pinned-badge
+        >
+          <UIcon
+            name="i-lucide-pin"
+            class="size-3.5 shrink-0"
+          />
+          <span>{{ translateText("chat.messagePinnedLabel") }}</span>
+        </div>
         <ChatThreadPreview
           v-if="message.threadSummary && !isThreadView"
           :summary="message.threadSummary"

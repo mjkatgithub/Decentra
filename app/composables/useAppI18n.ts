@@ -149,6 +149,10 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'chat.pinnedAt': 'Pinned {time}',
     'chat.pinnedMessageUnavailable': 'Message unavailable',
     'chat.pinNotAllowed': 'You cannot pin messages in this room',
+    'chat.messagePinnedLabel': 'Pinned message',
+    'chat.noticePinnedMessage': '{name} pinned a message',
+    'chat.noticeUnpinnedMessage': '{name} unpinned a message',
+    'chat.noticeUpdatedPinnedMessages': '{name} updated pinned messages',
     'chat.sendImage': 'Send image',
     'chat.messagePlaceholder': 'Write a message...',
     'chat.noRooms': 'No rooms',
@@ -485,6 +489,11 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'chat.pinnedMessageUnavailable': 'Nachricht nicht verfügbar',
     'chat.pinNotAllowed':
       'Du kannst in diesem Raum keine Nachrichten anheften',
+    'chat.messagePinnedLabel': 'Angepinnte Nachricht',
+    'chat.noticePinnedMessage': '{name} hat eine Nachricht angepinnt',
+    'chat.noticeUnpinnedMessage': '{name} hat eine Nachricht gelöst',
+    'chat.noticeUpdatedPinnedMessages':
+      '{name} hat die angepinnten Nachrichten geändert',
     'chat.sendImage': 'Bild senden',
     'chat.messagePlaceholder': 'Nachricht eingeben...',
     'chat.noRooms': 'Keine Räume',
