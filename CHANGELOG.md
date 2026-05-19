@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Pinned messages: room header panel, pin/unpin from the message action bar
+  when power levels allow, jump to pinned entries in the timeline,
+  pinned label on messages in the timeline, pin/unpin system notices, and
+  live list updates from `m.room.pinned_events` (#73)
 - Deleted-message tombstone in chat timeline and thread panel when
   messages are redacted, instead of a misleading decryption-failure
   notice (#82)

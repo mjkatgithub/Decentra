@@ -25,6 +25,9 @@ import {
   isRoomUnderAncestorSpace,
 } from "~/utils/spaceRoomCategories";
 import { canUserSendRoomMessage } from "~/utils/matrixRoomMessagePermissions";
+import { canUserPinEvents } from "~/utils/matrixRoomPinnedEventsPermissions";
+import { getPinnedEventIds } from "~/utils/matrixRoomPinnedEvents";
+import { buildPinnedMessageEntries } from "~/utils/matrixPinnedMessageEntries";
 import { canUserSendSpaceChildState } from "~/utils/matrixSpaceHierarchyPermissions";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
@@ -80,7 +83,7 @@ interface ChatMessage {
 }
 
 type ThreadPresentation = "sidebar" | "main";
-type RightSidebarView = "members" | "threads";
+type RightSidebarView = "members" | "threads" | "pinned";
 
 interface ActiveThreadState {
   roomId: string;
@@ -122,6 +125,7 @@ const MOBILE_BREAKPOINT = 1024;
 const HOME_SPACE_ID = "__home__";
 const INITIAL_TIMELINE_WINDOW_SIZE = 80;
 const SCROLL_WINDOW_EXPAND_STEP = 40;
+const JUMP_TO_MESSAGE_MAX_PAGINATIONS = 20;
 
 const {
   client,
@@ -132,6 +136,8 @@ const {
   toggleReaction,
   reorderSpaceChildren,
   moveChannelBetweenSpaceParents,
+  pinRoomEvent,
+  unpinRoomEvent,
   markRoomAsRead,
 } = useMatrixClient();
 const { translateText } = useAppI18n();
@@ -154,6 +160,15 @@ const canSendMessagesInActiveRoom = computed(() => {
     return false;
   }
   return canUserSendRoomMessage(matrixClient, roomId, matrixUserId);
+});
+const canPinInActiveRoom = computed(() => {
+  const matrixClient = client.value;
+  const roomId = selectedRoomId.value;
+  const matrixUserId = userId.value;
+  if (!matrixClient || !roomId || !matrixUserId) {
+    return false;
+  }
+  return canUserPinEvents(matrixClient, roomId, matrixUserId);
 });
 const selectedSpaceId = ref<string | null>(null);
 const allMessages = ref<ChatMessage[]>([]);
@@ -192,6 +207,7 @@ const threadPanelAllMessages = ref<ChatMessage[]>([]);
 const activeThreadReplyTo = ref<ChatMessage["replyTo"] | null>(null);
 const activeThreadEditTo = ref<{ eventId: string; body: string } | null>(null);
 const threadNavVersion = ref(0);
+const pinnedListVersion = ref(0);
 let threadNavRefreshTimerId: number | null = null;
 const THREAD_NAV_REFRESH_MS = 250;
 
@@ -496,6 +512,39 @@ const membersPanelActive = computed(() => {
   return rightSidebarView.value === "members";
 });
 
+const pinnedPanelActive = computed(() => {
+  return rightSidebarView.value === "pinned";
+});
+
+const activeRoomPinnedEventIds = computed(() => {
+  pinnedListVersion.value;
+  const matrixClient = client.value;
+  const roomId = selectedRoomId.value;
+  if (!matrixClient || !roomId) {
+    return [];
+  }
+  return getPinnedEventIds(matrixClient, roomId);
+});
+
+const selectedRoomPinnedEntries = computed(() => {
+  pinnedListVersion.value;
+  const room = selectedRoom.value;
+  if (!room) {
+    return [];
+  }
+  return buildPinnedMessageEntries(
+    room as never,
+    activeRoomPinnedEventIds.value,
+    {
+      unavailableSnippet: translateText("chat.pinnedMessageUnavailable"),
+      resolveSenderName: (_event, senderId) => {
+        const member = room.getMember?.(senderId);
+        return member?.name || senderId;
+      },
+    },
+  );
+});
+
 const threadPanelTitle = computed(() => {
   const rootId = activeThread.value?.rootEventId;
   const rootMessage = rootId
@@ -700,6 +749,25 @@ function closeRoomThreadsPanel() {
   rightSidebarView.value = "members";
 }
 
+function closePinnedMessagesPanel() {
+  rightSidebarView.value = "members";
+}
+
+function togglePinnedMessagesPanel() {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  if (rightSidebarView.value === "pinned" && rightSidebarOpen.value) {
+    rightSidebarView.value = "members";
+    return;
+  }
+  rightSidebarOpen.value = true;
+  rightSidebarView.value = "pinned";
+  if (activeThread.value?.presentation === "sidebar") {
+    closeActiveThread();
+  }
+}
+
 function toggleRoomThreadsPanel() {
   if (!selectedRoomId.value) {
     return;
@@ -727,6 +795,86 @@ function openMembersPanel() {
   rightSidebarView.value = "members";
   if (activeThread.value?.presentation === "sidebar") {
     closeActiveThread();
+  }
+}
+
+function focusMessageInTimeline(eventId: string) {
+  const messageIndex = allMessages.value.findIndex((message) => {
+    return message.id === eventId;
+  });
+  if (messageIndex < 0) {
+    return false;
+  }
+  const halfWindow = Math.floor(INITIAL_TIMELINE_WINDOW_SIZE / 2);
+  windowStartIndex.value = Math.max(0, messageIndex - halfWindow);
+  windowEndIndex.value = Math.min(
+    allMessages.value.length,
+    messageIndex + halfWindow + 1,
+  );
+  applyWindow();
+  centerOnMessageId.value = eventId;
+  stickToBottom.value = false;
+  scrollIntentToken.value += 1;
+  return true;
+}
+
+async function jumpToMessageInRoom(eventId: string) {
+  if (!selectedRoomId.value) {
+    return;
+  }
+  if (
+    activeThread.value?.presentation === "main" &&
+    activeThread.value.roomId === selectedRoomId.value
+  ) {
+    closeActiveThread();
+  }
+  if (focusMessageInTimeline(eventId)) {
+    if (isMobile.value) {
+      rightSidebarOpen.value = false;
+    }
+    return;
+  }
+  let paginationAttempts = 0;
+  while (
+    hasMoreOlderMessages.value &&
+    paginationAttempts < JUMP_TO_MESSAGE_MAX_PAGINATIONS
+  ) {
+    paginationAttempts += 1;
+    const hasMoreMessages = await loadOlderMessages(selectedRoomId.value);
+    hasMoreOlderMessages.value = hasMoreMessages;
+    loadMessages(selectedRoomId.value, { resetWindow: false });
+    if (focusMessageInTimeline(eventId)) {
+      if (isMobile.value) {
+        rightSidebarOpen.value = false;
+      }
+      return;
+    }
+  }
+}
+
+async function onPinMessage(eventId: string) {
+  const roomId = selectedRoomId.value;
+  if (!roomId || !canPinInActiveRoom.value) {
+    return;
+  }
+  try {
+    await pinRoomEvent(roomId, eventId);
+    pinnedListVersion.value += 1;
+  } catch (thrownError) {
+    console.error("Failed to pin message", thrownError);
+  }
+}
+
+async function onUnpinMessage(eventId: string) {
+  const roomId = selectedRoomId.value;
+  if (!roomId || !canPinInActiveRoom.value) {
+    return;
+  }
+  try {
+    await unpinRoomEvent(roomId, eventId);
+    pinnedListVersion.value += 1;
+  } catch (thrownError) {
+    console.error("Failed to unpin message", thrownError);
   }
 }
 
@@ -1094,6 +1242,28 @@ function buildNoticeText(
   if (eventType === "m.room.topic") {
     return `${senderName} updated the room topic`;
   }
+  if (eventType === "m.room.pinned_events") {
+    const previousContent = timelineEvent.getPrevContent?.() ?? {};
+    const previousPinned = Array.isArray(previousContent.pinned)
+      ? previousContent.pinned
+      : [];
+    const nextPinned = Array.isArray(content.pinned) ? content.pinned : [];
+    const addedIds = nextPinned.filter((eventId) => {
+      return !previousPinned.includes(eventId);
+    });
+    const removedIds = previousPinned.filter((eventId) => {
+      return !nextPinned.includes(eventId);
+    });
+    if (addedIds.length === 1 && removedIds.length === 0) {
+      return translateText("chat.noticePinnedMessage", { name: senderName });
+    }
+    if (removedIds.length === 1 && addedIds.length === 0) {
+      return translateText("chat.noticeUnpinnedMessage", { name: senderName });
+    }
+    return translateText("chat.noticeUpdatedPinnedMessages", {
+      name: senderName,
+    });
+  }
   return `${senderName} updated room settings`;
 }
 
@@ -1381,6 +1551,9 @@ watch(
       }
       if (room?.roomId === selectedRoomId.value) {
         const eventType = timelineEvent?.getType?.() ?? "";
+        if (eventType === "m.room.pinned_events") {
+          pinnedListVersion.value += 1;
+        }
         if (eventType === "m.reaction") {
           patchMessageReactions(room.roomId);
           return;
@@ -1573,8 +1746,10 @@ watch(
         <ChatRoomHeaderToolbar
           v-if="selectedRoomId"
           :threads-active="roomThreadsPanelActive && rightSidebarOpen"
+          :pinned-active="pinnedPanelActive && rightSidebarOpen"
           :members-active="membersPanelActive && rightSidebarOpen"
           @open-threads="toggleRoomThreadsPanel"
+          @open-pinned="togglePinnedMessagesPanel"
           @open-members="openMembersPanel"
         />
         <UButton size="sm" color="neutral" variant="soft" @click="handleLogout">
@@ -1617,6 +1792,7 @@ watch(
             :messages="threadPanelAllMessages"
             :current-user-id="userId ?? undefined"
             :can-send-messages="canSendMessagesInActiveRoom"
+            :pinned-event-ids="activeRoomPinnedEventIds"
             :resolve-media-blob-url="resolveMediaBlobUrl"
             is-thread-view
             @reply="setActiveThreadReplyTarget"
@@ -1639,6 +1815,8 @@ watch(
             :messages="messages"
             :current-user-id="userId ?? undefined"
             :can-send-messages="canSendMessagesInActiveRoom"
+            :can-pin="canPinInActiveRoom"
+            :pinned-event-ids="activeRoomPinnedEventIds"
             :loading-older="loadingOlder"
             :loading-newer="loadingNewer"
             :center-on-message-id="centerOnMessageId"
@@ -1650,6 +1828,8 @@ watch(
             @reach-bottom="onReachBottom"
             @reply="setReplyTarget"
             @edit="setEditTarget"
+            @pin="onPinMessage"
+            @unpin="onUnpinMessage"
             @open-thread="openThreadInSidebar"
             @open-thread-preview="openThreadInSidebar"
             @toggle-reaction="onToggleReaction"
@@ -1699,6 +1879,7 @@ watch(
         :messages="threadPanelAllMessages"
         :current-user-id="userId ?? undefined"
         :can-send-messages="canSendMessagesInActiveRoom"
+        :pinned-event-ids="activeRoomPinnedEventIds"
         :disabled="!client"
         :reply-to="activeThreadReplyTo"
         :edit-to="activeThreadEditTo"
@@ -1710,6 +1891,12 @@ watch(
         @cancel-edit="clearActiveThreadEditTarget"
         @send="onComposerSend"
         @toggle-reaction="onToggleReaction"
+      />
+      <ChatPinnedMessagesPanel
+        v-else-if="pinnedPanelActive && selectedRoomId"
+        :entries="selectedRoomPinnedEntries"
+        @close="closePinnedMessagesPanel"
+        @open-message="jumpToMessageInRoom"
       />
       <ChatRoomThreadListPanel
         v-else-if="roomThreadsPanelActive && selectedRoomId"

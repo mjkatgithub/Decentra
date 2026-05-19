@@ -166,6 +166,23 @@ describe('MessageItem', () => {
     payload.ownReactionEventIds[0].should.equal('reaction-own')
   })
 
+  it('shows pinned badge when message is pinned', () => {
+    const wrapper = mount(ChatMessageItem, {
+      props: {
+        message: createMessage(),
+        isPinned: true,
+      },
+      global: {
+        stubs: {
+          ChatMessageActionBar: ChatMessageActionBarStub,
+        },
+      },
+    })
+
+    wrapper.find('[data-pinned-badge]').exists().should.equal(true)
+    wrapper.text().should.include('Pinned message')
+  })
+
   it('emits toggleReaction when picker emits reaction-pick', async () => {
     const wrapper = mount(ChatMessageItem, {
       props: {
