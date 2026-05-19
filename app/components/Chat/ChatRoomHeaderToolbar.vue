@@ -3,11 +3,13 @@ import { useAppI18n } from "~/composables/useAppI18n";
 
 defineProps<{
   threadsActive?: boolean;
+  pinnedActive?: boolean;
   membersActive?: boolean;
 }>();
 
 const emit = defineEmits<{
   openThreads: [];
+  openPinned: [];
   openMembers: [];
 }>();
 
@@ -38,11 +40,19 @@ const { translateText } = useAppI18n();
       type="button"
       size="sm"
       color="neutral"
-      variant="ghost"
+      :variant="pinnedActive ? 'soft' : 'ghost'"
       icon="i-lucide-pin"
-      disabled
-      :aria-label="translateText('chat.pinnedMessages')"
-      :title="translateText('chat.pinnedMessagesSoon')"
+      :aria-label="
+        pinnedActive
+          ? translateText('chat.closePinnedMessages')
+          : translateText('chat.openPinnedMessages')
+      "
+      :title="
+        pinnedActive
+          ? translateText('chat.closePinnedMessages')
+          : translateText('chat.openPinnedMessages')
+      "
+      @click="emit('openPinned')"
     />
     <UButton
       type="button"

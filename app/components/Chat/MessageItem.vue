@@ -59,6 +59,8 @@ const props = defineProps<{
   loadingMedia?: boolean;
   currentUserId?: string;
   canSendMessages?: boolean;
+  canPin?: boolean;
+  isPinned?: boolean;
   /** Hide thread affordances (when rendering inside thread panel) */
   isThreadView?: boolean;
   isSelected?: boolean;
@@ -71,6 +73,8 @@ const emit = defineEmits<{
   activate: [];
   reply: [];
   edit: [];
+  pin: [];
+  unpin: [];
   openLightbox: [];
   openThread: [];
   openThreadPreview: [];
@@ -92,6 +96,32 @@ const showEditButton = computed(() => {
     return false;
   }
   if (props.message.media) {
+    return false;
+  }
+  return true;
+});
+
+const showPinButton = computed(() => {
+  if (!props.canPin || props.isPinned) {
+    return false;
+  }
+  if (props.message.kind !== "message" || props.message.isDecryptionError) {
+    return false;
+  }
+  if (props.message.isMessageDeleted || props.message.media) {
+    return false;
+  }
+  return true;
+});
+
+const showUnpinButton = computed(() => {
+  if (!props.canPin || !props.isPinned) {
+    return false;
+  }
+  if (props.message.kind !== "message" || props.message.isDecryptionError) {
+    return false;
+  }
+  if (props.message.isMessageDeleted) {
     return false;
   }
   return true;
@@ -178,8 +208,12 @@ function onMessageRowPointerUp(pointerEvent: PointerEvent) {
       :frequent-scope-key="props.currentUserId"
       :show-thread-button="!isThreadView"
       :show-edit-button="showEditButton"
+      :show-pin-button="showPinButton"
+      :show-unpin-button="showUnpinButton"
       @reply="emit('reply')"
       @edit="emit('edit')"
+      @pin="emit('pin')"
+      @unpin="emit('unpin')"
       @reaction-pick="handlePickerReaction"
       @open-thread="emit('openThread')"
     />

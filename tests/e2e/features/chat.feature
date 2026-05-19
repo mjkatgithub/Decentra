@@ -130,6 +130,25 @@ Feature: Chat
     And I open the side seeded test room
     Then the main test room should show an unread indicator
 
+  Scenario: Pin message, list, navigate, and unpin
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    When I send "E2E_PIN_TARGET" from the message composer
+    Then I should see message body "E2E_PIN_TARGET"
+    When I click pin on message body "E2E_PIN_TARGET"
+    And I open the pinned messages panel
+    Then I should see "E2E_PIN_TARGET" in the pinned messages panel
+    When I reload the current page
+    And I open the seeded test room
+    And I open the pinned messages panel
+    Then I should see "E2E_PIN_TARGET" in the pinned messages panel
+    When I open pinned message "E2E_PIN_TARGET"
+    Then I should see message body "E2E_PIN_TARGET"
+    When I click unpin on message body "E2E_PIN_TARGET"
+    And I open the pinned messages panel
+    Then I should not see "E2E_PIN_TARGET" in the pinned messages panel
+
   Scenario: Add and remove message reaction
     When I open the login page
     And I sign in with configured credentials

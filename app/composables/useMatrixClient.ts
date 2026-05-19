@@ -9,6 +9,10 @@ import {
   Visibility
 } from 'matrix-js-sdk'
 import { findLatestReadableRoomMessageEvent } from '~/utils/roomUnread'
+import {
+  pinRoomEvent as pinRoomEventState,
+  unpinRoomEvent as unpinRoomEventState,
+} from '~/utils/matrixRoomPinnedEvents'
 import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
 import { readonly, shallowRef } from 'vue'
@@ -1281,6 +1285,22 @@ export function useMatrixClient() {
     await moveRoomBetweenParents({ matrixClient, ...options })
   }
 
+  async function pinRoomEvent(
+    roomId: string,
+    eventId: string,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await pinRoomEventState(matrixClient, roomId, eventId)
+  }
+
+  async function unpinRoomEvent(
+    roomId: string,
+    eventId: string,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await unpinRoomEventState(matrixClient, roomId, eventId)
+  }
+
   async function mergeDirectAccountData(
     matrixClient: MatrixClient,
     peerUserId: string,
@@ -1571,6 +1591,8 @@ export function useMatrixClient() {
     searchUsersDirectory,
     reorderSpaceChildren,
     moveChannelBetweenSpaceParents,
+    pinRoomEvent,
+    unpinRoomEvent,
     incomingVerificationFromOtherOwnDeviceBeacon:
       getIncomingVerificationFromOtherOwnDeviceReadonly(),
     consumeIncomingVerificationFromOtherOwnDeviceBeacon

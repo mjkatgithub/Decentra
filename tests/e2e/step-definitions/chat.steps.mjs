@@ -167,6 +167,74 @@ When('I send {string} from the message composer', async function (text) {
   await input.press('Enter')
 })
 
+function pinnedMessagesPanel(page) {
+  return page.locator('aside').filter({
+    has: page.getByText(/Pinned messages|Angepinnte Nachrichten/i)
+  }).first()
+}
+
+When('I click pin on message body {string}', async function (messageText) {
+  const messageItem = messageContainerByBody(this.page, messageText)
+  await expect(messageItem).toBeVisible({ timeout: 15000 })
+  await revealMessageActions(messageItem)
+  const pinButton = messageItem
+    .getByRole('button', { name: /^(Pin|Anheften)$/i })
+    .first()
+  await expect(pinButton).toBeVisible({ timeout: 10000 })
+  await pinButton.click()
+})
+
+When('I click unpin on message body {string}', async function (messageText) {
+  const messageItem = messageContainerByBody(this.page, messageText)
+  await expect(messageItem).toBeVisible({ timeout: 15000 })
+  await revealMessageActions(messageItem)
+  const unpinButton = messageItem
+    .getByRole('button', { name: /^(Unpin|Lösen)$/i })
+    .first()
+  await expect(unpinButton).toBeVisible({ timeout: 10000 })
+  await unpinButton.click()
+})
+
+When('I open the pinned messages panel', async function () {
+  const openButton = this.page.getByRole('button', {
+    name: /Open pinned messages|Angepinnte Nachrichten öffnen/i
+  }).first()
+  await expect(openButton).toBeVisible({ timeout: 15000 })
+  await openButton.click()
+  await expect(pinnedMessagesPanel(this.page)).toBeVisible({
+    timeout: 10000
+  })
+})
+
+Then(
+  'I should see {string} in the pinned messages panel',
+  async function (messageText) {
+    const panel = pinnedMessagesPanel(this.page)
+    await expect(panel).toBeVisible({ timeout: 15000 })
+    await expect(panel.getByText(messageText, { exact: false }).first())
+      .toBeVisible({ timeout: 15000 })
+  }
+)
+
+Then(
+  'I should not see {string} in the pinned messages panel',
+  async function (messageText) {
+    const panel = pinnedMessagesPanel(this.page)
+    await expect(panel).toBeVisible({ timeout: 15000 })
+    await expect(panel.getByText(messageText, { exact: false }))
+      .toHaveCount(0, { timeout: 15000 })
+  }
+)
+
+When('I open pinned message {string}', async function (messageText) {
+  const panel = pinnedMessagesPanel(this.page)
+  const entry = panel.getByRole('button').filter({
+    hasText: messageText
+  }).first()
+  await expect(entry).toBeVisible({ timeout: 15000 })
+  await entry.click()
+})
+
 When('I click edit on message body {string}', async function (messageText) {
   const messageItem = messageContainerByBody(this.page, messageText)
   await expect(messageItem).toBeVisible({ timeout: 15000 })

@@ -6,6 +6,8 @@ import { computed, onBeforeUnmount, ref } from "vue";
 const emit = defineEmits<{
   reply: [];
   edit: [];
+  pin: [];
+  unpin: [];
   reactionPick: [emoji: string];
   openThread: [];
 }>();
@@ -14,6 +16,8 @@ const props = defineProps<{
   /** When false, hides the “thread” control (e.g. inside thread view). */
   showThreadButton?: boolean;
   showEditButton?: boolean;
+  showPinButton?: boolean;
+  showUnpinButton?: boolean;
   /** Pin bar visible (touch selection) regardless of hover. */
   visible?: boolean;
 }>();
@@ -141,6 +145,38 @@ onBeforeUnmount(() => {
           touchTargetClass,
         ]"
         @click="emit('edit')"
+      />
+      <UButton
+        v-if="props.showPinButton"
+        type="button"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-pin"
+        :aria-label="translateText('chat.pinAction')"
+        :title="translateText('chat.pinAction')"
+        :class="[
+          'text-gray-500 hover:text-gray-700 dark:text-gray-300',
+          'dark:hover:text-gray-100',
+          touchTargetClass,
+        ]"
+        @click="emit('pin')"
+      />
+      <UButton
+        v-if="props.showUnpinButton"
+        type="button"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-pin-off"
+        :aria-label="translateText('chat.unpinAction')"
+        :title="translateText('chat.unpinAction')"
+        :class="[
+          'text-gray-500 hover:text-gray-700 dark:text-gray-300',
+          'dark:hover:text-gray-100',
+          touchTargetClass,
+        ]"
+        @click="emit('unpin')"
       />
       <UButton
         v-if="props.showThreadButton !== false"

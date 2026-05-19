@@ -65,6 +65,8 @@ const props = defineProps<{
   resolveMediaBlobUrl?: MediaResolver;
   currentUserId?: string;
   canSendMessages?: boolean;
+  canPin?: boolean;
+  pinnedEventIds?: string[];
   loadingOlder?: boolean;
   loadingNewer?: boolean;
   centerOnMessageId?: string;
@@ -81,6 +83,8 @@ const emit = defineEmits<{
   reachBottom: [];
   reply: [target: { eventId: string; senderName: string; body: string }];
   edit: [target: { eventId: string; body: string }];
+  pin: [eventId: string];
+  unpin: [eventId: string];
   openThread: [target: { eventId: string; senderName: string; body: string }];
   openThreadPreview: [
     target: { eventId: string; senderName: string; body: string },
@@ -230,6 +234,10 @@ function emitThreadPreviewTarget(msg: MessageItem) {
     senderName: msg.senderName,
     body: msg.body,
   });
+}
+
+function isMessagePinned(messageId: string): boolean {
+  return props.pinnedEventIds?.includes(messageId) ?? false;
 }
 
 function disconnectObservers() {
@@ -450,11 +458,15 @@ watch(
           :loading-media="Boolean(loadingMedia[msg.id])"
           :current-user-id="props.currentUserId"
           :can-send-messages="props.canSendMessages"
+          :can-pin="props.canPin"
+          :is-pinned="isMessagePinned(msg.id)"
           :is-thread-view="props.isThreadView"
           :is-selected="selectedMessageId === msg.id"
           @activate="selectMessage(msg.id)"
           @reply="emitReplyTarget(msg)"
           @edit="emitEditTarget(msg)"
+          @pin="emit('pin', msg.id)"
+          @unpin="emit('unpin', msg.id)"
           @open-thread="emitThreadTarget(msg)"
           @open-thread-preview="emitThreadPreviewTarget(msg)"
           @toggle-reaction="emit('toggleReaction', $event)"
