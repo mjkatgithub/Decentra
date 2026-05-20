@@ -8,7 +8,11 @@ import {
 } from "vue";
 import ChatMessageItem from "~/components/Chat/MessageItem.vue";
 import { useAppI18n } from "~/composables/useAppI18n";
-import type { ChatThreadSummary } from "~/utils/chatTimeline";
+import type {
+  ChatThreadSummary,
+  ChatTimelineReply,
+  ChatTimelineReplyMsgtype,
+} from "~/utils/chatTimeline";
 
 interface MediaInfo {
   url: string;
@@ -32,11 +36,7 @@ interface MessageItem {
   senderName: string;
   avatarUrl?: string;
   body: string;
-  replyTo?: {
-    eventId: string;
-    senderName: string;
-    body: string;
-  };
+  replyTo?: ChatTimelineReply;
   media?: MediaInfo;
   reactions?: Array<{
     emoji: string;
@@ -81,7 +81,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   reachTop: [];
   reachBottom: [];
-  reply: [target: { eventId: string; senderName: string; body: string }];
+  reply: [target: ChatTimelineReply];
+  openReplyTarget: [eventId: string];
   edit: [target: { eventId: string; body: string }];
   pin: [eventId: string];
   unpin: [eventId: string];
@@ -110,6 +111,22 @@ const lastTopEmitAt = ref(0);
 const lastBottomEmitAt = ref(0);
 const observerCooldownMs = 200;
 const selectedMessageId = ref<string | null>(null);
+const highlightedMessageId = ref<string | null>(null);
+let highlightClearTimer: ReturnType<typeof setTimeout> | null = null;
+
+function replyMediaCacheKey(messageId: string): string {
+  return `reply:${messageId}`;
+}
+
+function inferMessageMsgtype(msg: MessageItem): ChatTimelineReplyMsgtype {
+  if (!msg.media) {
+    return "m.text";
+  }
+  if (msg.media.mimetype?.startsWith("video/")) {
+    return "m.video";
+  }
+  return "m.image";
+}
 
 function selectMessage(messageId: string) {
   selectedMessageId.value = messageId;
@@ -173,25 +190,64 @@ function getDisplayUrl(msg: MessageItem): string | undefined {
   return undefined;
 }
 
-async function resolveMedia(msg: MessageItem) {
-  if (!msg.media || !props.resolveMediaBlobUrl) return;
-  if (resolvedBlobUrls.value[msg.id] || loadingMedia.value[msg.id]) return;
-  if (!needsBlobFetch(msg.media)) return;
+async function resolveMediaForKey(
+  cacheKey: string,
+  media: MediaInfo,
+): Promise<void> {
+  if (!props.resolveMediaBlobUrl) {
+    return;
+  }
+  if (resolvedBlobUrls.value[cacheKey] || loadingMedia.value[cacheKey]) {
+    return;
+  }
+  if (!needsBlobFetch(media)) {
+    return;
+  }
 
-  loadingMedia.value[msg.id] = true;
+  loadingMedia.value[cacheKey] = true;
   try {
     const blobUrl = await props.resolveMediaBlobUrl({
-      mxcUrl: msg.media.mxcUrl,
-      mimetype: msg.media.mimetype,
-      isEncrypted: msg.media.isEncrypted,
-      encryptionInfo: msg.media.encryptionInfo,
+      mxcUrl: media.mxcUrl,
+      mimetype: media.mimetype,
+      isEncrypted: media.isEncrypted,
+      encryptionInfo: media.encryptionInfo,
     });
-    resolvedBlobUrls.value[msg.id] = blobUrl;
+    resolvedBlobUrls.value[cacheKey] = blobUrl;
   } catch (error) {
-    console.error("Failed to resolve media for", msg.id, error);
+    console.error("Failed to resolve media for", cacheKey, error);
   } finally {
-    loadingMedia.value[msg.id] = false;
+    loadingMedia.value[cacheKey] = false;
   }
+}
+
+async function resolveMedia(msg: MessageItem) {
+  if (!msg.media) {
+    return;
+  }
+  await resolveMediaForKey(msg.id, msg.media);
+}
+
+function getReplyDisplayUrl(msg: MessageItem): string | undefined {
+  const replyMedia = msg.replyTo?.media;
+  if (!replyMedia) {
+    return undefined;
+  }
+  const cacheKey = replyMediaCacheKey(msg.id);
+  if (resolvedBlobUrls.value[cacheKey]) {
+    return resolvedBlobUrls.value[cacheKey];
+  }
+  if (replyMedia.url) {
+    return replyMedia.url;
+  }
+  return undefined;
+}
+
+async function resolveReplyMedia(msg: MessageItem) {
+  const replyMedia = msg.replyTo?.media;
+  if (!replyMedia) {
+    return;
+  }
+  await resolveMediaForKey(replyMediaCacheKey(msg.id), replyMedia);
 }
 
 function openLightbox(msg: MessageItem) {
@@ -210,7 +266,20 @@ function emitReplyTarget(msg: MessageItem) {
     eventId: msg.id,
     senderName: msg.senderName,
     body: msg.body,
+    msgtype: inferMessageMsgtype(msg),
+    media: msg.media,
   });
+}
+
+function flashHighlight(messageId: string) {
+  highlightedMessageId.value = messageId;
+  if (highlightClearTimer) {
+    clearTimeout(highlightClearTimer);
+  }
+  highlightClearTimer = setTimeout(() => {
+    highlightedMessageId.value = null;
+    highlightClearTimer = null;
+  }, 2000);
 }
 
 function emitEditTarget(msg: MessageItem) {
@@ -350,6 +419,10 @@ watch(
       if (msg.media && needsBlobFetch(msg.media)) {
         resolveMedia(msg);
       }
+      const replyMedia = msg.replyTo?.media;
+      if (replyMedia && needsBlobFetch(replyMedia)) {
+        resolveReplyMedia(msg);
+      }
     }
   },
   { immediate: true, deep: false },
@@ -361,6 +434,7 @@ watch(
     await nextTick();
     if (props.centerOnMessageId) {
       centerMessage(props.centerOnMessageId);
+      flashHighlight(props.centerOnMessageId);
       return;
     }
     if (props.stickToBottom) {
@@ -410,6 +484,9 @@ onBeforeUnmount(() => {
   disconnectObservers();
   document.removeEventListener("pointerdown", onDocumentPointerDown);
   document.removeEventListener("keydown", onDocumentKeyDown);
+  if (highlightClearTimer) {
+    clearTimeout(highlightClearTimer);
+  }
 });
 
 watch(
@@ -455,13 +532,18 @@ watch(
         <ChatMessageItem
           :message="msg"
           :display-url="getDisplayUrl(msg)"
+          :reply-display-url="getReplyDisplayUrl(msg)"
           :loading-media="Boolean(loadingMedia[msg.id])"
+          :loading-reply-media="
+            Boolean(loadingMedia[replyMediaCacheKey(msg.id)])
+          "
           :current-user-id="props.currentUserId"
           :can-send-messages="props.canSendMessages"
           :can-pin="props.canPin"
           :is-pinned="isMessagePinned(msg.id)"
           :is-thread-view="props.isThreadView"
           :is-selected="selectedMessageId === msg.id"
+          :is-highlighted="highlightedMessageId === msg.id"
           @activate="selectMessage(msg.id)"
           @reply="emitReplyTarget(msg)"
           @edit="emitEditTarget(msg)"
@@ -471,6 +553,7 @@ watch(
           @open-thread-preview="emitThreadPreviewTarget(msg)"
           @toggle-reaction="emit('toggleReaction', $event)"
           @open-lightbox="openLightbox(msg)"
+          @open-reply-target="emit('openReplyTarget', $event)"
         />
       </div>
     </template>

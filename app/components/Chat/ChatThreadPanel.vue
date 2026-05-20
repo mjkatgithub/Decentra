@@ -2,6 +2,7 @@
 import ChatMessageInput from "~/components/Chat/MessageInput.vue";
 import ChatMessageList from "~/components/Chat/MessageList.vue";
 import { useAppI18n } from "~/composables/useAppI18n";
+import type { ChatTimelineReply } from "~/utils/chatTimeline";
 
 interface ThreadMessage {
   id: string;
@@ -12,11 +13,7 @@ interface ThreadMessage {
   senderName: string;
   avatarUrl?: string;
   body: string;
-  replyTo?: {
-    eventId: string;
-    senderName: string;
-    body: string;
-  };
+  replyTo?: ChatTimelineReply;
   media?: {
     url: string;
     mxcUrl: string;
@@ -59,11 +56,14 @@ const props = defineProps<{
   replyTo?: ThreadMessage["replyTo"] | null;
   editTo?: { eventId: string; body: string } | null;
   resolveMediaBlobUrl?: MediaResolver;
+  centerOnMessageId?: string;
+  scrollIntentToken?: number;
 }>();
 
 const emit = defineEmits<{
   close: [];
-  reply: [target: { eventId: string; senderName: string; body: string }];
+  reply: [target: ChatTimelineReply];
+  openReplyTarget: [eventId: string];
   edit: [target: { eventId: string; body: string }];
   cancelReply: [];
   cancelEdit: [];
@@ -116,10 +116,13 @@ const { translateText } = useAppI18n();
         :can-send-messages="canSendMessages"
         :pinned-event-ids="pinnedEventIds"
         :resolve-media-blob-url="resolveMediaBlobUrl"
+        :center-on-message-id="centerOnMessageId"
+        :scroll-intent-token="scrollIntentToken"
         is-thread-view
         :infinite-scroll-offset-px="80"
         @reply="emit('reply', $event)"
         @edit="emit('edit', $event)"
+        @open-reply-target="emit('openReplyTarget', $event)"
         @toggle-reaction="emit('toggleReaction', $event)"
       />
     </div>

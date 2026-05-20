@@ -167,11 +167,16 @@ async function main() {
     body: 'E2E_SEED_BASE_MESSAGE'
   })
   const uploadedMxcUrl = await uploadImage(primarySession.access_token)
-  await sendMessage(primarySession.access_token, roomId, 'seed-image-1', {
+  const imageEvent = await sendMessage(primarySession.access_token, roomId, 'seed-image-1', {
     msgtype: 'm.image',
     body: 'E2E_SEED_IMAGE',
     info: { mimetype: 'image/png', size: 68, w: 1, h: 1 },
     url: uploadedMxcUrl
+  })
+  await sendMessage(primarySession.access_token, roomId, 'seed-reply-to-image', {
+    msgtype: 'm.text',
+    body: 'E2E_REPLY_TO_IMAGE',
+    'm.relates_to': { 'm.in_reply_to': { event_id: imageEvent.event_id } }
   })
   await sendMessage(primarySession.access_token, roomId, 'seed-invalid-image', {
     msgtype: 'm.image',

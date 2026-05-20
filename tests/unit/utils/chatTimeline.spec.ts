@@ -288,6 +288,115 @@ describe('chatTimeline helpers', () => {
     messages[1]!.replyTo!.eventId.should.equal('evt_original')
     messages[1]!.replyTo!.senderName.should.equal('Alice')
     messages[1]!.replyTo!.body.should.equal('Original text')
+    messages[1]!.replyTo!.msgtype!.should.equal('m.text')
+  })
+
+  it('maps reply metadata with image media for m.image target', () => {
+    const imageEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@alice:example.org',
+      getId: () => 'evt_image',
+      getContent: () => ({
+        body: 'photo.png',
+        msgtype: 'm.image',
+        url: 'mxc://example.org/image',
+        info: { mimetype: 'image/png', w: 100, h: 80 },
+      }),
+      isDecryptionFailure: () => false,
+    }
+    const replyEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@bob:example.org',
+      getId: () => 'evt_reply_image',
+      getContent: () => ({
+        body: 'Nice shot',
+        msgtype: 'm.text',
+        'm.relates_to': {
+          'm.in_reply_to': { event_id: 'evt_image' },
+        },
+      }),
+      isDecryptionFailure: () => false,
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [imageEvent, replyEvent],
+      }),
+      getMembers: () => [],
+      getMember: (userId: string) => {
+        if (userId === '@alice:example.org') {
+          return { name: 'Alice' }
+        }
+        return { name: 'Bob' }
+      },
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => 'http://server/image',
+      buildDeletedMessageText,
+      buildNoticeText: () => '',
+    })
+
+    const replyMeta = messages[1]!.replyTo!
+    replyMeta.msgtype!.should.equal('m.image')
+    replyMeta.media!.mxcUrl.should.equal('mxc://example.org/image')
+    replyMeta.media!.url.should.equal('http://server/image')
+  })
+
+  it('maps reply metadata with video msgtype for m.video target', () => {
+    const videoEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@alice:example.org',
+      getId: () => 'evt_video',
+      getContent: () => ({
+        body: 'clip.mp4',
+        msgtype: 'm.video',
+        url: 'mxc://example.org/video',
+        info: {
+          mimetype: 'video/mp4',
+          thumbnail_url: 'mxc://example.org/thumb',
+          thumbnail_info: { mimetype: 'image/png' },
+        },
+      }),
+      isDecryptionFailure: () => false,
+    }
+    const replyEvent = {
+      getType: () => 'm.room.message',
+      getSender: () => '@bob:example.org',
+      getId: () => 'evt_reply_video',
+      getContent: () => ({
+        body: 'Cool clip',
+        msgtype: 'm.text',
+        'm.relates_to': {
+          'm.in_reply_to': { event_id: 'evt_video' },
+        },
+      }),
+      isDecryptionFailure: () => false,
+    }
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [videoEvent, replyEvent],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@me:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: () => 'http://server/thumb',
+      buildDeletedMessageText,
+      buildNoticeText: () => '',
+    })
+
+    const replyMeta = messages[1]!.replyTo!
+    replyMeta.msgtype!.should.equal('m.video')
+    replyMeta.media!.mxcUrl.should.equal('mxc://example.org/thumb')
   })
 
   it('maps fallback reply metadata when original event is missing', () => {

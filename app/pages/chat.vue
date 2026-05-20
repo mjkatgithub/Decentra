@@ -16,6 +16,7 @@ import {
   mapTimelineEventsToMessages,
   resolvePreservedTimelineWindow,
   resolveTimelineWindowSelection,
+  type ChatTimelineReply,
   type ThreadNavEntry,
 } from "~/utils/chatTimeline";
 import {
@@ -41,11 +42,7 @@ interface ChatMessage {
   senderName: string;
   avatarUrl?: string;
   body: string;
-  replyTo?: {
-    eventId: string;
-    senderName: string;
-    body: string;
-  };
+  replyTo?: ChatTimelineReply;
   media?: {
     url: string;
     mxcUrl: string;
@@ -190,8 +187,10 @@ const hasMoreOlderMessages = ref(true);
 const windowStartIndex = ref(0);
 const windowEndIndex = ref(0);
 const centerOnMessageId = ref<string | undefined>(undefined);
+const threadCenterOnMessageId = ref<string | undefined>(undefined);
 const stickToBottom = ref(false);
 const scrollIntentToken = ref(0);
+const threadScrollIntentToken = ref(0);
 const preserveViewportOnPrepend = ref(false);
 const activeReplyTo = ref<ChatMessage["replyTo"] | null>(null);
 const activeEditTo = ref<{ eventId: string; body: string } | null>(null);
@@ -643,11 +642,7 @@ watch(stickToBottom, (isAtBottom) => {
   }
 });
 
-function setReplyTarget(replyTarget: {
-  eventId: string;
-  senderName: string;
-  body: string;
-}) {
+function setReplyTarget(replyTarget: ChatTimelineReply) {
   activeEditTo.value = null;
   activeReplyTo.value = replyTarget;
 }
@@ -818,6 +813,17 @@ function focusMessageInTimeline(eventId: string) {
   return true;
 }
 
+function jumpToMessageInThread(eventId: string) {
+  const found = threadPanelAllMessages.value.some((message) => {
+    return message.id === eventId;
+  });
+  if (!found) {
+    return;
+  }
+  threadCenterOnMessageId.value = eventId;
+  threadScrollIntentToken.value += 1;
+}
+
 async function jumpToMessageInRoom(eventId: string) {
   if (!selectedRoomId.value) {
     return;
@@ -894,9 +900,7 @@ function openThreadFromRoomThreadList(rootEventId: string) {
   loadThreadPanelMessages();
 }
 
-function setActiveThreadReplyTarget(
-  replyTarget: NonNullable<ChatMessage["replyTo"]>,
-) {
+function setActiveThreadReplyTarget(replyTarget: ChatTimelineReply) {
   activeThreadEditTo.value = null;
   activeThreadReplyTo.value = replyTarget;
 }
@@ -1794,9 +1798,12 @@ watch(
             :can-send-messages="canSendMessagesInActiveRoom"
             :pinned-event-ids="activeRoomPinnedEventIds"
             :resolve-media-blob-url="resolveMediaBlobUrl"
+            :center-on-message-id="threadCenterOnMessageId"
+            :scroll-intent-token="threadScrollIntentToken"
             is-thread-view
             @reply="setActiveThreadReplyTarget"
             @edit="setActiveThreadEditTarget"
+            @open-reply-target="jumpToMessageInThread"
             @toggle-reaction="onToggleReaction"
           />
           <ChatMessageInput
@@ -1833,6 +1840,7 @@ watch(
             @unpin="onUnpinMessage"
             @open-thread="openThreadInSidebar"
             @open-thread-preview="openThreadInSidebar"
+            @open-reply-target="jumpToMessageInRoom"
             @toggle-reaction="onToggleReaction"
           />
           <ChatMessageInput
@@ -1886,9 +1894,12 @@ watch(
         :reply-to="activeThreadReplyTo"
         :edit-to="activeThreadEditTo"
         :resolve-media-blob-url="resolveMediaBlobUrl"
+        :center-on-message-id="threadCenterOnMessageId"
+        :scroll-intent-token="threadScrollIntentToken"
         @close="closeActiveThread"
         @reply="setActiveThreadReplyTarget"
         @edit="setActiveThreadEditTarget"
+        @open-reply-target="jumpToMessageInThread"
         @cancel-reply="clearActiveThreadReply"
         @cancel-edit="clearActiveThreadEditTarget"
         @send="onComposerSend"

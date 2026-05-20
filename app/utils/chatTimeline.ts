@@ -63,10 +63,14 @@ export interface ChatTimelineReaction {
   ownReactionEventIds: string[]
 }
 
+export type ChatTimelineReplyMsgtype = 'm.text' | 'm.image' | 'm.video'
+
 export interface ChatTimelineReply {
   eventId: string
   senderName: string
   body: string
+  msgtype?: ChatTimelineReplyMsgtype
+  media?: ChatTimelineMedia
 }
 
 export interface TimelineWindowOptions {
@@ -613,9 +617,6 @@ export function mapTimelineEventsToMessages({
       const reactions = eventType === 'm.room.message' && currentEventId
         ? reactionSummaryByEventId.get(currentEventId) ?? []
         : []
-      const mxcUrl = content.url || content.file?.url
-      const isEncryptedMedia = Boolean(content.file?.url)
-      const mimetype = content.info?.mimetype
       let media: ChatTimelineMedia | undefined
       const replyTo = eventType === 'm.room.message' && !undecryptableMessage
         ? buildReplyMetadata(
@@ -624,25 +625,17 @@ export function mapTimelineEventsToMessages({
             timelineEventsById,
             redactedEventIds,
             deletedMessageText,
+            getMediaUrl,
             threadRootEventId,
           )
         : undefined
 
-      if (eventType === 'm.room.message' && content.msgtype === 'm.image' && mxcUrl) {
-        const needsBlobFetch = isEncryptedMedia ||
-          mimetype === 'image/svg+xml' ||
-          mimetype === 'image/gif' ||
-          body?.toLowerCase().endsWith('.svg') ||
-          body?.toLowerCase().endsWith('.gif')
-
-        media = {
-          url: needsBlobFetch ? '' : (getMediaUrl(mxcUrl, mimetype, body) || mxcUrl),
-          mxcUrl,
-          mimetype,
-          isEncrypted: isEncryptedMedia,
-          encryptionInfo: isEncryptedMedia ? content.file : undefined,
-          info: content.info
-        }
+      if (eventType === 'm.room.message') {
+        media = buildTimelineMediaFromContent({
+          content,
+          body,
+          getMediaUrl,
+        })
       }
 
       const messageKind: ChatTimelineMessage['kind'] =
@@ -1035,12 +1028,81 @@ export function getMessageBody(
   return 'Unsupported message content.'
 }
 
+export function buildTimelineMediaFromContent(input: {
+  content: Record<string, any>
+  body: string
+  getMediaUrl: (mxcUrl: string, mimetype?: string, body?: string) => string | undefined
+}): ChatTimelineMedia | undefined {
+  const { content, body, getMediaUrl } = input
+  const msgtype = content.msgtype
+  const mxcUrl = content.url || content.file?.url
+  const isEncryptedMedia = Boolean(content.file?.url)
+  const mimetype = content.info?.mimetype
+
+  if (msgtype === 'm.image' && mxcUrl) {
+    const needsBlobFetch = isEncryptedMedia ||
+      mimetype === 'image/svg+xml' ||
+      mimetype === 'image/gif' ||
+      body?.toLowerCase().endsWith('.svg') ||
+      body?.toLowerCase().endsWith('.gif')
+
+    return {
+      url: needsBlobFetch
+        ? ''
+        : (getMediaUrl(mxcUrl, mimetype, body) || mxcUrl),
+      mxcUrl,
+      mimetype,
+      isEncrypted: isEncryptedMedia,
+      encryptionInfo: isEncryptedMedia ? content.file : undefined,
+      info: content.info,
+    }
+  }
+
+  if (msgtype === 'm.video' && mxcUrl) {
+    const thumbUrl = content.info?.thumbnail_url
+      || content.info?.thumbnail_file?.url
+    const thumbEncrypted = Boolean(content.info?.thumbnail_file?.url)
+    const thumbMimetype = content.info?.thumbnail_info?.mimetype
+    const thumbNeedsBlob = thumbEncrypted ||
+      thumbMimetype === 'image/svg+xml' ||
+      thumbMimetype === 'image/gif'
+    const resolvedThumb = thumbUrl && !thumbNeedsBlob
+      ? (getMediaUrl(thumbUrl, thumbMimetype, body) || thumbUrl)
+      : ''
+
+    return {
+      url: resolvedThumb,
+      mxcUrl: thumbUrl || mxcUrl,
+      mimetype: thumbMimetype || mimetype,
+      isEncrypted: thumbEncrypted || isEncryptedMedia,
+      encryptionInfo: thumbEncrypted
+        ? content.info?.thumbnail_file
+        : (isEncryptedMedia ? content.file : undefined),
+      info: content.info?.thumbnail_info ?? content.info,
+    }
+  }
+
+  return undefined
+}
+
+function readReplyTargetContent(
+  replyTargetEvent: Record<string, any>,
+): Record<string, any> | undefined {
+  for (const contentRecord of collectMessageContentRecords(replyTargetEvent)) {
+    if (contentRecord.msgtype) {
+      return contentRecord as Record<string, any>
+    }
+  }
+  return replyTargetEvent.getContent?.() ?? undefined
+}
+
 function buildReplyMetadata(
   content: Record<string, any>,
   room: Record<string, any>,
   timelineEventsById: Map<string, Record<string, any>>,
   redactedEventIds: Set<string>,
   deletedMessageText: string,
+  getMediaUrl: (mxcUrl: string, mimetype?: string, body?: string) => string | undefined,
   threadRootEventId?: string,
 ): ChatTimelineReply | undefined {
   const replyEventId = getInReplyToEventId(
@@ -1082,14 +1144,42 @@ function buildReplyMetadata(
   )
   const replyUndecryptable =
     !replyRedacted && isUndecryptableEvent(replyTargetEvent)
+  const replyBody = getMessageBody(replyTargetEvent, replySenderName, replyUndecryptable, {
+    redactedMessage: replyRedacted,
+    deletedMessageText,
+  })
+
+  if (replyRedacted || replyUndecryptable) {
+    return {
+      eventId: replyEventId,
+      senderName: replySenderName,
+      body: replyBody,
+    }
+  }
+
+  const targetContent = readReplyTargetContent(replyTargetEvent)
+  const targetMsgtype = targetContent?.msgtype
+  const normalizedMsgtype: ChatTimelineReplyMsgtype | undefined =
+    targetMsgtype === 'm.image' || targetMsgtype === 'm.video'
+      ? targetMsgtype
+      : targetMsgtype === 'm.text' || !targetMsgtype
+        ? 'm.text'
+        : undefined
+
+  const replyMedia = targetContent
+    ? buildTimelineMediaFromContent({
+        content: targetContent,
+        body: replyBody,
+        getMediaUrl,
+      })
+    : undefined
 
   return {
     eventId: replyEventId,
     senderName: replySenderName,
-    body: getMessageBody(replyTargetEvent, replySenderName, replyUndecryptable, {
-      redactedMessage: replyRedacted,
-      deletedMessageText,
-    }),
+    body: replyBody,
+    msgtype: normalizedMsgtype ?? (replyMedia ? 'm.image' : 'm.text'),
+    media: replyMedia,
   }
 }
 

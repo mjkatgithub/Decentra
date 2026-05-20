@@ -104,6 +104,17 @@ Feature: Chat
     And I should see a rendered reply for "E2E_REPLY_TO_VALID_EVENT"
     And I should see a missing-origin reply fallback
 
+  Scenario: Reply to image shows thumbnail and scrolls to original
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    Then I should see a rendered reply for "E2E_REPLY_TO_IMAGE"
+    And the reply to "E2E_REPLY_TO_IMAGE" should show an image thumbnail
+    When I click the reply quote on message body "E2E_REPLY_TO_IMAGE"
+    Then message body "E2E_SEED_IMAGE" should be visible in the timeline
+    When I click the reply quote on message body "E2E_REPLY_TO_VALID_EVENT"
+    Then message body "E2E_SEED_BASE_MESSAGE" should be visible in the timeline
+
   Scenario: Unread indicator for inactive channel
     When I open the login page
     And I sign in with configured credentials

@@ -7,6 +7,7 @@ import {
   watch,
 } from 'vue'
 import { useAppI18n } from '~/composables/useAppI18n'
+import { useChatMedia } from '~/composables/useChatMedia'
 import {
   createShortcodeMap,
   emojiCatalog,
@@ -15,6 +16,8 @@ import {
   loadFrequentEmojiUsage,
   saveFrequentEmojiUsage,
 } from '~/composables/useEmojiPickerData'
+import type { ChatTimelineReply } from '~/utils/chatTimeline'
+import ReplyQuotePreview from '~/components/Chat/ReplyQuotePreview.vue'
 import {
   applyShortcodeCompletion,
   findTrailingShortcodeToken,
@@ -35,12 +38,6 @@ const activeSuggestionIndex = ref(0)
 const shortcodeMap = createShortcodeMap(emojiCatalog)
 let frequentUsage = loadFrequentEmojiUsage()
 
-interface ReplyTarget {
-  eventId: string
-  senderName: string
-  body: string
-}
-
 interface EditTarget {
   eventId: string
   body: string
@@ -49,7 +46,7 @@ interface EditTarget {
 const props = defineProps<{
   roomId: string | null
   disabled?: boolean
-  replyTo?: ReplyTarget | null
+  replyTo?: ChatTimelineReply | null
   editTo?: EditTarget | null
   threadRootEventId?: string | null
   frequentScopeKey?: string
@@ -61,8 +58,52 @@ const emit = defineEmits<{
   cancelEdit: []
 }>()
 
-const { sendMessage, sendEditMessage, sendImageMessage } = useMatrixClient()
+const { client, sendMessage, sendEditMessage, sendImageMessage } = useMatrixClient()
 const { translateText } = useAppI18n()
+const { resolveMediaBlobUrl } = useChatMedia(client)
+const composerReplyDisplayUrl = ref<string | undefined>()
+const composerReplyMediaLoading = ref(false)
+
+function replyMediaNeedsBlob(media: NonNullable<ChatTimelineReply['media']>) {
+  return (
+    !media.url ||
+    media.isEncrypted === true ||
+    media.mimetype === 'image/svg+xml' ||
+    media.mimetype === 'image/gif'
+  )
+}
+
+watch(
+  () => props.replyTo,
+  async (replyTarget) => {
+    composerReplyDisplayUrl.value = undefined
+    const media = replyTarget?.media
+    if (!media) {
+      return
+    }
+    if (media.url && !replyMediaNeedsBlob(media)) {
+      composerReplyDisplayUrl.value = media.url
+      return
+    }
+    if (!resolveMediaBlobUrl || !replyMediaNeedsBlob(media)) {
+      return
+    }
+    composerReplyMediaLoading.value = true
+    try {
+      composerReplyDisplayUrl.value = await resolveMediaBlobUrl({
+        mxcUrl: media.mxcUrl,
+        mimetype: media.mimetype,
+        isEncrypted: media.isEncrypted,
+        encryptionInfo: media.encryptionInfo,
+      })
+    } catch (thrownError) {
+      console.error('Failed to resolve composer reply media', thrownError)
+    } finally {
+      composerReplyMediaLoading.value = false
+    }
+  },
+  { immediate: true },
+)
 
 const autocompleteOpen = computed(() => suggestions.value.length > 0)
 
@@ -363,15 +404,18 @@ async function onPaste(event: ClipboardEvent) {
              dark:border-gray-700 dark:bg-gray-900"
     >
       <div class="flex items-start justify-between gap-2">
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <p
-            class="text-xs font-medium text-gray-600 dark:text-gray-300"
+            class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-300"
           >
             {{ translateText('chat.replyingTo') }} {{ replyTo.senderName }}
           </p>
-          <p class="truncate text-xs text-gray-500 dark:text-gray-400">
-            {{ replyTo.body }}
-          </p>
+          <ReplyQuotePreview
+            :reply-to="replyTo"
+            :display-url="composerReplyDisplayUrl"
+            :loading="composerReplyMediaLoading"
+            :clickable="false"
+          />
         </div>
         <UButton
           type="button"
