@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import type { ChatThreadSummary } from "~/utils/chatTimeline";
+import type {
+  ChatThreadSummary,
+  ChatTimelineReply,
+} from "~/utils/chatTimeline";
 import ChatThreadPreview from "~/components/Chat/ChatThreadPreview.vue";
+import ReplyQuotePreview from "~/components/Chat/ReplyQuotePreview.vue";
 import { useHoverCapable } from "~/composables/useHoverCapable";
 import {
   isInteractiveMessageRowTarget,
@@ -31,11 +35,7 @@ interface MessageItem {
   senderName: string;
   avatarUrl?: string;
   body: string;
-  replyTo?: {
-    eventId: string;
-    senderName: string;
-    body: string;
-  };
+  replyTo?: ChatTimelineReply;
   media?: MediaInfo;
   reactions?: Array<{
     emoji: string;
@@ -56,7 +56,10 @@ interface MessageItem {
 const props = defineProps<{
   message: MessageItem;
   displayUrl?: string;
+  replyDisplayUrl?: string;
   loadingMedia?: boolean;
+  loadingReplyMedia?: boolean;
+  isHighlighted?: boolean;
   currentUserId?: string;
   canSendMessages?: boolean;
   canPin?: boolean;
@@ -78,6 +81,7 @@ const emit = defineEmits<{
   openLightbox: [];
   openThread: [];
   openThreadPreview: [];
+  openReplyTarget: [eventId: string];
   toggleReaction: [payload: {
     messageId: string;
     emoji: string;
@@ -199,6 +203,9 @@ function onMessageRowPointerUp(pointerEvent: PointerEvent) {
       isSelected
         ? 'bg-gray-100 dark:bg-gray-800/80'
         : '',
+      isHighlighted
+        ? 'ring-2 ring-primary-400/70 dark:ring-primary-500/60'
+        : '',
     ]"
     @pointerdown="onMessageRowPointerDown"
     @pointerup="onMessageRowPointerUp"
@@ -244,17 +251,14 @@ function onMessageRowPointerUp(pointerEvent: PointerEvent) {
           </span>
         </div>
 
-        <div
+        <ReplyQuotePreview
           v-if="message.replyTo"
-          class="reply-preview mt-1 rounded border border-gray-200 px-2 py-1 text-xs text-gray-600 dark:border-gray-700 dark:text-gray-300"
-        >
-          <p class="truncate font-medium">
-            {{ message.replyTo.senderName }}
-          </p>
-          <p class="truncate">
-            {{ message.replyTo.body }}
-          </p>
-        </div>
+          :reply-to="message.replyTo"
+          :display-url="replyDisplayUrl"
+          :loading="loadingReplyMedia"
+          clickable
+          @activate="emit('openReplyTarget', message.replyTo!.eventId)"
+        />
 
         <div
           v-if="message.media"

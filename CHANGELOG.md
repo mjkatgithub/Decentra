@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Reply quotes show image and video previews in the timeline and composer,
+  and clicking a quote scrolls to and highlights the original message (#83)
 - Emoji picker and colon shortcode autocomplete in the message composer
   (main timeline and thread panel), reusing the reaction emoji catalog (#88)
 - Pinned messages: room header panel, pin/unpin from the message action bar

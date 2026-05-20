@@ -434,6 +434,38 @@ Then('I should see a missing-origin reply fallback', async function () {
     .toBeVisible({ timeout: 10000 })
 })
 
+Then(
+  'the reply to {string} should show an image thumbnail',
+  async function (replyBodyText) {
+    const replyContainer = this.page.locator('div.group').filter({
+      hasText: replyBodyText,
+    }).first()
+    const thumbnail = replyContainer.locator('.reply-preview img')
+    await expect(thumbnail).toBeVisible({ timeout: 15000 })
+  },
+)
+
+When(
+  'I click the reply quote on message body {string}',
+  async function (replyBodyText) {
+    const replyContainer = this.page.locator('div.group').filter({
+      hasText: replyBodyText,
+    }).first()
+    const quote = replyContainer.locator('.reply-preview[role="button"]')
+    await expect(quote).toBeVisible({ timeout: 10000 })
+    await quote.click()
+  },
+)
+
+Then(
+  'message body {string} should be visible in the timeline',
+  async function (messageBodyText) {
+    const messageRow = messageContainerByBody(this.page, messageBodyText)
+    await expect(messageRow).toBeVisible({ timeout: 15000 })
+    await expect(messageRow).toBeInViewport({ timeout: 10000 })
+  },
+)
+
 When(
   'I open the thread on message body {string}',
   async function (messageText) {

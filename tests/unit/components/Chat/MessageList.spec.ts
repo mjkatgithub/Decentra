@@ -202,6 +202,35 @@ describe('MessageList', () => {
     preview.text().should.include('Original message')
   })
 
+  it('emits openReplyTarget when reply quote is activated', async () => {
+    const wrapper = mountMessageList({
+      messages: [
+        {
+          id: 'evt-reply',
+          kind: 'message',
+          senderId: '@bob:example.org',
+          senderName: 'Bob',
+          body: 'Reply body',
+          replyTo: {
+            eventId: 'evt-original',
+            senderName: 'Alice',
+            body: 'Original message',
+            msgtype: 'm.text',
+          },
+        },
+      ],
+    })
+
+    const quoteButton = wrapper.find('.reply-preview[role="button"]')
+    quoteButton.exists().should.equal(true)
+    await quoteButton.trigger('click')
+
+    const jumpEvents = wrapper.emitted('openReplyTarget') || []
+    jumpEvents.length.should.equal(1)
+    jumpEvents[0]?.[0].should.equal('evt-original')
+    wrapper.unmount()
+  })
+
   it('emits reply event when clicking reply action', async () => {
     const wrapper = mountMessageList({
       messages: [
