@@ -127,6 +127,7 @@ const { translateText } = useAppI18n();
     <ChatMessageInput
       :room-id="roomId"
       :disabled="disabled"
+      :frequent-scope-key="currentUserId"
       :reply-to="replyTo ?? null"
       :edit-to="editTo ?? null"
       :thread-root-event-id="rootEventId"

@@ -1,10 +1,39 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  ref,
+  watch,
+} from 'vue'
 import { useAppI18n } from '~/composables/useAppI18n'
+import {
+  createShortcodeMap,
+  emojiCatalog,
+  normalizeShortcodes,
+  trackEmojiUsage,
+  loadFrequentEmojiUsage,
+  saveFrequentEmojiUsage,
+} from '~/composables/useEmojiPickerData'
+import {
+  applyShortcodeCompletion,
+  findTrailingShortcodeToken,
+  insertTextAtSelection,
+  matchShortcodeSuggestions,
+  type ShortcodeSuggestion,
+} from '~/utils/composerEmoji'
 
 const message = ref('')
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const messageInputRef = ref<{ $el: HTMLElement } | null>(null)
+const pickerRoot = ref<HTMLElement | null>(null)
+const pickerOpen = ref(false)
+const suggestions = ref<ShortcodeSuggestion[]>([])
+const activeSuggestionIndex = ref(0)
+
+const shortcodeMap = createShortcodeMap(emojiCatalog)
+let frequentUsage = loadFrequentEmojiUsage()
 
 interface ReplyTarget {
   eventId: string
@@ -22,8 +51,8 @@ const props = defineProps<{
   disabled?: boolean
   replyTo?: ReplyTarget | null
   editTo?: EditTarget | null
-  /** MSC3440 thread root; when set, sends as thread reply */
   threadRootEventId?: string | null
+  frequentScopeKey?: string
 }>()
 
 const emit = defineEmits<{
@@ -35,6 +64,8 @@ const emit = defineEmits<{
 const { sendMessage, sendEditMessage, sendImageMessage } = useMatrixClient()
 const { translateText } = useAppI18n()
 
+const autocompleteOpen = computed(() => suggestions.value.length > 0)
+
 watch(
   () => props.editTo,
   (editTarget) => {
@@ -45,11 +76,177 @@ watch(
   { immediate: true },
 )
 
+watch(
+  () => props.frequentScopeKey,
+  (scopeKey) => {
+    frequentUsage = loadFrequentEmojiUsage(scopeKey)
+  },
+  { immediate: true },
+)
+
+function getNativeMessageInput(): HTMLInputElement | null {
+  const rootElement = messageInputRef.value?.$el
+  if (!rootElement) {
+    return null
+  }
+  return rootElement.querySelector('input')
+}
+
+function setInputSelection(cursor: number) {
+  const input = getNativeMessageInput()
+  if (!input) {
+    return
+  }
+  input.selectionStart = cursor
+  input.selectionEnd = cursor
+  input.focus()
+}
+
+function insertEmojiAtCursor(emoji: string) {
+  const input = getNativeMessageInput()
+  const start = input?.selectionStart ?? message.value.length
+  const end = input?.selectionEnd ?? start
+  const { nextText, selectionStart } = insertTextAtSelection(
+    message.value,
+    start,
+    end,
+    emoji,
+  )
+  message.value = nextText
+  clearAutocomplete()
+  nextTick(() => setInputSelection(selectionStart))
+}
+
+function onPickerSelect(emoji: string) {
+  frequentUsage = trackEmojiUsage(frequentUsage, emoji)
+  saveFrequentEmojiUsage(frequentUsage, props.frequentScopeKey)
+  insertEmojiAtCursor(emoji)
+  pickerOpen.value = false
+}
+
+function togglePicker(event?: Event) {
+  event?.stopPropagation?.()
+  if (props.disabled || !props.roomId || loading.value) {
+    return
+  }
+  pickerOpen.value = !pickerOpen.value
+  if (pickerOpen.value) {
+    clearAutocomplete()
+  }
+}
+
+function clearAutocomplete() {
+  suggestions.value = []
+  activeSuggestionIndex.value = 0
+}
+
+function refreshAutocomplete() {
+  const input = getNativeMessageInput()
+  const cursor = input?.selectionStart ?? message.value.length
+  const token = findTrailingShortcodeToken(message.value, cursor)
+  if (!token) {
+    clearAutocomplete()
+    return
+  }
+  suggestions.value = matchShortcodeSuggestions(token.prefix, emojiCatalog)
+  activeSuggestionIndex.value = 0
+}
+
+function applyActiveSuggestion() {
+  const input = getNativeMessageInput()
+  const cursor = input?.selectionStart ?? message.value.length
+  const token = findTrailingShortcodeToken(message.value, cursor)
+  const activeSuggestion = suggestions.value[activeSuggestionIndex.value]
+  if (!token || !activeSuggestion) {
+    return
+  }
+  const { nextText, selectionStart } = applyShortcodeCompletion(
+    message.value,
+    token,
+    activeSuggestion.emoji,
+  )
+  message.value = nextText
+  clearAutocomplete()
+  nextTick(() => setInputSelection(selectionStart))
+}
+
+function onMessageInput() {
+  refreshAutocomplete()
+}
+
+function onMessageKeydown(event: KeyboardEvent) {
+  if (autocompleteOpen.value) {
+    if (event.key === 'Tab' || event.key === 'Enter') {
+      event.preventDefault()
+      applyActiveSuggestion()
+      return
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      clearAutocomplete()
+      return
+    }
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      const lastIndex = suggestions.value.length - 1
+      activeSuggestionIndex.value = Math.min(
+        activeSuggestionIndex.value + 1,
+        lastIndex,
+      )
+      return
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      activeSuggestionIndex.value = Math.max(
+        activeSuggestionIndex.value - 1,
+        0,
+      )
+      return
+    }
+  }
+
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    void handleSend()
+  }
+}
+
+function onDocumentClick(clickEvent: MouseEvent) {
+  if (!pickerOpen.value || !pickerRoot.value) {
+    return
+  }
+  const clickTarget = clickEvent.target
+  if (!(clickTarget instanceof Node)) {
+    return
+  }
+  if (!pickerRoot.value.contains(clickTarget)) {
+    pickerOpen.value = false
+  }
+}
+
+if (import.meta.client) {
+  document.addEventListener('click', onDocumentClick)
+}
+
+onBeforeUnmount(() => {
+  if (!import.meta.client) {
+    return
+  }
+  document.removeEventListener('click', onDocumentClick)
+})
+
 async function handleSend() {
-  const body = message.value.trim()
-  if (!body || !props.roomId || props.disabled) return
+  const body = normalizeShortcodes(
+    message.value.trim(),
+    shortcodeMap,
+  )
+  if (!body || !props.roomId || props.disabled) {
+    return
+  }
 
   loading.value = true
+  clearAutocomplete()
+  pickerOpen.value = false
   try {
     if (props.editTo?.eventId) {
       await sendEditMessage(props.roomId, body, props.editTo.eventId)
@@ -68,7 +265,9 @@ async function handleSend() {
           : undefined,
       })
     } else if (props.replyTo?.eventId) {
-      await sendMessage(props.roomId, body, { eventId: props.replyTo.eventId })
+      await sendMessage(props.roomId, body, {
+        eventId: props.replyTo.eventId,
+      })
     } else {
       await sendMessage(props.roomId, body)
     }
@@ -90,7 +289,9 @@ function openFilePicker() {
 }
 
 async function handleImageSend(imageFile: File | Blob, fileName: string) {
-  if (!props.roomId || props.disabled || loading.value) return
+  if (!props.roomId || props.disabled || loading.value) {
+    return
+  }
   loading.value = true
   try {
     await sendImageMessage(props.roomId, imageFile, fileName)
@@ -102,7 +303,9 @@ async function handleImageSend(imageFile: File | Blob, fileName: string) {
 async function onFileChange(event: Event) {
   const target = event.target as HTMLInputElement
   const selectedFile = target.files?.[0]
-  if (!selectedFile) return
+  if (!selectedFile) {
+    return
+  }
   await handleImageSend(selectedFile, selectedFile.name || 'image')
   target.value = ''
 }
@@ -112,7 +315,9 @@ async function onPaste(event: ClipboardEvent) {
     return
   }
   const clipboardItems = event.clipboardData?.items
-  if (!clipboardItems) return
+  if (!clipboardItems) {
+    return
+  }
   for (const clipboardItem of clipboardItems) {
     if (!clipboardItem.type.startsWith('image/')) {
       continue
@@ -181,7 +386,11 @@ async function onPaste(event: ClipboardEvent) {
         </UButton>
       </div>
     </div>
-    <form class="flex gap-2" @submit.prevent="handleSend">
+    <form
+      ref="pickerRoot"
+      class="relative flex gap-2"
+      @submit.prevent="handleSend"
+    >
       <input
         ref="fileInput"
         type="file"
@@ -199,14 +408,77 @@ async function onPaste(event: ClipboardEvent) {
         :aria-label="translateText('chat.sendImage')"
         @click="openFilePicker"
       />
-      <UInput
-        v-model="message"
-        :placeholder="translateText('chat.messagePlaceholder')"
-        class="flex-1"
+      <UButton
+        type="button"
+        icon="i-lucide-smile"
+        color="neutral"
+        variant="soft"
         :disabled="disabled || !roomId || loading"
-        @keydown.enter.exact.prevent="handleSend"
-        @paste="onPaste"
+        :aria-label="translateText('chat.insertEmoji')"
+        :aria-expanded="pickerOpen"
+        data-testid="composer-emoji-button"
+        @click="togglePicker"
       />
+      <div class="relative min-w-0 flex-1">
+        <ul
+          v-if="autocompleteOpen"
+          role="listbox"
+          :aria-label="translateText('chat.emojiAutocompleteHint')"
+          class="
+            absolute bottom-full left-0 z-30 mb-1 max-h-48 w-full
+            overflow-y-auto rounded-md border border-gray-200 bg-white py-1
+            shadow-lg dark:border-gray-700 dark:bg-gray-900
+          "
+        >
+          <li
+            v-for="(suggestion, suggestionIndex) in suggestions"
+            :key="`${suggestion.shortcode}-${suggestion.emoji}`"
+            role="option"
+            :aria-selected="suggestionIndex === activeSuggestionIndex"
+          >
+            <button
+              type="button"
+              class="
+                flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm
+                hover:bg-gray-100 dark:hover:bg-gray-800
+              "
+              :class="
+                suggestionIndex === activeSuggestionIndex
+                  ? 'bg-gray-100 dark:bg-gray-800'
+                  : ''
+              "
+              @mousedown.prevent="activeSuggestionIndex = suggestionIndex;
+                                  applyActiveSuggestion()"
+            >
+              <span class="text-lg">{{ suggestion.emoji }}</span>
+              <span class="text-gray-600 dark:text-gray-300">
+                :{{ suggestion.shortcode }}:
+              </span>
+            </button>
+          </li>
+        </ul>
+        <UInput
+          ref="messageInputRef"
+          v-model="message"
+          :placeholder="translateText('chat.messagePlaceholder')"
+          class="w-full"
+          :disabled="disabled || !roomId || loading"
+          @input="onMessageInput"
+          @keydown="onMessageKeydown"
+          @paste="onPaste"
+        />
+      </div>
+      <div
+        v-if="pickerOpen"
+        data-testid="composer-emoji-picker"
+        class="absolute bottom-full right-0 z-20 mb-1"
+        @click.stop
+      >
+        <ChatReactionEmojiPicker
+          :frequent-scope-key="frequentScopeKey"
+          @select="onPickerSelect"
+        />
+      </div>
       <UButton
         type="submit"
         :loading="loading"

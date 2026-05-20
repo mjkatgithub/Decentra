@@ -1802,6 +1802,7 @@ watch(
           <ChatMessageInput
             :room-id="selectedRoomId"
             :disabled="!client"
+            :frequent-scope-key="userId ?? undefined"
             :reply-to="activeThreadReplyTo"
             :edit-to="activeThreadEditTo"
             :thread-root-event-id="activeThread.rootEventId"
@@ -1840,6 +1841,7 @@ watch(
             "
             :room-id="selectedRoomId"
             :disabled="!client"
+            :frequent-scope-key="userId ?? undefined"
             :reply-to="activeReplyTo"
             :edit-to="activeEditTo"
             @cancel-reply="clearReplyTarget"

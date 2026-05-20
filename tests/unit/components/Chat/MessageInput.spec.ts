@@ -4,17 +4,35 @@ import ChatMessageInput from '~/components/Chat/MessageInput.vue'
 
 const UInputStub = {
   props: ['modelValue', 'placeholder', 'disabled'],
-  emits: ['update:modelValue', 'paste', 'keydown'],
+  emits: ['update:modelValue', 'paste', 'keydown', 'input'],
   template: `
     <input
       type="text"
       :value="modelValue"
       :placeholder="placeholder"
       :disabled="disabled"
-      @input="$emit('update:modelValue', $event.target.value)"
+      @input="
+        $emit('update:modelValue', $event.target.value);
+        $emit('input', $event)
+      "
       @paste="$emit('paste', $event)"
       @keydown="$emit('keydown', $event)"
     >
+  `
+}
+
+const ChatReactionEmojiPickerStub = {
+  emits: ['select'],
+  template: `
+    <div data-testid="composer-emoji-picker-stub">
+      <button
+        type="button"
+        data-emoji-option="👋"
+        @click="$emit('select', '👋')"
+      >
+        wave
+      </button>
+    </div>
   `
 }
 
@@ -49,7 +67,8 @@ function mountInput(
     global: {
       stubs: {
         UInput: UInputStub,
-        UButton: UButtonStub
+        UButton: UButtonStub,
+        ChatReactionEmojiPicker: ChatReactionEmojiPickerStub
       }
     }
   })
@@ -279,5 +298,75 @@ describe('MessageInput', () => {
 
     const cancelEditEvents = wrapper.emitted('cancelEdit') || []
     cancelEditEvents.length.should.equal(1)
+  })
+
+  it('opens picker and inserts emoji without sending', async () => {
+    const sendMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
+      sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
+      sendImageMessage: vi.fn(async () => undefined)
+    })
+
+    const wrapper = mountInput()
+    await wrapper.get('[data-testid="composer-emoji-button"]').trigger('click')
+    wrapper.find('[data-testid="composer-emoji-picker"]').exists().should.equal(
+      true
+    )
+    await wrapper.find('[data-emoji-option="👋"]').trigger('click')
+
+    const input = wrapper.find('input[type="text"]')
+    ;(input.element as HTMLInputElement).value.should.equal('👋')
+    sendMessage.mock.calls.length.should.equal(0)
+  })
+
+  it('autocompletes see_no shortcode with Tab', async () => {
+    const sendMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
+      sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
+      sendImageMessage: vi.fn(async () => undefined)
+    })
+
+    const wrapper = mountInput()
+    const input = wrapper.find('input[type="text"]')
+    await input.setValue('hi :see_no')
+    await input.trigger('keydown', { key: 'Tab' })
+
+    ;(input.element as HTMLInputElement).value.should.equal('hi 🙈')
+    sendMessage.mock.calls.length.should.equal(0)
+  })
+
+  it('does not send when Enter completes autocomplete', async () => {
+    const sendMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
+      sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
+      sendImageMessage: vi.fn(async () => undefined)
+    })
+
+    const wrapper = mountInput()
+    const input = wrapper.find('input[type="text"]')
+    await input.setValue(':wa')
+    await input.trigger('keydown', { key: 'Enter' })
+
+    sendMessage.mock.calls.length.should.equal(0)
+    ;(input.element as HTMLInputElement).value.should.equal('👋')
+  })
+
+  it('normalizes full shortcode on send', async () => {
+    const sendMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
+      sendMessage,
+      sendEditMessage: vi.fn(async () => undefined),
+      sendImageMessage: vi.fn(async () => undefined)
+    })
+
+    const wrapper = mountInput()
+    await wrapper.find('input[type="text"]').setValue(':see_no_evil:')
+    await wrapper.find('form').trigger('submit')
+
+    sendMessage.mock.calls.length.should.equal(1)
+    sendMessage.mock.calls[0]?.[1].should.equal('🙈')
   })
 })
