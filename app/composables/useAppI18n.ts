@@ -154,6 +154,8 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'chat.noticeUnpinnedMessage': '{name} unpinned a message',
     'chat.noticeUpdatedPinnedMessages': '{name} updated pinned messages',
     'chat.sendImage': 'Send image',
+    'chat.insertEmoji': 'Insert emoji',
+    'chat.emojiAutocompleteHint': 'Emoji shortcode suggestions',
     'chat.messagePlaceholder': 'Write a message...',
     'chat.noRooms': 'No rooms',
     'layout.spaces': 'Spaces',
@@ -495,6 +497,8 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'chat.noticeUpdatedPinnedMessages':
       '{name} hat die angepinnten Nachrichten geändert',
     'chat.sendImage': 'Bild senden',
+    'chat.insertEmoji': 'Emoji einfügen',
+    'chat.emojiAutocompleteHint': 'Emoji-Shortcode-Vorschläge',
     'chat.messagePlaceholder': 'Nachricht eingeben...',
     'chat.noRooms': 'Keine Räume',
     'layout.spaces': 'Spaces',

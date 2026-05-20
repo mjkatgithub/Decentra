@@ -1,3 +1,5 @@
+import { extendedEmojiCatalog } from "~/composables/extendedEmojiCatalog";
+
 export type EmojiCategoryId =
   | "frequent"
   | "smileys"
@@ -540,6 +542,7 @@ export const emojiCatalog: EmojiEntry[] = [
     emoji: "🇮🇹", name: "italy", shortcodes: ["flag_it"],
     keywords: ["flag"], category: "flags",
   }),
+  ...extendedEmojiCatalog,
 ];
 
 export function createShortcodeMap(entries: EmojiEntry[]): Map<string, string> {

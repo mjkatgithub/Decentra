@@ -167,6 +167,40 @@ When('I send {string} from the message composer', async function (text) {
   await input.press('Enter')
 })
 
+function composerInput(page) {
+  return page.getByPlaceholder(/Write a message|Nachricht eingeben/i).last()
+}
+
+When('I open the composer emoji picker', async function () {
+  const emojiButton = this.page.getByTestId('composer-emoji-button').last()
+  await expect(emojiButton).toBeVisible({ timeout: 15000 })
+  await emojiButton.click()
+  const picker = this.page.getByTestId('composer-emoji-picker').last()
+  await expect(picker).toBeVisible({ timeout: 10000 })
+})
+
+When(
+  'I select emoji {string} from the composer picker',
+  async function (emoji) {
+    const picker = this.page.getByTestId('composer-emoji-picker').last()
+    const emojiOption = picker.locator(`[data-emoji-option="${emoji}"]`).first()
+    await expect(emojiOption).toBeVisible({ timeout: 10000 })
+    await emojiOption.click()
+  }
+)
+
+When('I send the composer draft', async function () {
+  const input = composerInput(this.page)
+  await expect(input).toBeVisible({ timeout: 15000 })
+  await input.press('Enter')
+})
+
+When('I type {string} in the message composer', async function (text) {
+  const input = composerInput(this.page)
+  await expect(input).toBeVisible({ timeout: 15000 })
+  await input.fill(text)
+})
+
 function pinnedMessagesPanel(page) {
   return page.locator('aside').filter({
     has: page.getByText(/Pinned messages|Angepinnte Nachrichten/i)

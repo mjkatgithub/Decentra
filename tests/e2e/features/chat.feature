@@ -149,6 +149,18 @@ Feature: Chat
     And I open the pinned messages panel
     Then I should not see "E2E_PIN_TARGET" in the pinned messages panel
 
+  Scenario: Composer emoji picker and shortcode autocomplete
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    When I open the composer emoji picker
+    And I select emoji "👋" from the composer picker
+    And I send the composer draft
+    Then I should see message body "👋"
+    When I type ":see_no_evil:" in the message composer
+    And I send the composer draft
+    Then I should see message body "🙈"
+
   Scenario: Add and remove message reaction
     When I open the login page
     And I sign in with configured credentials
