@@ -1077,6 +1077,17 @@ export function useMatrixClient() {
     }
   }
 
+  async function sendRoomTyping(
+    roomId: string,
+    isTyping: boolean,
+    timeoutMs: number,
+  ): Promise<void> {
+    if (!client.value) {
+      return
+    }
+    await client.value.sendTyping(roomId, isTyping, timeoutMs)
+  }
+
   async function sendMessage(
     roomId: string,
     body: string,
@@ -1572,6 +1583,7 @@ export function useMatrixClient() {
     getRooms,
     getRoom,
     markRoomAsRead,
+    sendRoomTyping,
     sendMessage,
     sendEditMessage,
     sendImageMessage,

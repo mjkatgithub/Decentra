@@ -7,6 +7,7 @@ import {
 } from "matrix-js-sdk";
 import { useAppI18n } from "~/composables/useAppI18n";
 import { useChatMedia } from "~/composables/useChatMedia";
+import { useRoomTyping } from "~/composables/useRoomTyping";
 import ChatOnboardingPanel from "~/components/Chat/Onboarding/ChatOnboardingPanel.vue";
 import ChatDmStartPanel from "~/components/Chat/Onboarding/ChatDmStartPanel.vue";
 import ChatPublicRoomsPanel from "~/components/Chat/Onboarding/ChatPublicRoomsPanel.vue";
@@ -180,6 +181,11 @@ const {
   matrixRooms,
   selectedRoomId,
   markRoomAsRead,
+});
+const { typingLabel } = useRoomTyping({
+  client,
+  selectedRoomId,
+  userId,
 });
 const loadingOlder = ref(false);
 const loadingNewer = ref(false);
@@ -1806,6 +1812,7 @@ watch(
             @open-reply-target="jumpToMessageInThread"
             @toggle-reaction="onToggleReaction"
           />
+          <ChatTypingIndicator :label="typingLabel" />
           <ChatMessageInput
             :room-id="selectedRoomId"
             :disabled="!client"
@@ -1842,6 +1849,12 @@ watch(
             @open-thread-preview="openThreadInSidebar"
             @open-reply-target="jumpToMessageInRoom"
             @toggle-reaction="onToggleReaction"
+          />
+          <ChatTypingIndicator
+            v-if="
+              !activeThread || activeThread.presentation !== 'sidebar'
+            "
+            :label="typingLabel"
           />
           <ChatMessageInput
             v-if="

@@ -1,4 +1,4 @@
-import { describe, it, vi } from 'vitest'
+import { beforeEach, describe, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChatMessageInput from '~/components/Chat/MessageInput.vue'
 
@@ -74,15 +74,30 @@ function mountInput(
   })
 }
 
+function defaultMatrixClientStub(
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    client: { value: {} },
+    sendMessage: vi.fn(async () => undefined),
+    sendEditMessage: vi.fn(async () => undefined),
+    sendImageMessage: vi.fn(async () => undefined),
+    sendRoomTyping: vi.fn(async () => undefined),
+    ...overrides,
+  }
+}
+
 describe('MessageInput', () => {
+  beforeEach(() => {
+    ;(globalThis as Record<string, unknown>).useMatrixClient =
+      () => defaultMatrixClientStub()
+  })
+
   it('sends image from file picker', async () => {
     const sendImageMessage = vi.fn(async () => undefined)
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendImageMessage })
 
     const wrapper = mountInput()
     const imageFile = new File(['img-data'], 'picked.png', {
@@ -104,11 +119,8 @@ describe('MessageInput', () => {
   it('sends image from clipboard paste', async () => {
     const sendImageMessage = vi.fn(async () => undefined)
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendImageMessage })
 
     const wrapper = mountInput()
     const pastedFile = new File(['img-data'], 'pasted.png', {
@@ -137,11 +149,8 @@ describe('MessageInput', () => {
   it('ignores non-image clipboard data', async () => {
     const sendImageMessage = vi.fn(async () => undefined)
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendImageMessage })
 
     const wrapper = mountInput()
     const input = wrapper.find('input[type="text"]')
@@ -164,11 +173,8 @@ describe('MessageInput', () => {
   it('sends reply message with in-reply-to payload', async () => {
     const sendImageMessage = vi.fn(async () => undefined)
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendImageMessage })
 
     const wrapper = mountInput({
       replyTo: {
@@ -193,11 +199,8 @@ describe('MessageInput', () => {
   it('emits cancelReply when clicking cancel button', async () => {
     const sendImageMessage = vi.fn(async () => undefined)
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendImageMessage })
 
     const wrapper = mountInput({
       replyTo: {
@@ -220,11 +223,8 @@ describe('MessageInput', () => {
   it('sends thread reply with threadRootEventId and replyTo', async () => {
     const sendImageMessage = vi.fn(async () => undefined)
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendImageMessage })
 
     const wrapper = mountInput({
       threadRootEventId: '$root-event',
@@ -248,11 +248,8 @@ describe('MessageInput', () => {
   it('prefills and sends edit message with sendEditMessage', async () => {
     const sendEditMessage = vi.fn(async () => undefined)
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage,
-      sendImageMessage: vi.fn(async () => undefined)
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendEditMessage })
 
     const wrapper = mountInput({
       editTo: {
@@ -276,11 +273,8 @@ describe('MessageInput', () => {
   })
 
   it('emits cancelEdit when clicking cancel edit button', async () => {
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage: vi.fn(async () => undefined),
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage: vi.fn(async () => undefined)
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient =
+      () => defaultMatrixClientStub()
 
     const wrapper = mountInput({
       editTo: {
@@ -302,11 +296,8 @@ describe('MessageInput', () => {
 
   it('opens picker and inserts emoji without sending', async () => {
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage: vi.fn(async () => undefined)
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage })
 
     const wrapper = mountInput()
     await wrapper.get('[data-testid="composer-emoji-button"]').trigger('click')
@@ -322,11 +313,8 @@ describe('MessageInput', () => {
 
   it('autocompletes see_no shortcode with Tab', async () => {
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage: vi.fn(async () => undefined)
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage })
 
     const wrapper = mountInput()
     const input = wrapper.find('input[type="text"]')
@@ -339,11 +327,8 @@ describe('MessageInput', () => {
 
   it('does not send when Enter completes autocomplete', async () => {
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage: vi.fn(async () => undefined)
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage })
 
     const wrapper = mountInput()
     const input = wrapper.find('input[type="text"]')
@@ -356,11 +341,8 @@ describe('MessageInput', () => {
 
   it('normalizes full shortcode on send', async () => {
     const sendMessage = vi.fn(async () => undefined)
-    ;(globalThis as Record<string, unknown>).useMatrixClient = () => ({
-      sendMessage,
-      sendEditMessage: vi.fn(async () => undefined),
-      sendImageMessage: vi.fn(async () => undefined)
-    })
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage })
 
     const wrapper = mountInput()
     await wrapper.find('input[type="text"]').setValue(':see_no_evil:')

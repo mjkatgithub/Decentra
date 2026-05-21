@@ -181,6 +181,15 @@ Feature: Chat
     When I remove reaction "👍" on message body "E2E_SEED_BASE_MESSAGE"
     Then I should not see reaction "👍" on message body "E2E_SEED_BASE_MESSAGE"
 
+  Scenario: Typing indicator when another user composes
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    And the secondary user starts typing in the main test room
+    Then the typing indicator should be visible
+    When the secondary user stops typing in the main test room
+    Then the typing indicator should not be visible
+
   Scenario Outline: Member presence indicator reflects standard status
     When I open the login page
     And I sign in with configured credentials

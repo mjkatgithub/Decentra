@@ -25,6 +25,7 @@ import {
   matchShortcodeSuggestions,
   type ShortcodeSuggestion,
 } from '~/utils/composerEmoji'
+import { createComposerTypingNotifier } from '~/utils/composerTypingNotifier'
 
 const message = ref('')
 const loading = ref(false)
@@ -58,7 +59,21 @@ const emit = defineEmits<{
   cancelEdit: []
 }>()
 
-const { client, sendMessage, sendEditMessage, sendImageMessage } = useMatrixClient()
+const {
+  client,
+  sendMessage,
+  sendEditMessage,
+  sendImageMessage,
+  sendRoomTyping,
+} = useMatrixClient()
+
+const typingNotifier = createComposerTypingNotifier({
+  getRoomId: () => props.roomId,
+  sendTyping: sendRoomTyping,
+  isEnabled: () => Boolean(
+    props.roomId && !props.disabled && client?.value,
+  ),
+})
 const { translateText } = useAppI18n()
 const { resolveMediaBlobUrl } = useChatMedia(client)
 const composerReplyDisplayUrl = ref<string | undefined>()
@@ -156,6 +171,9 @@ function insertEmojiAtCursor(emoji: string) {
   message.value = nextText
   clearAutocomplete()
   nextTick(() => setInputSelection(selectionStart))
+  if (nextText.trim()) {
+    typingNotifier.notifyInput()
+  }
 }
 
 function onPickerSelect(emoji: string) {
@@ -209,10 +227,18 @@ function applyActiveSuggestion() {
   message.value = nextText
   clearAutocomplete()
   nextTick(() => setInputSelection(selectionStart))
+  if (nextText.trim()) {
+    typingNotifier.notifyInput()
+  }
 }
 
 function onMessageInput() {
   refreshAutocomplete()
+  if (message.value.trim()) {
+    typingNotifier.notifyInput()
+  } else {
+    typingNotifier.notifyStopped()
+  }
 }
 
 function onMessageKeydown(event: KeyboardEvent) {
@@ -270,11 +296,30 @@ if (import.meta.client) {
 }
 
 onBeforeUnmount(() => {
+  typingNotifier.notifyStopped()
   if (!import.meta.client) {
     return
   }
   document.removeEventListener('click', onDocumentClick)
 })
+
+watch(
+  () => props.roomId,
+  (_nextRoomId, previousRoomId) => {
+    if (previousRoomId) {
+      typingNotifier.notifyStopped()
+    }
+  },
+)
+
+watch(
+  () => props.disabled,
+  (isDisabled) => {
+    if (isDisabled) {
+      typingNotifier.notifyStopped()
+    }
+  },
+)
 
 async function handleSend() {
   const body = normalizeShortcodes(
@@ -285,6 +330,7 @@ async function handleSend() {
     return
   }
 
+  typingNotifier.notifyStopped()
   loading.value = true
   clearAutocomplete()
   pickerOpen.value = false

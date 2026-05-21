@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Typing indicators in the active room: receive `m.typing` via the SDK,
+  debounced outbound `sendTyping` from the composer, compact label above the
+  message input (EN/DE), and multi-user summaries (#77)
 - Reply quotes show image and video previews in the timeline and composer,
   and clicking a quote scrolls to and highlights the original message (#83)
 - Emoji picker and colon shortcode autocomplete in the message composer

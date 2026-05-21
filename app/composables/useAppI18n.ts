@@ -159,6 +159,10 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'chat.insertEmoji': 'Insert emoji',
     'chat.emojiAutocompleteHint': 'Emoji shortcode suggestions',
     'chat.messagePlaceholder': 'Write a message...',
+    'chat.typingOne': '{name} is typing…',
+    'chat.typingTwo': '{first} and {second} are typing…',
+    'chat.typingManyOneOther': '{first}, {second} and 1 other are typing…',
+    'chat.typingManyOthers': '{first}, {second} and {count} others are typing…',
     'chat.noRooms': 'No rooms',
     'layout.spaces': 'Spaces',
     'layout.channels': 'Channels',
@@ -504,6 +508,12 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'chat.insertEmoji': 'Emoji einfügen',
     'chat.emojiAutocompleteHint': 'Emoji-Shortcode-Vorschläge',
     'chat.messagePlaceholder': 'Nachricht eingeben...',
+    'chat.typingOne': '{name} schreibt…',
+    'chat.typingTwo': '{first} und {second} schreiben…',
+    'chat.typingManyOneOther':
+      '{first}, {second} und 1 weitere Person schreiben…',
+    'chat.typingManyOthers':
+      '{first}, {second} und {count} weitere schreiben…',
     'chat.noRooms': 'Keine Räume',
     'layout.spaces': 'Spaces',
     'layout.channels': 'Kanäle',
