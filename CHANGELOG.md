@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Space settings hub with Matrix profile (name, topic, icon), Discord-like
+  custom roles (`decentra.space.roles`), member assignment, channel visibility
+  per role, Cinny-style member groups in the space sidebar, and Discord-like
+  channel drag-and-drop without grab handles (#23)
 - Typing indicators in the active room: receive `m.typing` via the SDK,
   debounced outbound `sendTyping` from the composer, compact label above the
   message input (EN/DE), and multi-user summaries (#77)

@@ -23,14 +23,21 @@ import {
 import {
   buildSpaceRoomCategories,
   getJoinedSpaceRoomIds,
-  isRootSpaceRoom,
+  getJoinedSpaceIdsListedAsChild,
+  isRoomListedUnderSpaceSubtree,
   isRoomUnderAncestorSpace,
+  isTopLevelSpaceForRail,
 } from "~/utils/spaceRoomCategories";
 import { canUserSendRoomMessage } from "~/utils/matrixRoomMessagePermissions";
 import { canUserPinEvents } from "~/utils/matrixRoomPinnedEventsPermissions";
 import { getPinnedEventIds } from "~/utils/matrixRoomPinnedEvents";
 import { buildPinnedMessageEntries } from "~/utils/matrixPinnedMessageEntries";
 import { canUserSendSpaceChildState } from "~/utils/matrixSpaceHierarchyPermissions";
+import {
+  canPerformSpaceRoleAction,
+  getActorRoleInSpace,
+} from "~/utils/decentraSpaceRolesPermissions";
+import { useSpaceMembers } from "~/composables/useSpaceMembers";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
 
@@ -150,24 +157,6 @@ const route = useRoute();
 const onboardingSubView = ref<null | "dm" | "public">(null);
 
 const selectedRoomId = ref<string | null>(null);
-const canSendMessagesInActiveRoom = computed(() => {
-  const matrixClient = client.value;
-  const roomId = selectedRoomId.value;
-  const matrixUserId = userId.value;
-  if (!matrixClient || !roomId || !matrixUserId) {
-    return false;
-  }
-  return canUserSendRoomMessage(matrixClient, roomId, matrixUserId);
-});
-const canPinInActiveRoom = computed(() => {
-  const matrixClient = client.value;
-  const roomId = selectedRoomId.value;
-  const matrixUserId = userId.value;
-  if (!matrixClient || !roomId || !matrixUserId) {
-    return false;
-  }
-  return canUserPinEvents(matrixClient, roomId, matrixUserId);
-});
 const selectedSpaceId = ref<string | null>(null);
 const allMessages = ref<ChatMessage[]>([]);
 const messages = ref<ChatMessage[]>([]);
@@ -278,11 +267,23 @@ const joinedSpaceIds = computed(() =>
   ),
 );
 
+const joinedSpaceIdsListedAsChild = computed(() =>
+  getJoinedSpaceIdsListedAsChild(
+    matrixRooms.value,
+    getRoomType,
+    getMatrixRoomId,
+  ),
+);
+
 const spaceItems = computed<SpaceItem[]>(() => {
   const spaces = matrixRooms.value
     .filter((room) => getRoomType(room) === "m.space")
     .filter((room) =>
-      isRootSpaceRoom(room, joinedSpaceIds.value, getParentSpaceIds),
+      isTopLevelSpaceForRail(
+        room.roomId,
+        joinedSpaceIds.value,
+        joinedSpaceIdsListedAsChild.value,
+      ),
     )
     .map((spaceRoom) => ({
       id: spaceRoom.roomId,
@@ -324,18 +325,117 @@ const visibleRooms = computed(() => {
   const roomsById = new Map<string, unknown>(
     matrixRooms.value.map((room) => [room.roomId, room]),
   );
+  const roomDisplayName = (room: unknown) =>
+    String(
+      (room as { name?: string }).name ||
+        translateText("layout.roomFallback"),
+    );
+
   return roomItems.value.filter((room) => {
     if (room.parentSpaceIds.length === 0) {
       return activeSpaceId === HOME_SPACE_ID;
     }
-    return isRoomUnderAncestorSpace({
-      roomParentIds: room.parentSpaceIds,
-      ancestorSpaceId: activeSpaceId,
+    if (
+      isRoomUnderAncestorSpace({
+        roomParentIds: room.parentSpaceIds,
+        ancestorSpaceId: activeSpaceId,
+        roomsById,
+        getRoomType,
+        getParentSpaceIds,
+      })
+    ) {
+      return true;
+    }
+    return isRoomListedUnderSpaceSubtree(
+      room.roomId,
+      activeSpaceId,
       roomsById,
       getRoomType,
-      getParentSpaceIds,
-    });
+      roomDisplayName,
+    );
   });
+});
+
+const actorRoleInSelectedSpace = computed(() => {
+  const spaceId = selectedSpaceId.value;
+  if (!spaceId || spaceId === HOME_SPACE_ID) {
+    return null;
+  }
+  return getActorRoleInSpace(client.value, spaceId, userId.value);
+});
+
+const visibleRoomsForSidebar = computed(() => {
+  const actorRole = actorRoleInSelectedSpace.value;
+  if (!actorRole) {
+    return visibleRooms.value;
+  }
+  return visibleRooms.value.filter((room) =>
+    canPerformSpaceRoleAction(actorRole, "viewRoom", room.roomId),
+  );
+});
+
+const spaceChildRoomIds = computed(() =>
+  visibleRoomsForSidebar.value.map((room) => room.roomId),
+);
+
+const selectedSpaceIdRef = computed(() => {
+  const spaceId = selectedSpaceId.value;
+  if (!spaceId || spaceId === HOME_SPACE_ID) {
+    return null;
+  }
+  return spaceId;
+});
+
+const { memberGroups: spaceMemberGroups } = useSpaceMembers(
+  selectedSpaceIdRef,
+  spaceChildRoomIds,
+);
+
+const spaceMemberCountLabel = computed(() => {
+  const total = spaceMemberGroups.value.reduce(
+    (sum, group) => sum + group.members.length,
+    0,
+  );
+  if (total === 0) {
+    return translateText("layout.members");
+  }
+  return translateText("layout.spaceMembersCount", { count: String(total) });
+});
+
+function spaceRoleAllows(
+  action: "sendMessages" | "pinMessages" | "redactOthers",
+): boolean {
+  const actorRole = actorRoleInSelectedSpace.value;
+  if (!actorRole) {
+    return true;
+  }
+  return canPerformSpaceRoleAction(actorRole, action);
+}
+
+const canSendMessagesInActiveRoom = computed(() => {
+  const matrixClient = client.value;
+  const roomId = selectedRoomId.value;
+  const matrixUserId = userId.value;
+  if (!matrixClient || !roomId || !matrixUserId) {
+    return false;
+  }
+  if (!spaceRoleAllows("sendMessages")) {
+    return false;
+  }
+  return canUserSendRoomMessage(matrixClient, roomId, matrixUserId);
+});
+
+const canPinInActiveRoom = computed(() => {
+  const matrixClient = client.value;
+  const roomId = selectedRoomId.value;
+  const matrixUserId = userId.value;
+  if (!matrixClient || !roomId || !matrixUserId) {
+    return false;
+  }
+  if (!spaceRoleAllows("pinMessages")) {
+    return false;
+  }
+  return canUserPinEvents(matrixClient, roomId, matrixUserId);
 });
 
 const hasJoinedNonSpaceRooms = computed(() => {
@@ -362,12 +462,26 @@ const canReorderRootCategories = computed(() => {
   if (!rootId || rootId === HOME_SPACE_ID || !matrixClient) {
     return false;
   }
-  return canUserSendSpaceChildState(matrixClient, rootId, matrixUserId);
+  const matrixPlOk = canUserSendSpaceChildState(
+    matrixClient,
+    rootId,
+    matrixUserId,
+  );
+  if (!matrixPlOk) {
+    return false;
+  }
+  const actorRole = actorRoleInSelectedSpace.value;
+  if (actorRole && !canPerformSpaceRoleAction(actorRole, "reorderChannels")) {
+    return false;
+  }
+  return true;
 });
 
 function buildHomeSections(): RoomCategoryGroup[] {
-  const directRooms = visibleRooms.value.filter((room) => isDirectRoom(room));
-  const unassignedRooms = visibleRooms.value.filter((room) => {
+  const directRooms = visibleRoomsForSidebar.value.filter((room) =>
+    isDirectRoom(room),
+  );
+  const unassignedRooms = visibleRoomsForSidebar.value.filter((room) => {
     return room.parentSpaceIds.length === 0 && !isDirectRoom(room);
   });
 
@@ -415,29 +529,44 @@ function buildSpaceSections(): RoomCategoryGroup[] {
   });
   const matrixClient = client.value;
   const matrixUserId = userId.value;
-  return built.map((category) => {
-    const parentForRooms =
-      category.kind === "subspace" && category.subspaceRoomId
-        ? category.subspaceRoomId
-        : selectedId;
-    const canReorderRooms =
-      matrixClient && parentForRooms
-        ? canUserSendSpaceChildState(
-            matrixClient,
-            parentForRooms,
-            matrixUserId,
-          )
-        : false;
-    return {
-      id: category.id,
-      name: category.name,
-      kind: category.kind,
-      subspaceRoomId: category.subspaceRoomId,
-      rootChildAnchorIds: category.rootChildAnchorIds,
-      canReorderRooms,
-      rooms: category.rooms.map((room) => toCategoryRoomItem(room)),
-    };
-  });
+  const visibleRoomIdSet = new Set(
+    visibleRoomsForSidebar.value.map((room) => room.roomId),
+  );
+  const actorRole = actorRoleInSelectedSpace.value;
+  return built
+    .map((category) => {
+      const parentForRooms =
+        category.kind === "subspace" && category.subspaceRoomId
+          ? category.subspaceRoomId
+          : selectedId;
+      let canReorderRooms =
+        matrixClient && parentForRooms
+          ? canUserSendSpaceChildState(
+              matrixClient,
+              parentForRooms,
+              matrixUserId,
+            )
+          : false;
+      if (
+        actorRole &&
+        !canPerformSpaceRoleAction(actorRole, "reorderChannels")
+      ) {
+        canReorderRooms = false;
+      }
+      const rooms = category.rooms
+        .filter((room) => visibleRoomIdSet.has(room.roomId))
+        .map((room) => toCategoryRoomItem(room));
+      return {
+        id: category.id,
+        name: category.name,
+        kind: category.kind,
+        subspaceRoomId: category.subspaceRoomId,
+        rootChildAnchorIds: category.rootChildAnchorIds,
+        canReorderRooms,
+        rooms,
+      };
+    })
+    .filter((category) => category.rooms.length > 0 || category.kind === "subspace");
 }
 
 const selectedRoom = computed(() => {
@@ -1929,6 +2058,11 @@ watch(
         :threads="selectedRoomThreadEntries"
         @close="closeRoomThreadsPanel"
         @open-thread="openThreadFromRoomThreadList"
+      />
+      <ChatMemberList
+        v-else-if="selectedSpaceIdRef && spaceMemberGroups.length > 0"
+        :grouped-members="spaceMemberGroups"
+        :member-count-label="spaceMemberCountLabel"
       />
       <ChatMemberList v-else :members="memberItems" />
     </aside>

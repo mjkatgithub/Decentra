@@ -61,6 +61,34 @@ const categoryDragEnabled = computed(
   () => Boolean(props.selectedRootSpaceId) && props.canReorderCategories,
 )
 
+const sortableDragOptions = {
+  ghostClass: 'decentra-drag-ghost',
+  chosenClass: 'decentra-drag-chosen',
+  animation: 150,
+}
+
+function markSortableDropTarget(event: { to?: HTMLElement | null }) {
+  document
+    .querySelectorAll('.decentra-sortable-drop-target')
+    .forEach((element) => {
+      element.classList.remove('decentra-sortable-drop-target')
+    })
+  event.to?.classList.add('decentra-sortable-drop-target')
+}
+
+function clearSortableDropTargets() {
+  document
+    .querySelectorAll('.decentra-sortable-drop-target')
+    .forEach((element) => {
+      element.classList.remove('decentra-sortable-drop-target')
+    })
+}
+
+function onSortableMove(event: { to?: HTMLElement | null }): boolean {
+  markSortableDropTarget(event)
+  return true
+}
+
 watch(
   () => props.categories,
   (nextCategories) => {
@@ -170,6 +198,7 @@ function onRoomSortableMove(event: {
   from?: HTMLElement
   to?: HTMLElement
 }): boolean {
+  markSortableDropTarget(event)
   if (!props.selectedRootSpaceId) {
     return false
   }
@@ -189,6 +218,7 @@ function onRoomSortableMove(event: {
 }
 
 function onCategoryDragEnd() {
+  clearSortableDropTargets()
   if (!categoryDragEnabled.value || !props.selectedRootSpaceId) {
     return
   }
@@ -203,7 +233,18 @@ function onCategoryDragEnd() {
   emit('reorderRootCategories', orderedRootChildIds)
 }
 
+const spaceHeaderMenuItems = computed(() => [
+  [
+    {
+      label: translateText('layout.openSpaceSettings'),
+      icon: 'i-lucide-settings-2',
+      onSelect: () => emit('openSpaceSettings'),
+    },
+  ],
+])
+
 function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
+  clearSortableDropTargets()
   if (!props.selectedRootSpaceId) {
     return
   }
@@ -271,28 +312,40 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
            dark:border-gray-800 dark:bg-gray-900"
   >
     <header
-      class="flex items-center justify-between border-b border-gray-200 px-3 py-2
-             dark:border-gray-800"
+      class="flex items-center justify-between gap-2 border-b border-gray-200
+             px-3 py-2 dark:border-gray-800"
     >
-      <div class="min-w-0">
+      <div class="min-w-0 flex-1">
         <p
           class="text-xs font-semibold uppercase tracking-wide text-gray-500
                  dark:text-gray-400"
         >
           {{ translateText('layout.channels') }}
         </p>
-        <p class="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
+        <UDropdownMenu
+          v-if="selectedRootSpaceId"
+          :items="spaceHeaderMenuItems"
+        >
+          <button
+            type="button"
+            class="flex max-w-full items-center gap-1 rounded-md px-0.5 py-0.5
+                   text-left text-sm font-semibold text-gray-800 transition
+                   hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800"
+          >
+            <span class="truncate">{{ selectedSpaceName }}</span>
+            <UIcon
+              name="i-lucide-chevron-down"
+              class="size-4 shrink-0 text-gray-500 dark:text-gray-400"
+            />
+          </button>
+        </UDropdownMenu>
+        <p
+          v-else
+          class="truncate text-sm font-semibold text-gray-800 dark:text-gray-100"
+        >
           {{ selectedSpaceName }}
         </p>
       </div>
-      <UButton
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-settings-2"
-        :aria-label="translateText('layout.openSpaceSettings')"
-        @click="emit('openSpaceSettings')"
-      />
     </header>
 
     <div class="flex-1 overflow-y-auto px-2 py-3">
@@ -304,24 +357,30 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
       <VueDraggable
         v-else
         v-model="localCategories"
-        :handle="categoryDragEnabled ? '.decentra-category-title' : undefined"
         :disabled="!categoryDragEnabled"
-        :animation="150"
+        :filter="categoryDragEnabled ? '.decentra-category-no-drag' : undefined"
+        :prevent-on-filter="true"
+        v-bind="sortableDragOptions"
         class="space-y-4"
+        @move="onSortableMove"
         @end="onCategoryDragEnd"
       >
         <div
           v-for="category in localCategories"
           :key="category.id"
           class="mb-4"
+          :class="categoryDragEnabled
+            ? 'touch-none select-none active:cursor-grabbing'
+            : ''"
         >
           <div
-            class="flex items-center gap-1 px-2 pb-1 select-none"
+            class="flex items-center gap-1 pr-2 pl-0 pb-1"
           >
             <button
               type="button"
-              class="shrink-0 rounded p-0.5 text-gray-500 transition
-                     hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              class="decentra-category-no-drag shrink-0 rounded p-0.5
+                     text-gray-500 transition hover:bg-gray-100
+                     dark:text-gray-400 dark:hover:bg-gray-800"
               :aria-expanded="!isCategoryCollapsed(category.id)"
               :aria-label="isCategoryCollapsed(category.id)
                 ? translateText('layout.expandCategory')
@@ -335,11 +394,8 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
               >></span>
             </button>
             <p
-              class="decentra-category-title min-w-0 flex-1 text-xs font-semibold
-                     uppercase tracking-wide text-gray-500 dark:text-gray-400"
-              :class="categoryDragEnabled
-                ? 'cursor-grab touch-none active:cursor-grabbing'
-                : ''"
+              class="min-w-0 flex-1 text-xs font-semibold uppercase
+                     tracking-wide text-gray-500 dark:text-gray-400"
             >
               {{ category.name }}
             </p>
@@ -352,7 +408,11 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
               v-model="category.rooms"
               group="decentra-space-channels"
               :disabled="!roomListDragEnabled(category)"
-              :animation="150"
+              :delay="200"
+              :delay-on-touch-only="true"
+              :filter="'.decentra-channel-no-drag'"
+              :prevent-on-filter="true"
+              v-bind="sortableDragOptions"
               class="space-y-1"
               @move="onRoomSortableMove"
               @end="(event: unknown) => onRoomDragEnd(category, event as {
@@ -370,8 +430,9 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
               >
                 <button
                   type="button"
-                  class="flex w-full items-center justify-between gap-2
-                         rounded-lg px-2 py-2 text-left text-sm transition"
+                  class="decentra-channel-row flex w-full items-center
+                         justify-between gap-2 rounded-lg py-2 pr-2 pl-[14px]
+                         text-left text-sm transition"
                   :class="isRoomNavSelected(room.roomId)
                     ? 'bg-primary-500/15 text-primary-500'
                     : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'"
@@ -398,8 +459,8 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                   )"
                   :key="thread.rootEventId"
                   type="button"
-                  class="flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 pl-6
-                         text-left text-sm transition"
+                  class="decentra-channel-no-drag flex w-full items-center gap-2
+                         rounded-lg py-1.5 pr-2 pl-6 text-left text-sm transition"
                   :class="isThreadNavSelected(thread.rootEventId, room.roomId)
                     ? 'bg-primary-500/15 text-primary-500'
                     : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'"

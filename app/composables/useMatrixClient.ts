@@ -13,6 +13,20 @@ import {
   pinRoomEvent as pinRoomEventState,
   unpinRoomEvent as unpinRoomEventState,
 } from '~/utils/matrixRoomPinnedEvents'
+import {
+  clearRoomAvatar,
+  setRoomAvatarFromMxc,
+  setRoomName,
+  setRoomTopic,
+  uploadRoomAvatarFile,
+} from '~/utils/matrixRoomMetadata'
+import {
+  saveSpaceRolesAndSyncPowerLevels,
+} from '~/composables/matrix/spaceRolesStateHelpers'
+import {
+  syncChildRoomPowerLevelsFromSpaceRoles,
+} from '~/composables/matrix/spaceRolesRoomSync'
+import type { DecentraSpaceRolesContent } from '~/utils/decentraSpaceRoles'
 import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
 import { readonly, shallowRef } from 'vue'
@@ -1312,6 +1326,49 @@ export function useMatrixClient() {
     await unpinRoomEventState(matrixClient, roomId, eventId)
   }
 
+  async function updateSpaceName(spaceId: string, name: string): Promise<void> {
+    const matrixClient = requireClient()
+    await setRoomName(matrixClient, spaceId, name)
+  }
+
+  async function updateSpaceTopic(
+    spaceId: string,
+    topic: string,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await setRoomTopic(matrixClient, spaceId, topic)
+  }
+
+  async function updateSpaceAvatar(
+    spaceId: string,
+    imageFile: File,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    const mxcUrl = await uploadRoomAvatarFile(matrixClient, imageFile)
+    await setRoomAvatarFromMxc(matrixClient, spaceId, mxcUrl)
+  }
+
+  async function removeSpaceAvatar(spaceId: string): Promise<void> {
+    const matrixClient = requireClient()
+    await clearRoomAvatar(matrixClient, spaceId)
+  }
+
+  async function saveSpaceRoles(
+    spaceId: string,
+    content: DecentraSpaceRolesContent,
+    childRoomIds: string[] = [],
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await saveSpaceRolesAndSyncPowerLevels(matrixClient, spaceId, content)
+    if (childRoomIds.length > 0) {
+      await syncChildRoomPowerLevelsFromSpaceRoles(
+        matrixClient,
+        content,
+        childRoomIds,
+      )
+    }
+  }
+
   async function mergeDirectAccountData(
     matrixClient: MatrixClient,
     peerUserId: string,
@@ -1605,6 +1662,11 @@ export function useMatrixClient() {
     moveChannelBetweenSpaceParents,
     pinRoomEvent,
     unpinRoomEvent,
+    updateSpaceName,
+    updateSpaceTopic,
+    updateSpaceAvatar,
+    removeSpaceAvatar,
+    saveSpaceRoles,
     incomingVerificationFromOtherOwnDeviceBeacon:
       getIncomingVerificationFromOtherOwnDeviceReadonly(),
     consumeIncomingVerificationFromOtherOwnDeviceBeacon

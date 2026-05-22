@@ -2,9 +2,11 @@ import { describe, it } from 'vitest'
 import {
   assignLexOrdersForSiblingCount,
   buildSpaceRoomCategories,
+  getJoinedSpaceIdsListedAsChild,
   getJoinedSpaceRoomIds,
   isRootSpaceRoom,
   isRoomUnderAncestorSpace,
+  isTopLevelSpaceForRail,
   parseSpaceChildEvents,
   sortParsedSpaceChildren,
   viaServersFromRoomId,
@@ -203,5 +205,143 @@ describe('spaceRoomCategories', () => {
     ])
     ids.has('!s:example.org').should.equal(true)
     ids.has('!r:example.org').should.equal(false)
+  })
+
+  it('excludes subspaces listed as m.space.child from rail', () => {
+    const parentId = '!parent:example.org'
+    const childId = '!child:example.org'
+    const matrixRooms = [
+      {
+        roomId: parentId,
+        getType: () => 'm.space',
+        currentState: {
+          getStateEvents: (eventType: string) => {
+            if (eventType !== 'm.space.child') {
+              return []
+            }
+            return [
+              mockStateEvent(childId, { order: '1', via: ['example.org'] }),
+            ]
+          },
+        },
+      },
+      { roomId: childId, getType: () => 'm.space' },
+    ]
+    const joined = getJoinedSpaceRoomIds(
+      matrixRooms.map((room) => ({
+        roomId: room.roomId,
+        getType: room.getType,
+      })),
+    )
+    const listedAsChild = getJoinedSpaceIdsListedAsChild(
+      matrixRooms,
+      (room) => (room as { getType: () => string }).getType(),
+      (room) => (room as { roomId: string }).roomId,
+    )
+    isTopLevelSpaceForRail(parentId, joined, listedAsChild).should.equal(true)
+    isTopLevelSpaceForRail(childId, joined, listedAsChild).should.equal(false)
+  })
+
+  it('builds nested subspace categories depth-first', () => {
+    const rootId = '!root:example.org'
+    const subId = '!sub:example.org'
+    const nestedSubId = '!nested:example.org'
+    const roomRootId = '!rootRoom:example.org'
+    const roomSubId = '!subRoom:example.org'
+    const roomNestedId = '!nestedRoom:example.org'
+
+    const matrixRooms = [
+      {
+        roomId: rootId,
+        name: 'Open',
+        getType: () => 'm.space',
+        currentState: {
+          getStateEvents: (eventType: string) => {
+            if (eventType !== 'm.space.child') {
+              return []
+            }
+            return [
+              mockStateEvent(roomRootId, {
+                order: '1',
+                via: ['example.org'],
+              }),
+              mockStateEvent(subId, { order: '2', via: ['example.org'] }),
+            ]
+          },
+        },
+      },
+      {
+        roomId: subId,
+        name: 'Sub A',
+        getType: () => 'm.space',
+        currentState: {
+          getStateEvents: (eventType: string) => {
+            if (eventType !== 'm.space.child') {
+              return []
+            }
+            return [
+              mockStateEvent(roomSubId, {
+                order: '1',
+                via: ['example.org'],
+              }),
+              mockStateEvent(nestedSubId, {
+                order: '2',
+                via: ['example.org'],
+              }),
+            ]
+          },
+        },
+      },
+      {
+        roomId: nestedSubId,
+        name: 'Sub B',
+        getType: () => 'm.space',
+        currentState: {
+          getStateEvents: (eventType: string) => {
+            if (eventType !== 'm.space.child') {
+              return []
+            }
+            return [
+              mockStateEvent(roomNestedId, {
+                order: '1',
+                via: ['example.org'],
+              }),
+            ]
+          },
+        },
+      },
+      { roomId: roomRootId, name: 'Lobby', getType: () => undefined },
+      { roomId: roomSubId, name: 'In A', getType: () => undefined },
+      { roomId: roomNestedId, name: 'In B', getType: () => undefined },
+    ]
+
+    const categories = buildSpaceRoomCategories({
+      rootSpaceId: rootId,
+      matrixRooms,
+      getRoomType: (room: unknown) =>
+        (room as { getType?: () => string }).getType?.(),
+      getRoomId: (room: unknown) => (room as { roomId: string }).roomId,
+      getRoomDisplayName: (room: unknown) =>
+        String((room as { name?: string }).name ?? ''),
+      generalCategoryLabel: 'General',
+    })
+
+    categories.length.should.equal(3)
+    categories[0]!.kind.should.equal('root')
+    categories[0]!.rooms.map((room) => room.roomId).should.deep.equal([
+      roomRootId,
+    ])
+    categories[1]!.kind.should.equal('subspace')
+    categories[1]!.subspaceRoomId.should.equal(subId)
+    categories[1]!.rootChildAnchorIds.should.deep.equal([subId])
+    categories[1]!.rooms.map((room) => room.roomId).should.deep.equal([
+      roomSubId,
+    ])
+    categories[2]!.kind.should.equal('subspace')
+    categories[2]!.subspaceRoomId.should.equal(nestedSubId)
+    categories[2]!.rootChildAnchorIds.should.deep.equal([])
+    categories[2]!.rooms.map((room) => room.roomId).should.deep.equal([
+      roomNestedId,
+    ])
   })
 })
