@@ -1,11 +1,11 @@
 import type { MatrixClient } from 'matrix-js-sdk'
 
 import {
-  buildUserPowerAssignments,
+  buildUserPowerAssignmentsForRoom,
   compilePowerLevelsContent,
-  type DecentraSpaceRolesContent,
+  type SpaceRolesState,
 } from '~/utils/decentraSpaceRoles'
-import { getRoomCreatorUserId } from '~/utils/matrixPowerLevels'
+import { getPowerLevelsContent } from '~/utils/matrixPowerLevels'
 
 const EMPTY_STATE_KEY = ''
 
@@ -17,17 +17,23 @@ export interface ChildRoomSyncResult {
 
 export async function syncChildRoomPowerLevelsFromSpaceRoles(
   matrixClient: MatrixClient,
-  content: DecentraSpaceRolesContent,
+  content: SpaceRolesState,
   childRoomIds: string[],
+  scrubPowerLevel?: number,
 ): Promise<ChildRoomSyncResult[]> {
   const results: ChildRoomSyncResult[] = []
   for (const roomId of childRoomIds) {
-    const creatorUserId = getRoomCreatorUserId(matrixClient, roomId)
-    const excludeUserIds = creatorUserId ? [creatorUserId] : []
-    const userAssignments = buildUserPowerAssignments(content, excludeUserIds)
+    const existing = getPowerLevelsContent(matrixClient, roomId)
+    const userAssignments = buildUserPowerAssignmentsForRoom(
+      matrixClient,
+      roomId,
+      content,
+    )
     const powerLevelsBody = compilePowerLevelsContent(
       content.roles,
       userAssignments,
+      existing,
+      scrubPowerLevel,
     )
     try {
       await matrixClient.sendStateEvent(

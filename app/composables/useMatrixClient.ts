@@ -26,7 +26,7 @@ import {
 import {
   syncChildRoomPowerLevelsFromSpaceRoles,
 } from '~/composables/matrix/spaceRolesRoomSync'
-import type { DecentraSpaceRolesContent } from '~/utils/decentraSpaceRoles'
+import type { SpaceRolesState } from '~/utils/decentraSpaceRoles'
 import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
 import { readonly, shallowRef } from 'vue'
@@ -1355,16 +1355,23 @@ export function useMatrixClient() {
 
   async function saveSpaceRoles(
     spaceId: string,
-    content: DecentraSpaceRolesContent,
+    content: SpaceRolesState,
     childRoomIds: string[] = [],
+    scrubPowerLevel?: number,
   ): Promise<void> {
     const matrixClient = requireClient()
-    await saveSpaceRolesAndSyncPowerLevels(matrixClient, spaceId, content)
+    await saveSpaceRolesAndSyncPowerLevels(
+      matrixClient,
+      spaceId,
+      content,
+      scrubPowerLevel,
+    )
     if (childRoomIds.length > 0) {
       await syncChildRoomPowerLevelsFromSpaceRoles(
         matrixClient,
         content,
         childRoomIds,
+        scrubPowerLevel,
       )
     }
   }

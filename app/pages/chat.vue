@@ -33,10 +33,7 @@ import { canUserPinEvents } from "~/utils/matrixRoomPinnedEventsPermissions";
 import { getPinnedEventIds } from "~/utils/matrixRoomPinnedEvents";
 import { buildPinnedMessageEntries } from "~/utils/matrixPinnedMessageEntries";
 import { canUserSendSpaceChildState } from "~/utils/matrixSpaceHierarchyPermissions";
-import {
-  canPerformSpaceRoleAction,
-  getActorRoleInSpace,
-} from "~/utils/decentraSpaceRolesPermissions";
+import { canPerformSpaceRoleAction } from "~/utils/decentraSpaceRolesPermissions";
 import { useSpaceMembers } from "~/composables/useSpaceMembers";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
@@ -358,23 +355,7 @@ const visibleRooms = computed(() => {
   });
 });
 
-const actorRoleInSelectedSpace = computed(() => {
-  const spaceId = selectedSpaceId.value;
-  if (!spaceId || spaceId === HOME_SPACE_ID) {
-    return null;
-  }
-  return getActorRoleInSpace(client.value, spaceId, userId.value);
-});
-
-const visibleRoomsForSidebar = computed(() => {
-  const actorRole = actorRoleInSelectedSpace.value;
-  if (!actorRole) {
-    return visibleRooms.value;
-  }
-  return visibleRooms.value.filter((room) =>
-    canPerformSpaceRoleAction(actorRole, "viewRoom", room.roomId),
-  );
-});
+const visibleRoomsForSidebar = computed(() => visibleRooms.value);
 
 const spaceChildRoomIds = computed(() =>
   visibleRoomsForSidebar.value.map((room) => room.roomId),
@@ -407,11 +388,17 @@ const spaceMemberCountLabel = computed(() => {
 function spaceRoleAllows(
   action: "sendMessages" | "pinMessages" | "redactOthers",
 ): boolean {
-  const actorRole = actorRoleInSelectedSpace.value;
-  if (!actorRole) {
+  const spaceId = selectedSpaceId.value;
+  if (!spaceId || spaceId === HOME_SPACE_ID) {
     return true;
   }
-  return canPerformSpaceRoleAction(actorRole, action);
+  return canPerformSpaceRoleAction(
+    client.value,
+    spaceId,
+    userId.value,
+    action,
+    selectedRoomId.value ?? undefined,
+  );
 }
 
 const canSendMessagesInActiveRoom = computed(() => {
@@ -464,19 +451,11 @@ const canReorderRootCategories = computed(() => {
   if (!rootId || rootId === HOME_SPACE_ID || !matrixClient) {
     return false;
   }
-  const matrixPlOk = canUserSendSpaceChildState(
+  return canUserSendSpaceChildState(
     matrixClient,
     rootId,
     matrixUserId,
   );
-  if (!matrixPlOk) {
-    return false;
-  }
-  const actorRole = actorRoleInSelectedSpace.value;
-  if (actorRole && !canPerformSpaceRoleAction(actorRole, "reorderChannels")) {
-    return false;
-  }
-  return true;
 });
 
 function buildHomeSections(): RoomCategoryGroup[] {
@@ -551,14 +530,13 @@ function buildSpaceSections(): RoomCategoryGroup[] {
   const visibleRoomIdSet = new Set(
     visibleRoomsForSidebar.value.map((room) => room.roomId),
   );
-  const actorRole = actorRoleInSelectedSpace.value;
   return built
     .map((category) => {
       const parentForRooms =
         category.kind === "subspace" && category.subspaceRoomId
           ? category.subspaceRoomId
           : selectedId;
-      let canReorderRooms =
+      const canReorderRooms =
         matrixClient && parentForRooms
           ? canUserSendSpaceChildState(
               matrixClient,
@@ -566,12 +544,6 @@ function buildSpaceSections(): RoomCategoryGroup[] {
               matrixUserId,
             )
           : false;
-      if (
-        actorRole &&
-        !canPerformSpaceRoleAction(actorRole, "reorderChannels")
-      ) {
-        canReorderRooms = false;
-      }
       const rooms = category.rooms
         .filter((room) => visibleRoomIdSet.has(room.roomId))
         .map((room) => toCategoryRoomItem(room));

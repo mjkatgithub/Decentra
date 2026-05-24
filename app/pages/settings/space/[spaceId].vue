@@ -6,9 +6,12 @@ import {
   useSpaceRoles,
   type SpaceRoleEditDraft,
 } from '~/composables/useSpaceRoles'
+import { useSpacePowerLevelSettings } from '~/composables/useSpacePowerLevelSettings'
 import { useSpaceSettings } from '~/composables/useSpaceSettings'
 import { buildSpaceRoomCategories } from '~/utils/spaceRoomCategories'
 import type { SpaceRoleDefinition } from '~/utils/decentraSpaceRoles'
+import { isSpaceRoomFounder } from '~/utils/spaceRolesMatrixSync'
+import { canManageSpaceRoles } from '~/utils/matrixSpaceRolePermissions'
 
 const route = useRoute()
 const { translateText } = useAppI18n()
@@ -38,11 +41,30 @@ const {
   deleteRole,
   reorderRoles,
   assignUserRole,
-  canManageRoles,
   ensureInitialRoles,
   reloadFromRoom,
   rolesContent,
 } = useSpaceRoles(spaceId)
+
+const canEditRoles = computed(() => {
+  const matrixClient = client.value
+  const roomId = spaceId.value
+  const matrixUserId = userId.value
+  if (!matrixClient || !roomId || !matrixUserId) {
+    return false
+  }
+  if (isSpaceRoomFounder(matrixClient, roomId, matrixUserId)) {
+    return true
+  }
+  return canManageSpaceRoles(matrixClient, roomId, matrixUserId)
+})
+
+const {
+  permissionFields,
+  readFieldValue,
+  saveFieldValue,
+  isSaving: isSavingPermissions,
+} = useSpacePowerLevelSettings(spaceId)
 
 const newRoleName = ref('')
 const newRolePowerLevel = ref<number | ''>('')
@@ -65,7 +87,7 @@ watch(
 )
 
 async function onRoleDragEnd() {
-  if (!canManageRoles()) {
+  if (!canEditRoles.value) {
     return
   }
   await reorderRoles(
@@ -109,22 +131,12 @@ const childRoomEntries = computed(() => {
   }))
 })
 
-function cloneRolePermissions(
-  permissions: SpaceRoleDefinition['permissions'],
-): SpaceRoleDefinition['permissions'] {
-  return {
-    ...permissions,
-    visibleRoomIds: [...permissions.visibleRoomIds],
-  }
-}
-
 function startEditRole(role: SpaceRoleDefinition) {
   editingRoleId.value = role.id
   roleEditDraft.value = {
     name: role.name,
     color: role.color,
     powerLevel: role.powerLevel,
-    permissions: cloneRolePermissions(role.permissions),
   }
   roleSaveMessage.value = ''
   saveError.value = ''
@@ -137,25 +149,16 @@ function cancelEditRole() {
   saveError.value = ''
 }
 
-function setVisibleRoomChecked(roomId: string, checked: boolean) {
-  const draft = roleEditDraft.value
-  if (!draft) {
+async function onPermissionFieldChange(
+  fieldId: string,
+  powerLevel: number,
+) {
+  const field = permissionFields.find((entry) => entry.id === fieldId)
+  if (!field || !canEditRoles.value) {
     return
   }
-  const current = draft.permissions.visibleRoomIds
-  let next =
-    current.length === 0 ? [...childRoomIds.value] : [...current]
-  if (checked) {
-    if (!next.includes(roomId)) {
-      next.push(roomId)
-    }
-  } else {
-    next = next.filter((id) => id !== roomId)
-  }
-  if (next.length === childRoomIds.value.length) {
-    next = []
-  }
-  draft.permissions.visibleRoomIds = next
+  await saveFieldValue(field, powerLevel)
+  reloadFromRoom()
 }
 
 async function handleSaveRoleEdits() {
@@ -253,6 +256,26 @@ const spaceMembersForAssign = computed(() => {
       userId: member.userId!,
       name: member.name || member.userId!,
     }))
+})
+
+function isMemberFounder(memberUserId: string): boolean {
+  return isSpaceRoomFounder(client.value, spaceId.value, memberUserId)
+}
+
+const spaceFounder = computed(() => {
+  const matrixClient = client.value
+  const ownerUserId = rolesContent.value?.ownerUserId
+  if (!matrixClient || !ownerUserId || !spaceId.value) {
+    return null
+  }
+  if (!isSpaceRoomFounder(matrixClient, spaceId.value, ownerUserId)) {
+    return null
+  }
+  const member = matrixClient.getRoom(spaceId.value)?.getMember(ownerUserId)
+  return {
+    userId: ownerUserId,
+    name: member?.name || ownerUserId,
+  }
 })
 
 const navItems = computed(() => [
@@ -382,7 +405,19 @@ const navItems = computed(() => [
           {{ translateText('settings.spaceRolesHint') }}
         </p>
         <div
-          v-if="canManageRoles()"
+          v-if="spaceFounder"
+          class="rounded-lg border border-gray-200 p-3 dark:border-gray-800"
+        >
+          <h2 class="text-sm font-semibold">
+            {{ translateText('settings.spaceFoundersTitle') }}
+          </h2>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ translateText('settings.spaceFoundersHint') }}
+          </p>
+          <p class="mt-2 text-sm">{{ spaceFounder.name }}</p>
+        </div>
+        <div
+          v-if="canEditRoles"
           class="flex flex-wrap items-end gap-2"
         >
           <UInput
@@ -408,7 +443,7 @@ const navItems = computed(() => [
           </UButton>
         </div>
         <p
-          v-if="canManageRoles()"
+          v-if="canEditRoles"
           class="text-xs text-gray-500 dark:text-gray-400"
         >
           {{ translateText('settings.spaceRolesDragHint') }}
@@ -421,7 +456,7 @@ const navItems = computed(() => [
         />
         <VueDraggable
           v-model="localRolesForDrag"
-          :disabled="!canManageRoles() || editingRoleId !== null"
+          :disabled="!canEditRoles || editingRoleId !== null"
           :animation="150"
           handle=".decentra-role-drag-handle"
           filter=".decentra-role-interactive"
@@ -437,7 +472,7 @@ const navItems = computed(() => [
           >
             <div class="flex items-center gap-2">
               <span
-                v-if="canManageRoles() && !role.isEveryone"
+                v-if="canEditRoles && !role.isEveryone"
                 class="decentra-role-drag-handle cursor-grab px-1
                        text-gray-400 active:cursor-grabbing"
                 aria-hidden="true"
@@ -482,62 +517,6 @@ const navItems = computed(() => [
                 >
                 {{ translateText('settings.spaceRoleColor') }}
               </label>
-              <label class="flex items-center gap-2 text-sm">
-                <input
-                  v-model="roleEditDraft.permissions.manageRoles"
-                  type="checkbox"
-                  class="decentra-role-interactive"
-                  :disabled="isSavingRole"
-                >
-                {{ translateText('settings.spacePermManageRoles') }}
-              </label>
-              <label class="flex items-center gap-2 text-sm">
-                <input
-                  v-model="roleEditDraft.permissions.redactOthers"
-                  type="checkbox"
-                  class="decentra-role-interactive"
-                  :disabled="isSavingRole"
-                >
-                {{ translateText('settings.spacePermRedact') }}
-              </label>
-              <label class="flex items-center gap-2 text-sm">
-                <input
-                  v-model="roleEditDraft.permissions.reorderChannels"
-                  type="checkbox"
-                  class="decentra-role-interactive"
-                  :disabled="isSavingRole"
-                >
-                {{ translateText('settings.spacePermReorder') }}
-              </label>
-              <p class="text-xs text-gray-500">
-                {{ translateText('settings.spaceVisibleRooms') }}:
-                {{ roleEditDraft.permissions.visibleRoomIds.length === 0
-                  ? translateText('settings.spaceVisibleRoomsAll')
-                  : roleEditDraft.permissions.visibleRoomIds.length }}
-              </p>
-              <div class="flex flex-wrap gap-1">
-                <label
-                  v-for="room in childRoomEntries"
-                  :key="room.roomId"
-                  class="decentra-role-interactive flex items-center gap-1
-                         rounded border px-2 py-1 text-xs dark:border-gray-700"
-                >
-                  <input
-                    type="checkbox"
-                    class="decentra-role-interactive"
-                    :checked="roleEditDraft.permissions.visibleRoomIds
-                        .length === 0
-                      || roleEditDraft.permissions.visibleRoomIds
-                        .includes(room.roomId)"
-                    :disabled="isSavingRole"
-                    @change="setVisibleRoomChecked(
-                      room.roomId,
-                      ($event.target as HTMLInputElement).checked,
-                    )"
-                  >
-                  <span class="max-w-[10rem] truncate">{{ room.name }}</span>
-                </label>
-              </div>
               <div class="flex flex-wrap gap-2">
                 <UButton
                   color="primary"
@@ -564,7 +543,7 @@ const navItems = computed(() => [
               class="decentra-role-interactive mt-2 flex gap-2"
             >
               <UButton
-                v-if="canManageRoles()"
+                v-if="canEditRoles"
                 size="xs"
                 variant="soft"
                 @click="startEditRole(role)"
@@ -572,7 +551,7 @@ const navItems = computed(() => [
                 {{ translateText('settings.spaceRoleEdit') }}
               </UButton>
               <UButton
-                v-if="!role.isEveryone && canManageRoles()"
+                v-if="!role.isEveryone && canEditRoles"
                 size="xs"
                 color="error"
                 variant="soft"
@@ -583,6 +562,41 @@ const navItems = computed(() => [
             </div>
           </div>
         </VueDraggable>
+        <div
+          v-if="canEditRoles"
+          class="mt-8 space-y-4 rounded-lg border border-gray-200 p-4
+                 dark:border-gray-800"
+        >
+          <h2 class="text-lg font-semibold">
+            {{ translateText('settings.spacePlPermissionsTitle') }}
+          </h2>
+          <label
+            v-for="field in permissionFields"
+            :key="field.id"
+            class="flex flex-col gap-1 text-sm sm:flex-row sm:items-center
+                   sm:justify-between"
+          >
+            <span>{{ translateText(field.labelKey) }}</span>
+            <select
+              class="rounded border border-gray-300 bg-white px-2 py-1
+                     text-sm dark:border-gray-700 dark:bg-gray-900"
+              :disabled="isSavingPermissions"
+              :value="readFieldValue(field)"
+              @change="onPermissionFieldChange(
+                field.id,
+                Number(($event.target as HTMLSelectElement).value),
+              )"
+            >
+              <option
+                v-for="role in sortedRoles"
+                :key="role.id"
+                :value="role.powerLevel"
+              >
+                {{ role.name }} ({{ role.powerLevel }})
+              </option>
+            </select>
+          </label>
+        </div>
       </section>
 
       <section v-else class="space-y-4">
@@ -601,10 +615,17 @@ const navItems = computed(() => [
                    dark:border-gray-800"
           >
             <span class="text-sm">{{ member.name }}</span>
+            <span
+              v-if="isMemberFounder(member.userId)"
+              class="text-sm text-gray-500 dark:text-gray-400"
+            >
+              {{ translateText('settings.spaceRoleFounder') }}
+            </span>
             <select
+              v-else
               class="rounded border border-gray-300 bg-white px-2 py-1
                      text-sm dark:border-gray-700 dark:bg-gray-900"
-              :disabled="!canManageRoles()"
+              :disabled="!canEditRoles"
               :value="rolesContent.assignments[member.userId]
                 ?? rolesContent.everyoneRoleId"
               @change="assignUserRole(

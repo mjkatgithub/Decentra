@@ -1,11 +1,16 @@
 import { useMatrixClient } from '~/composables/useMatrixClient'
 import { useChatMedia } from '~/composables/useChatMedia'
 import {
-  getSpaceRolesFromClient,
-  resolveUserRole,
+  createFounderRole,
+  FOUNDER_ROLE_ID,
   sortRolesByPositionDesc,
   type SpaceRoleDefinition,
 } from '~/utils/decentraSpaceRoles'
+import {
+  isSpaceRoomFounder,
+  resolveSpaceRolesFromClient,
+  resolveUserRoleForSpace,
+} from '~/utils/spaceRolesMatrixSync'
 
 export interface SpaceMemberEntry {
   userId: string
@@ -41,19 +46,28 @@ export function useSpaceMembers(
   const { client } = useMatrixClient()
   const { getMemberAvatarUrl } = useChatMedia(client)
 
+  function isFounder(userId: string): boolean {
+    return isSpaceRoomFounder(client.value, spaceId.value, userId)
+  }
+
   const memberGroups = computed<SpaceMemberGroup[]>(() => {
     const matrixClient = client.value
     const rootSpaceId = spaceId.value
     if (!matrixClient || !rootSpaceId) {
       return []
     }
-    const rolesContent = getSpaceRolesFromClient(matrixClient, rootSpaceId)
+    const rolesContent = resolveSpaceRolesFromClient(
+      matrixClient,
+      rootSpaceId,
+    )
     if (!rolesContent) {
       return []
     }
     const seenUserIds = new Set<string>()
     const membersByRoleId = new Map<string, SpaceMemberEntry[]>()
+    const founderRole = createFounderRole()
 
+    membersByRoleId.set(FOUNDER_ROLE_ID, [])
     for (const role of rolesContent.roles) {
       membersByRoleId.set(role.id, [])
     }
@@ -77,7 +91,12 @@ export function useSpaceMembers(
           continue
         }
         seenUserIds.add(memberUserId)
-        const role = resolveUserRole(rolesContent, memberUserId)
+        const role = resolveUserRoleForSpace(
+          matrixClient,
+          rootSpaceId,
+          rolesContent,
+          memberUserId,
+        )
         const list = membersByRoleId.get(role.id) ?? []
         list.push({
           userId: memberUserId,
@@ -90,15 +109,25 @@ export function useSpaceMembers(
       }
     }
 
-    return sortRolesByPositionDesc(rolesContent.roles)
+    const founderMembers = (membersByRoleId.get(FOUNDER_ROLE_ID) ?? [])
+      .sort((memberA, memberB) =>
+        memberA.displayName.localeCompare(memberB.displayName),
+      )
+    const roleGroups = sortRolesByPositionDesc(rolesContent.roles)
       .map((role) => ({
         role,
-        members: (membersByRoleId.get(role.id) ?? []).sort((memberA, memberB) =>
-          memberA.displayName.localeCompare(memberB.displayName),
+        members: (membersByRoleId.get(role.id) ?? []).sort(
+          (memberA, memberB) =>
+            memberA.displayName.localeCompare(memberB.displayName),
         ),
       }))
       .filter((group) => group.members.length > 0)
+
+    if (founderMembers.length === 0) {
+      return roleGroups
+    }
+    return [{ role: founderRole, members: founderMembers }, ...roleGroups]
   })
 
-  return { memberGroups }
+  return { memberGroups, isFounder }
 }

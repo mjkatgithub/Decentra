@@ -2,13 +2,17 @@ import type { MatrixClient } from 'matrix-js-sdk'
 
 import {
   createEveryoneRole,
-  defaultRolePermissions,
+  createFounderRole,
   EVERYONE_ROLE_ID,
-  getRoleById,
-  type DecentraSpaceRolesContent,
+  getRoleByPowerLevel,
+  resolveUserRole,
   type SpaceRoleDefinition,
+  type SpaceRolesState,
 } from '~/utils/decentraSpaceRoles'
-import { getPowerLevelsContent } from '~/utils/matrixPowerLevels'
+import {
+  getPowerLevelsContent,
+  getRoomCreatorUserId,
+} from '~/utils/matrixPowerLevels'
 import { POWER_LEVEL_TAGS_STATE_TYPE } from '~/utils/matrixPowerLevelTagState'
 
 const DEFAULT_LEVEL_NAMES: Record<number, string> = {
@@ -23,6 +27,41 @@ export interface ExternalPowerLevelDefinition {
   color?: string
 }
 
+export function resolveUserRoleForSpace(
+  matrixClient: MatrixClient,
+  spaceRoomId: string,
+  content: SpaceRolesState,
+  userId: string | null | undefined,
+): SpaceRoleDefinition {
+  if (!userId) {
+    return resolveUserRole(content, userId)
+  }
+  if (getRoomCreatorUserId(matrixClient, spaceRoomId) === userId) {
+    return createFounderRole()
+  }
+  const powerLevelsContent = getPowerLevelsContent(matrixClient, spaceRoomId)
+  const users = powerLevelsContent?.users as Record<string, number> | undefined
+  const explicitLevel = users?.[userId]
+  if (typeof explicitLevel === 'number' && Number.isFinite(explicitLevel)) {
+    const roleByLevel = getRoleByPowerLevel(content, explicitLevel)
+    if (roleByLevel) {
+      return roleByLevel
+    }
+  }
+  return resolveUserRole(content, userId)
+}
+
+export function isSpaceRoomFounder(
+  matrixClient: MatrixClient | null,
+  spaceRoomId: string | null,
+  userId: string | null | undefined,
+): boolean {
+  if (!matrixClient || !spaceRoomId || !userId) {
+    return false
+  }
+  return getRoomCreatorUserId(matrixClient, spaceRoomId) === userId
+}
+
 export function getMaxRolePowerLevel(
   roles: SpaceRoleDefinition[],
 ): number {
@@ -33,13 +72,13 @@ export function getMaxRolePowerLevel(
 }
 
 export function getOwnerEffectivePowerLevel(
-  content: DecentraSpaceRolesContent,
+  content: SpaceRolesState,
 ): number {
   return getMaxRolePowerLevel(content.roles) + 1
 }
 
 export function getEffectiveUserPowerLevel(
-  content: DecentraSpaceRolesContent,
+  content: SpaceRolesState,
   matrixUserId: string | null | undefined,
 ): number {
   if (!matrixUserId) {
@@ -48,16 +87,12 @@ export function getEffectiveUserPowerLevel(
   if (content.ownerUserId && content.ownerUserId === matrixUserId) {
     return getOwnerEffectivePowerLevel(content)
   }
-  const role = getRoleById(
-    content,
-    content.assignments[matrixUserId] ?? content.everyoneRoleId,
-  )
-  return role?.powerLevel ?? 0
+  return resolveUserRole(content, matrixUserId).powerLevel
 }
 
 export function validateRolePowerLevelAgainstActor(
   powerLevel: number,
-  content: DecentraSpaceRolesContent,
+  content: SpaceRolesState,
   actorUserId: string | null | undefined,
   roleId: string,
 ): string | null {
@@ -118,32 +153,7 @@ function findNumericPowersInRecord(
   }
 }
 
-/** Member role PL values from m.room.power_levels (not event thresholds). */
-export function collectRolePowerLevelsFromMatrix(
-  powerLevelsContent: Record<string, unknown> | null,
-): Set<number> {
-  const levels = new Set<number>()
-  if (!powerLevelsContent) {
-    return levels
-  }
-  const users = powerLevelsContent.users as
-    | Record<string, unknown>
-    | undefined
-  if (users) {
-    for (const level of Object.values(users)) {
-      if (typeof level === 'number' && Number.isFinite(level)) {
-        levels.add(level)
-      }
-    }
-  }
-  const usersDefault = powerLevelsContent.users_default
-  if (typeof usersDefault === 'number' && Number.isFinite(usersDefault)) {
-    levels.add(usersDefault)
-  }
-  return levels
-}
-
-/** All numeric PL values in m.room.power_levels (including event thresholds). */
+/** All numeric PL values in m.room.power_levels (Cinny getUsedPowers). */
 export function collectUsedPowerLevels(
   powerLevelsContent: Record<string, unknown> | null,
 ): Set<number> {
@@ -186,30 +196,24 @@ function fallbackNameForPowerLevel(
 function buildRoleFromPowerLevel(
   powerLevel: number,
   tagged: ExternalPowerLevelDefinition[],
-  overlay: DecentraSpaceRolesContent | null,
 ): SpaceRoleDefinition {
   const tag = tagged.find((entry) => entry.powerLevel === powerLevel)
-  const overlayRole = overlay?.roles.find(
-    (role) => role.powerLevel === powerLevel,
-  )
   const isEveryoneLevel = powerLevel === 0
   return {
-    id: overlayRole?.id ?? (isEveryoneLevel ? EVERYONE_ROLE_ID : `pl_${powerLevel}`),
-    name: tag?.name ?? overlayRole?.name ?? fallbackNameForPowerLevel(powerLevel, tagged),
-    color: tag?.color ?? overlayRole?.color ?? '#5865f2',
+    id: isEveryoneLevel ? EVERYONE_ROLE_ID : `pl_${powerLevel}`,
+    name: tag?.name ?? fallbackNameForPowerLevel(powerLevel, tagged),
+    color: tag?.color ?? '#5865f2',
     position: powerLevel,
     powerLevel,
     isEveryone: isEveryoneLevel ? true : undefined,
-    permissions: overlayRole?.permissions ?? defaultRolePermissions(),
   }
 }
 
-function mergeAssignmentsFromPowerLevels(
-  overlay: DecentraSpaceRolesContent | null,
-  powerLevelsContent: Record<string, unknown> | null,
+function buildAssignmentsFromPowerLevels(
   roles: SpaceRoleDefinition[],
+  powerLevelsContent: Record<string, unknown> | null,
 ): Record<string, string> {
-  const assignments = { ...(overlay?.assignments ?? {}) }
+  const assignments: Record<string, string> = {}
   const users = powerLevelsContent?.users as
     | Record<string, number>
     | undefined
@@ -225,15 +229,10 @@ function mergeAssignmentsFromPowerLevels(
   return assignments
 }
 
-/**
- * Build roles from Matrix PL + tag metadata (same sources as Cinny/Sable).
- * decentraOverlay supplies Decentra-only permissions and assignments.
- */
 export function buildRolesFromMatrixPowerLevels(
   powerLevelsContent: Record<string, unknown> | null,
   tagDefinitions: ExternalPowerLevelDefinition[],
-  decentraOverlay: DecentraSpaceRolesContent | null,
-): DecentraSpaceRolesContent {
+): SpaceRolesState {
   const usedLevels = collectUsedPowerLevels(powerLevelsContent)
   for (const tag of tagDefinitions) {
     usedLevels.add(tag.powerLevel)
@@ -244,7 +243,7 @@ export function buildRolesFromMatrixPowerLevels(
 
   for (const powerLevel of powerLevels) {
     if (powerLevel === 0) {
-      const everyone = buildRoleFromPowerLevel(0, tagDefinitions, decentraOverlay)
+      const everyone = buildRoleFromPowerLevel(0, tagDefinitions)
       roles.push({
         ...createEveryoneRole(),
         ...everyone,
@@ -253,30 +252,22 @@ export function buildRolesFromMatrixPowerLevels(
       })
       continue
     }
-    roles.push(buildRoleFromPowerLevel(powerLevel, tagDefinitions, decentraOverlay))
+    roles.push(buildRoleFromPowerLevel(powerLevel, tagDefinitions))
   }
 
   if (!roles.some((role) => role.isEveryone)) {
     roles.push(createEveryoneRole())
   }
 
-  const assignments = mergeAssignmentsFromPowerLevels(
-    decentraOverlay,
-    powerLevelsContent,
-    roles,
-  )
-
   return {
-    version: 1,
     roles,
-    assignments,
+    assignments: buildAssignmentsFromPowerLevels(roles, powerLevelsContent),
     everyoneRoleId: EVERYONE_ROLE_ID,
-    ownerUserId: decentraOverlay?.ownerUserId,
   }
 }
 
 export function buildPowerLevelTagsPayload(
-  content: DecentraSpaceRolesContent,
+  content: SpaceRolesState,
 ): Record<string, { name: string; color?: string }> {
   const payload: Record<string, { name: string; color?: string }> = {}
   for (const role of content.roles) {
@@ -291,25 +282,27 @@ export function buildPowerLevelTagsPayload(
 export function resolveSpaceRolesFromClient(
   matrixClient: MatrixClient,
   spaceRoomId: string,
-  parsedDecentra: DecentraSpaceRolesContent | null,
-): DecentraSpaceRolesContent | null {
+): SpaceRolesState | null {
   const powerLevelsContent = getPowerLevelsContent(matrixClient, spaceRoomId)
   const tagDefinitions = readPowerLevelTagDefinitions(
     matrixClient,
     spaceRoomId,
   )
-  if (!powerLevelsContent && tagDefinitions.length === 0 && !parsedDecentra) {
+  if (!powerLevelsContent && tagDefinitions.length === 0) {
     return null
   }
-  return buildRolesFromMatrixPowerLevels(
+  const state = buildRolesFromMatrixPowerLevels(
     powerLevelsContent,
     tagDefinitions,
-    parsedDecentra,
   )
+  state.ownerUserId =
+    getRoomCreatorUserId(matrixClient, spaceRoomId) ??
+    inferOwnerUserId(state, powerLevelsContent)
+  return state
 }
 
 export function inferOwnerUserId(
-  content: DecentraSpaceRolesContent,
+  content: SpaceRolesState,
   powerLevelsContent: Record<string, unknown> | null,
 ): string | undefined {
   if (content.ownerUserId) {
@@ -328,15 +321,4 @@ export function inferOwnerUserId(
   return ownerEntry?.[0] ?? Object.keys(content.assignments)[0]
 }
 
-/** @deprecated use buildRolesFromMatrixPowerLevels */
-export function mergeMatrixPowerLevelsIntoRoles(
-  content: DecentraSpaceRolesContent | null,
-  powerLevelsContent: Record<string, unknown> | null,
-  externalDefinitions: ExternalPowerLevelDefinition[],
-): DecentraSpaceRolesContent | null {
-  return buildRolesFromMatrixPowerLevels(
-    powerLevelsContent,
-    externalDefinitions,
-    content,
-  )
-}
+export { POWER_LEVEL_TAGS_STATE_TYPE } from '~/utils/matrixPowerLevelTagState'

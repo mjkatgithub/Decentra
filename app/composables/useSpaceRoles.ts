@@ -1,49 +1,68 @@
+import { RoomEvent } from 'matrix-js-sdk'
 import { useMatrixClient } from '~/composables/useMatrixClient'
 import {
   canAssignRole,
   canManageRoleDefinition,
   createEveryoneRole,
   createInitialSpaceRolesContent,
-  defaultRolePermissions,
-  getSpaceRolesFromClient,
   resolveUserRole,
-  sortRolesByPositionDesc,
+  type SpaceRoleDefinition,
+  type SpaceRolesState,
   validateRoleName,
   validateRolePowerLevel,
-  type DecentraSpaceRolesContent,
-  type SpaceRoleDefinition,
 } from '~/utils/decentraSpaceRoles'
 import {
-  getEffectiveUserPowerLevel,
+  getActorPowerLevelInSpace,
+  canManageSpaceRoles,
+} from '~/utils/matrixSpaceRolePermissions'
+import {
   inferOwnerUserId,
+  isSpaceRoomFounder,
   readPowerLevelTagDefinitions,
   resolveSpaceRolesFromClient,
   validateRolePowerLevelAgainstActor,
 } from '~/utils/spaceRolesMatrixSync'
 import { getPowerLevelsContent } from '~/utils/matrixPowerLevels'
-import { getActorRoleInSpace } from '~/utils/decentraSpaceRolesPermissions'
 
 export type SpaceRoleEditDraft = Pick<
   SpaceRoleDefinition,
-  'name' | 'color' | 'powerLevel' | 'permissions'
+  'name' | 'color' | 'powerLevel'
 >
 
 export function useSpaceRoles(spaceId: Ref<string>) {
   const { client, userId, saveSpaceRoles } = useMatrixClient()
 
-  const rolesContent = ref<DecentraSpaceRolesContent | null>(null)
+  const rolesContent = ref<SpaceRolesState | null>(null)
   const isLoading = ref(false)
   const saveError = ref('')
+  const permissionRevision = ref(0)
 
-  const actorRole = computed(() =>
-    getActorRoleInSpace(client.value, spaceId.value, userId.value),
+  const actorPowerLevel = computed(() =>
+    getActorPowerLevelInSpace(client.value, spaceId.value, userId.value),
   )
+
+  const canManageRoles = computed(() => {
+    permissionRevision.value
+    rolesContent.value
+    const matrixClient = client.value
+    const roomId = spaceId.value
+    const matrixUserId = userId.value
+    if (
+      isSpaceRoomFounder(matrixClient, roomId, matrixUserId) ||
+      canManageSpaceRoles(matrixClient, roomId, matrixUserId)
+    ) {
+      return true
+    }
+    return false
+  })
 
   const sortedRoles = computed(() => {
     if (!rolesContent.value) {
       return []
     }
-    return sortRolesByPositionDesc(rolesContent.value.roles)
+    return [...rolesContent.value.roles].sort(
+      (roleA, roleB) => roleB.powerLevel - roleA.powerLevel,
+    )
   })
 
   function reloadFromRoom() {
@@ -52,13 +71,8 @@ export function useSpaceRoles(spaceId: Ref<string>) {
       rolesContent.value = null
       return
     }
-    const parsed = getSpaceRolesFromClient(matrixClient, spaceId.value)
-    const merged = resolveSpaceRolesFromClient(
-      matrixClient,
-      spaceId.value,
-      parsed,
-    )
-    if (merged && !merged.ownerUserId) {
+    const merged = resolveSpaceRolesFromClient(matrixClient, spaceId.value)
+    if (merged) {
       const powerLevels = getPowerLevelsContent(matrixClient, spaceId.value)
       merged.ownerUserId = inferOwnerUserId(merged, powerLevels)
     }
@@ -66,6 +80,26 @@ export function useSpaceRoles(spaceId: Ref<string>) {
   }
 
   watch([client, spaceId], () => reloadFromRoom(), { immediate: true })
+
+  watch([client, spaceId], (current, _previous, onCleanup) => {
+    const matrixClient = current[0]
+    const roomId = current[1]
+    if (!matrixClient || !roomId) {
+      return
+    }
+    const room = matrixClient.getRoom(roomId)
+    if (!room) {
+      return
+    }
+    const onStateUpdated = () => {
+      permissionRevision.value += 1
+      reloadFromRoom()
+    }
+    room.on(RoomEvent.CurrentStateUpdated, onStateUpdated)
+    onCleanup(() => {
+      room.off(RoomEvent.CurrentStateUpdated, onStateUpdated)
+    })
+  }, { immediate: true })
 
   async function ensureInitialRoles(childRoomIds: string[]): Promise<void> {
     const matrixClient = client.value
@@ -95,15 +129,21 @@ export function useSpaceRoles(spaceId: Ref<string>) {
   }
 
   async function persistRoles(
-    content: DecentraSpaceRolesContent,
+    content: SpaceRolesState,
     childRoomIds: string[],
+    scrubPowerLevel?: number,
   ): Promise<void> {
     saveError.value = ''
     if (!spaceId.value) {
       return
     }
     try {
-      await saveSpaceRoles(spaceId.value, content, childRoomIds)
+      await saveSpaceRoles(
+        spaceId.value,
+        content,
+        childRoomIds,
+        scrubPowerLevel,
+      )
       rolesContent.value = content
     } catch (thrownError) {
       saveError.value =
@@ -119,8 +159,7 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     powerLevel: number,
   ): SpaceRoleDefinition | null {
     const content = rolesContent.value
-    const actor = actorRole.value
-    if (!content || !actor?.permissions.manageRoles) {
+    if (!content || !canManageRoles.value) {
       return null
     }
     const nameError = validateRoleName(name)
@@ -153,7 +192,6 @@ export function useSpaceRoles(spaceId: Ref<string>) {
       color: '#5865f2',
       position: powerLevel,
       powerLevel,
-      permissions: defaultRolePermissions(),
     }
   }
 
@@ -173,11 +211,10 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     const withoutDuplicate = content.roles.filter(
       (role) => role.powerLevel !== powerLevel,
     )
-    const next: DecentraSpaceRolesContent = {
-      ...content,
-      roles: [...withoutDuplicate, draft],
-    }
-    await persistRoles(next, childRoomIds)
+    await persistRoles(
+      { ...content, roles: [...withoutDuplicate, draft] },
+      childRoomIds,
+    )
   }
 
   async function saveRoleEdits(
@@ -186,15 +223,21 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     childRoomIds: string[],
   ): Promise<boolean> {
     const content = rolesContent.value
-    const actor = actorRole.value
-    if (!content || !actor) {
+    if (!content || !canManageRoles.value) {
       return false
     }
     const target = content.roles.find((role) => role.id === roleId)
     if (!target) {
       return false
     }
-    if (!canManageRoleDefinition(actor, target) && !target.isEveryone) {
+    if (
+      !canManageRoleDefinition(
+        actorPowerLevel.value,
+        target.powerLevel,
+        canManageRoles.value,
+        target.isEveryone,
+      )
+    ) {
       return false
     }
     const nameError = validateRoleName(draft.name)
@@ -229,7 +272,8 @@ export function useSpaceRoles(spaceId: Ref<string>) {
             name: draft.name.trim(),
             color: draft.color,
             powerLevel: draft.powerLevel,
-            permissions: { ...draft.permissions },
+            position: draft.powerLevel,
+            id: role.isEveryone ? role.id : `pl_${draft.powerLevel}`,
           }
         : role,
     )
@@ -237,43 +281,25 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     return true
   }
 
-  async function updateRole(
-    roleId: string,
-    patch: Partial<SpaceRoleDefinition>,
-    childRoomIds: string[],
-  ): Promise<void> {
-    const content = rolesContent.value
-    const actor = actorRole.value
-    if (!content || !actor) {
-      return
-    }
-    const target = content.roles.find((role) => role.id === roleId)
-    if (!target) {
-      return
-    }
-    if (!canManageRoleDefinition(actor, target) && !target.isEveryone) {
-      return
-    }
-    const nextRoles = content.roles.map((role) =>
-      role.id === roleId ? { ...role, ...patch } : role,
-    )
-    await persistRoles({ ...content, roles: nextRoles }, childRoomIds)
-  }
-
   async function deleteRole(
     roleId: string,
     childRoomIds: string[],
   ): Promise<void> {
     const content = rolesContent.value
-    const actor = actorRole.value
-    if (!content || !actor) {
+    if (!content || !canManageRoles.value) {
       return
     }
     const target = content.roles.find((role) => role.id === roleId)
     if (!target || target.isEveryone) {
       return
     }
-    if (!canManageRoleDefinition(actor, target)) {
+    if (
+      !canManageRoleDefinition(
+        actorPowerLevel.value,
+        target.powerLevel,
+        canManageRoles.value,
+      )
+    ) {
       return
     }
     const nextAssignments = { ...content.assignments }
@@ -291,6 +317,7 @@ export function useSpaceRoles(spaceId: Ref<string>) {
         assignments: nextAssignments,
       },
       childRoomIds,
+      target.powerLevel,
     )
   }
 
@@ -328,15 +355,23 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     childRoomIds: string[],
   ): Promise<void> {
     const content = rolesContent.value
-    const actor = actorRole.value
-    if (!content || !actor) {
+    if (!content || !canManageRoles.value) {
+      return
+    }
+    if (isSpaceRoomFounder(client.value, spaceId.value, targetUserId)) {
       return
     }
     const targetRole = content.roles.find((role) => role.id === roleId)
     if (!targetRole) {
       return
     }
-    if (!canAssignRole(actor, targetRole)) {
+    if (
+      !canAssignRole(
+        actorPowerLevel.value,
+        targetRole.powerLevel,
+        canManageRoles.value,
+      )
+    ) {
       return
     }
     await persistRoles(
@@ -351,21 +386,16 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     )
   }
 
-  function canManageRoles(): boolean {
-    return Boolean(actorRole.value?.permissions.manageRoles)
-  }
-
   return {
     rolesContent,
     sortedRoles,
-    actorRole,
+    actorPowerLevel,
     isLoading,
     saveError,
     reloadFromRoom,
     ensureInitialRoles,
     addRole,
     saveRoleEdits,
-    updateRole,
     deleteRole,
     reorderRoles,
     assignUserRole,

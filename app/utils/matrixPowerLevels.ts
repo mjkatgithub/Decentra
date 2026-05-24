@@ -20,6 +20,7 @@ export function getPowerLevelsContent(
   const room = matrixClient.getRoom(roomId)
   const stateEvents = room?.currentState?.getStateEvents?.(
     POWER_LEVELS_TYPE,
+    EMPTY_STATE_KEY,
   )
   const list = normalizeStateEvents(stateEvents)
   const first = list[0]
@@ -66,11 +67,23 @@ export function getRoomCreatorUserId(
   roomId: string,
 ): string | undefined {
   const room = matrixClient.getRoom(roomId)
+  const fromSdk = room?.getCreator?.()
+  if (typeof fromSdk === 'string' && fromSdk.length > 0) {
+    return fromSdk
+  }
   const stateEvents = room?.currentState?.getStateEvents?.(
     ROOM_CREATE_TYPE,
     EMPTY_STATE_KEY,
   )
   const list = normalizeStateEvents(stateEvents)
-  const creator = list[0]?.getContent?.()?.creator
-  return typeof creator === 'string' ? creator : undefined
+  const first = list[0] as {
+    getContent?: () => Record<string, unknown>
+    getSender?: () => string
+  } | undefined
+  const fromContent = first?.getContent?.()?.creator
+  if (typeof fromContent === 'string') {
+    return fromContent
+  }
+  const sender = first?.getSender?.()
+  return typeof sender === 'string' ? sender : undefined
 }

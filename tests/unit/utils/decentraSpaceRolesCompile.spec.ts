@@ -5,15 +5,14 @@ import {
   createEveryoneRole,
   createFullAdminRole,
   createInitialSpaceRolesContent,
-  type DecentraSpaceRolesContent,
+  type SpaceRolesState,
 } from '~/utils/decentraSpaceRoles'
 
 describe('decentraSpaceRoles PL compile', () => {
   it('maps assigned users to role power levels', () => {
     const everyone = createEveryoneRole()
     const admin = createFullAdminRole('Admin', 100, 100)
-    const content: DecentraSpaceRolesContent = {
-      version: 1,
+    const content: SpaceRolesState = {
       roles: [everyone, admin],
       assignments: { '@alice:hs': admin.id },
       everyoneRoleId: everyone.id,
@@ -28,13 +27,14 @@ describe('decentraSpaceRoles PL compile', () => {
     expect(users['@creator:hs']).toBeUndefined()
   })
 
-  it('lowers redact threshold when a role may redact', () => {
-    const mod = createEveryoneRole()
-    mod.id = 'mod'
-    mod.name = 'Mod'
-    mod.powerLevel = 50
-    mod.permissions.redactOthers = true
-    const compiled = compilePowerLevelsContent([mod], {})
-    expect(compiled.redact).toBe(50)
+  it('preserves existing matrix PL fields when merging users', () => {
+    const everyone = createEveryoneRole()
+    const compiled = compilePowerLevelsContent(
+      [everyone],
+      {},
+      { kick: 50, ban: 50, users_default: 0 },
+    )
+    expect(compiled.kick).toBe(50)
+    expect(compiled.users).toEqual({})
   })
 })
