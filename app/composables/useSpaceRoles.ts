@@ -16,7 +16,7 @@ import {
 import {
   getEffectiveUserPowerLevel,
   inferOwnerUserId,
-  readCinnyPowerLevelTagDefinitions,
+  readPowerLevelTagDefinitions,
   resolveSpaceRolesFromClient,
   validateRolePowerLevelAgainstActor,
 } from '~/utils/spaceRolesMatrixSync'
@@ -82,11 +82,11 @@ export function useSpaceRoles(spaceId: Ref<string>) {
         return
       }
     }
-    const cinnyTags = readCinnyPowerLevelTagDefinitions(
+    const powerLevelTags = readPowerLevelTagDefinitions(
       matrixClient,
       spaceId.value,
     )
-    if (cinnyTags.length > 0) {
+    if (powerLevelTags.length > 0) {
       return
     }
     const initial = createInitialSpaceRolesContent(matrixUserId)

@@ -8,8 +8,8 @@ import {
 } from '~/utils/decentraSpaceRoles'
 
 import {
-  buildCinnyPowerLevelTagsPayload,
-  CINNY_POWER_LEVEL_TAGS_TYPE,
+  buildPowerLevelTagsPayload,
+  POWER_LEVEL_TAGS_STATE_TYPE,
 } from '~/utils/spaceRolesMatrixSync'
 
 const EMPTY_STATE_KEY = ''
@@ -54,10 +54,10 @@ export async function saveSpaceRolesAndSyncPowerLevels(
   await syncSpacePowerLevelsFromRoles(matrixClient, spaceRoomId, content)
   await matrixClient.sendStateEvent(
     spaceRoomId,
-    CINNY_POWER_LEVEL_TAGS_TYPE as Parameters<
+    POWER_LEVEL_TAGS_STATE_TYPE as Parameters<
       MatrixClient['sendStateEvent']
     >[1],
-    buildCinnyPowerLevelTagsPayload(content),
+    buildPowerLevelTagsPayload(content),
     EMPTY_STATE_KEY,
   )
 }

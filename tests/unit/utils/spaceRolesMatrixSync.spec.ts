@@ -37,7 +37,7 @@ describe('spaceRolesMatrixSync', () => {
     ).toMatch(/lower than your own/i)
   })
 
-  it('builds roles from cinny tags and drops decentra-only roles', () => {
+  it('builds roles from power level tags and drops decentra-only roles', () => {
     const decentraOnly = createInitialSpaceRolesContent('@owner:example.org')
     decentraOnly.roles.push({
       id: 'asdf',

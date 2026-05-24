@@ -10,15 +10,18 @@ import {
 } from '~/utils/decentraSpaceRoles'
 import { getPowerLevelsContent } from '~/utils/matrixPowerLevels'
 
-/** Cinny + Sable store role names/colors here (Matrix PL sync). */
-export const CINNY_POWER_LEVEL_TAGS_TYPE = 'in.cinny.room.power_level_tags'
+/**
+ * Matrix room state event for role display metadata (name, color per PL).
+ * De-facto interop type in the ecosystem; literal event type is fixed on
+ * the wire and must not be changed.
+ */
+export const POWER_LEVEL_TAGS_STATE_TYPE =
+  'in.cinny.room.power_level_tags'
 
 const DEFAULT_LEVEL_NAMES: Record<number, string> = {
   100: 'Admin',
   50: 'Moderator',
   0: 'Member',
-  [-10]: 'noop',
-  [-1]: 'Muted',
 }
 
 export interface ExternalPowerLevelDefinition {
@@ -78,7 +81,7 @@ export function validateRolePowerLevelAgainstActor(
   return null
 }
 
-function parseCinnyPowerLevelTags(
+function parsePowerLevelTags(
   raw: Record<string, unknown> | null,
 ): ExternalPowerLevelDefinition[] {
   if (!raw) {
@@ -122,7 +125,7 @@ function findNumericPowersInRecord(
   }
 }
 
-/** All PL values referenced in m.room.power_levels (Sable getUsedPowers). */
+/** All PL values referenced in m.room.power_levels. */
 export function collectUsedPowerLevels(
   powerLevelsContent: Record<string, unknown> | null,
 ): Set<number> {
@@ -134,13 +137,13 @@ export function collectUsedPowerLevels(
   return levels
 }
 
-export function readCinnyPowerLevelTagDefinitions(
+export function readPowerLevelTagDefinitions(
   matrixClient: MatrixClient,
   spaceRoomId: string,
 ): ExternalPowerLevelDefinition[] {
   const room = matrixClient.getRoom(spaceRoomId)
   const stateEvents = room?.currentState?.getStateEvents?.(
-    CINNY_POWER_LEVEL_TAGS_TYPE,
+    POWER_LEVEL_TAGS_STATE_TYPE,
     '',
   )
   const rawList = Array.isArray(stateEvents) ? stateEvents : stateEvents
@@ -148,7 +151,7 @@ export function readCinnyPowerLevelTagDefinitions(
     : []
   const first = rawList[0]
   const content = first?.getContent?.() as Record<string, unknown> | undefined
-  return parseCinnyPowerLevelTags(content ?? null)
+  return parsePowerLevelTags(content ?? null)
 }
 
 function fallbackNameForPowerLevel(
@@ -184,7 +187,7 @@ function buildRoleFromPowerLevel(
 }
 
 /**
- * Build roles from Cinny/Sable tags + Matrix PL (source of truth).
+ * Build roles from power-level tag metadata + Matrix PL (source of truth).
  * Decentra-only roles not in tags/PL are dropped (e.g. stale "asdf").
  */
 export function buildRolesFromMatrixPowerLevels(
@@ -248,7 +251,7 @@ export function buildRolesFromMatrixPowerLevels(
   }
 }
 
-export function buildCinnyPowerLevelTagsPayload(
+export function buildPowerLevelTagsPayload(
   content: DecentraSpaceRolesContent,
 ): Record<string, { name: string; color?: string }> {
   const payload: Record<string, { name: string; color?: string }> = {}
@@ -270,7 +273,7 @@ export function resolveSpaceRolesFromClient(
   parsedDecentra: DecentraSpaceRolesContent | null,
 ): DecentraSpaceRolesContent | null {
   const powerLevelsContent = getPowerLevelsContent(matrixClient, spaceRoomId)
-  const tagDefinitions = readCinnyPowerLevelTagDefinitions(
+  const tagDefinitions = readPowerLevelTagDefinitions(
     matrixClient,
     spaceRoomId,
   )
@@ -302,21 +305,6 @@ export function inferOwnerUserId(
     ([, level]) => level === maxLevel,
   )
   return ownerEntry?.[0] ?? Object.keys(content.assignments)[0]
-}
-
-/** @deprecated use buildCinnyPowerLevelTagsPayload */
-export function buildSablePowerLevelDefinitionsPayload(
-  content: DecentraSpaceRolesContent,
-): Record<string, unknown> {
-  return buildCinnyPowerLevelTagsPayload(content)
-}
-
-/** @deprecated use readCinnyPowerLevelTagDefinitions */
-export function readExternalPowerLevelDefinitions(
-  matrixClient: MatrixClient,
-  spaceRoomId: string,
-): ExternalPowerLevelDefinition[] {
-  return readCinnyPowerLevelTagDefinitions(matrixClient, spaceRoomId)
 }
 
 /** @deprecated use buildRolesFromMatrixPowerLevels */
