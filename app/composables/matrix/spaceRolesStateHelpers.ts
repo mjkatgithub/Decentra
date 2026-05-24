@@ -6,11 +6,12 @@ import {
   DECENTRA_SPACE_ROLES_TYPE,
   type DecentraSpaceRolesContent,
 } from '~/utils/decentraSpaceRoles'
+import { getRoomCreatorUserId } from '~/utils/matrixPowerLevels'
 
 import {
   buildPowerLevelTagsPayload,
-  POWER_LEVEL_TAGS_STATE_TYPE,
 } from '~/utils/spaceRolesMatrixSync'
+import { POWER_LEVEL_TAGS_STATE_TYPE } from '~/utils/matrixPowerLevelTagState'
 
 const EMPTY_STATE_KEY = ''
 
@@ -32,7 +33,9 @@ export async function syncSpacePowerLevelsFromRoles(
   spaceRoomId: string,
   content: DecentraSpaceRolesContent,
 ): Promise<void> {
-  const userAssignments = buildUserPowerAssignments(content)
+  const creatorUserId = getRoomCreatorUserId(matrixClient, spaceRoomId)
+  const excludeUserIds = creatorUserId ? [creatorUserId] : []
+  const userAssignments = buildUserPowerAssignments(content, excludeUserIds)
   const powerLevelsBody = compilePowerLevelsContent(
     content.roles,
     userAssignments,
@@ -50,7 +53,6 @@ export async function saveSpaceRolesAndSyncPowerLevels(
   spaceRoomId: string,
   content: DecentraSpaceRolesContent,
 ): Promise<void> {
-  await sendSpaceRolesState(matrixClient, spaceRoomId, content)
   await syncSpacePowerLevelsFromRoles(matrixClient, spaceRoomId, content)
   await matrixClient.sendStateEvent(
     spaceRoomId,
@@ -60,4 +62,5 @@ export async function saveSpaceRolesAndSyncPowerLevels(
     buildPowerLevelTagsPayload(content),
     EMPTY_STATE_KEY,
   )
+  await sendSpaceRolesState(matrixClient, spaceRoomId, content)
 }

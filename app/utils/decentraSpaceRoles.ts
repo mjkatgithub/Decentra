@@ -1,6 +1,7 @@
 import type { MatrixClient } from 'matrix-js-sdk'
 
 import { SPACE_CHILD_EVENT } from '~/utils/spaceRoomCategories'
+import { POWER_LEVEL_TAGS_STATE_TYPE } from '~/utils/matrixPowerLevelTagState'
 
 export const DECENTRA_SPACE_ROLES_TYPE = 'decentra.space.roles'
 export const EVERYONE_ROLE_ID = '__everyone__'
@@ -299,6 +300,8 @@ export function compilePowerLevelsContent(
     'm.room.name': maxRoleLevel,
     'm.room.topic': maxRoleLevel,
     'm.room.avatar': maxRoleLevel,
+    [DECENTRA_SPACE_ROLES_TYPE]: maxRoleLevel,
+    [POWER_LEVEL_TAGS_STATE_TYPE]: maxRoleLevel,
   }
   for (const role of roles) {
     if (role.permissions.reorderChannels) {
@@ -349,15 +352,20 @@ export function compilePowerLevelsContent(
 
 export function buildUserPowerAssignments(
   content: DecentraSpaceRolesContent,
+  excludeUserIds: string[] = [],
 ): Record<string, number> {
+  const excluded = new Set(excludeUserIds)
   const users: Record<string, number> = {}
   for (const [assignedUserId, roleId] of Object.entries(content.assignments)) {
+    if (excluded.has(assignedUserId)) {
+      continue
+    }
     const role = getRoleById(content, roleId)
     if (role) {
       users[assignedUserId] = role.powerLevel
     }
   }
-  if (content.ownerUserId) {
+  if (content.ownerUserId && !excluded.has(content.ownerUserId)) {
     const ownerLevel = Math.max(...content.roles.map((role) => role.powerLevel), 0) + 1
     users[content.ownerUserId] = ownerLevel
   }

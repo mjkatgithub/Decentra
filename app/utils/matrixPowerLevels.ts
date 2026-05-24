@@ -1,6 +1,8 @@
 import type { MatrixClient } from 'matrix-js-sdk'
 
 const POWER_LEVELS_TYPE = 'm.room.power_levels'
+const ROOM_CREATE_TYPE = 'm.room.create'
+const EMPTY_STATE_KEY = ''
 
 function normalizeStateEvents(raw: unknown): Array<{
   getContent?: () => Record<string, unknown>
@@ -57,4 +59,18 @@ export function getUserPowerLevelInRoomFromState(
     'users_default',
   )
   return usersDefault ?? 0
+}
+
+export function getRoomCreatorUserId(
+  matrixClient: MatrixClient,
+  roomId: string,
+): string | undefined {
+  const room = matrixClient.getRoom(roomId)
+  const stateEvents = room?.currentState?.getStateEvents?.(
+    ROOM_CREATE_TYPE,
+    EMPTY_STATE_KEY,
+  )
+  const list = normalizeStateEvents(stateEvents)
+  const creator = list[0]?.getContent?.()?.creator
+  return typeof creator === 'string' ? creator : undefined
 }

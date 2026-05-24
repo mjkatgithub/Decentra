@@ -9,14 +9,7 @@ import {
   type SpaceRoleDefinition,
 } from '~/utils/decentraSpaceRoles'
 import { getPowerLevelsContent } from '~/utils/matrixPowerLevels'
-
-/**
- * Matrix room state event for role display metadata (name, color per PL).
- * De-facto interop type in the ecosystem; literal event type is fixed on
- * the wire and must not be changed.
- */
-export const POWER_LEVEL_TAGS_STATE_TYPE =
-  'in.cinny.room.power_level_tags'
+import { POWER_LEVEL_TAGS_STATE_TYPE } from '~/utils/matrixPowerLevelTagState'
 
 const DEFAULT_LEVEL_NAMES: Record<number, string> = {
   100: 'Admin',
@@ -125,7 +118,32 @@ function findNumericPowersInRecord(
   }
 }
 
-/** All PL values referenced in m.room.power_levels. */
+/** Member role PL values from m.room.power_levels (not event thresholds). */
+export function collectRolePowerLevelsFromMatrix(
+  powerLevelsContent: Record<string, unknown> | null,
+): Set<number> {
+  const levels = new Set<number>()
+  if (!powerLevelsContent) {
+    return levels
+  }
+  const users = powerLevelsContent.users as
+    | Record<string, unknown>
+    | undefined
+  if (users) {
+    for (const level of Object.values(users)) {
+      if (typeof level === 'number' && Number.isFinite(level)) {
+        levels.add(level)
+      }
+    }
+  }
+  const usersDefault = powerLevelsContent.users_default
+  if (typeof usersDefault === 'number' && Number.isFinite(usersDefault)) {
+    levels.add(usersDefault)
+  }
+  return levels
+}
+
+/** All numeric PL values in m.room.power_levels (including event thresholds). */
 export function collectUsedPowerLevels(
   powerLevelsContent: Record<string, unknown> | null,
 ): Set<number> {
@@ -186,9 +204,30 @@ function buildRoleFromPowerLevel(
   }
 }
 
+function mergeAssignmentsFromPowerLevels(
+  overlay: DecentraSpaceRolesContent | null,
+  powerLevelsContent: Record<string, unknown> | null,
+  roles: SpaceRoleDefinition[],
+): Record<string, string> {
+  const assignments = { ...(overlay?.assignments ?? {}) }
+  const users = powerLevelsContent?.users as
+    | Record<string, number>
+    | undefined
+  if (!users) {
+    return assignments
+  }
+  for (const [assignedUserId, level] of Object.entries(users)) {
+    const role = roles.find((entry) => entry.powerLevel === level)
+    if (role) {
+      assignments[assignedUserId] = role.id
+    }
+  }
+  return assignments
+}
+
 /**
- * Build roles from power-level tag metadata + Matrix PL (source of truth).
- * Decentra-only roles not in tags/PL are dropped (e.g. stale "asdf").
+ * Build roles from Matrix PL + tag metadata (same sources as Cinny/Sable).
+ * decentraOverlay supplies Decentra-only permissions and assignments.
  */
 export function buildRolesFromMatrixPowerLevels(
   powerLevelsContent: Record<string, unknown> | null,
@@ -221,26 +260,11 @@ export function buildRolesFromMatrixPowerLevels(
     roles.push(createEveryoneRole())
   }
 
-  const assignments: Record<string, string> = {}
-  const users = powerLevelsContent?.users as
-    | Record<string, number>
-    | undefined
-  if (users) {
-    for (const [assignedUserId, level] of Object.entries(users)) {
-      const role = roles.find((entry) => entry.powerLevel === level)
-      if (role) {
-        assignments[assignedUserId] = role.id
-      }
-    }
-  }
-
-  const overlayAssignments = decentraOverlay?.assignments ?? {}
-  for (const [assignedUserId, roleId] of Object.entries(overlayAssignments)) {
-    const role = roles.find((entry) => entry.id === roleId)
-    if (role) {
-      assignments[assignedUserId] = role.id
-    }
-  }
+  const assignments = mergeAssignmentsFromPowerLevels(
+    decentraOverlay,
+    powerLevelsContent,
+    roles,
+  )
 
   return {
     version: 1,
@@ -256,9 +280,6 @@ export function buildPowerLevelTagsPayload(
 ): Record<string, { name: string; color?: string }> {
   const payload: Record<string, { name: string; color?: string }> = {}
   for (const role of content.roles) {
-    if (role.isEveryone) {
-      continue
-    }
     payload[String(role.powerLevel)] = {
       name: role.name,
       color: role.color,

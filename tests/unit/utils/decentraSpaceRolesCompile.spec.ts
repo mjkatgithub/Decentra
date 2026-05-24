@@ -4,6 +4,7 @@ import {
   compilePowerLevelsContent,
   createEveryoneRole,
   createFullAdminRole,
+  createInitialSpaceRolesContent,
   type DecentraSpaceRolesContent,
 } from '~/utils/decentraSpaceRoles'
 
@@ -19,6 +20,12 @@ describe('decentraSpaceRoles PL compile', () => {
     }
     const users = buildUserPowerAssignments(content)
     expect(users['@alice:hs']).toBe(100)
+  })
+
+  it('omits excluded user ids from power level users map', () => {
+    const content = createInitialSpaceRolesContent('@creator:hs')
+    const users = buildUserPowerAssignments(content, ['@creator:hs'])
+    expect(users['@creator:hs']).toBeUndefined()
   })
 
   it('lowers redact threshold when a role may redact', () => {
