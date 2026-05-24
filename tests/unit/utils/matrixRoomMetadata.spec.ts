@@ -5,6 +5,7 @@ import {
   createEveryoneRole,
   canAssignRole,
   isRoomVisibleToRole,
+  validateRolePowerLevel,
 } from '~/utils/decentraSpaceRoles'
 
 describe('matrixRoomMetadata', () => {
@@ -60,5 +61,14 @@ describe('decentraSpaceRoles', () => {
   it('empty visibleRoomIds means all rooms visible', () => {
     const role = createEveryoneRole()
     expect(isRoomVisibleToRole(role, '!any:hs')).toBe(true)
+  })
+
+  it('rejects duplicate power levels', () => {
+    const roles = [
+      { ...createEveryoneRole(), id: 'a', powerLevel: 0 },
+      { ...createEveryoneRole(), id: 'b', powerLevel: 50 },
+    ]
+    expect(validateRolePowerLevel(50, roles, 'a')).toMatch(/unique/i)
+    expect(validateRolePowerLevel(50, roles, 'b')).toBeNull()
   })
 })

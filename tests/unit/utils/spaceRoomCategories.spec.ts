@@ -339,6 +339,9 @@ describe('spaceRoomCategories', () => {
     ])
     categories[2]!.kind.should.equal('subspace')
     categories[2]!.subspaceRoomId.should.equal(nestedSubId)
+    categories[1]!.nestingDepth.should.equal(1)
+    categories[2]!.nestingDepth.should.equal(2)
+    categories[2]!.parentSubspaceId.should.equal(subId)
     categories[2]!.rootChildAnchorIds.should.deep.equal([])
     categories[2]!.rooms.map((room) => room.roomId).should.deep.equal([
       roomNestedId,

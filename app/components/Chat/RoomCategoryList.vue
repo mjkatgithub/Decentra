@@ -14,6 +14,8 @@ interface RoomSectionItem {
   name: string
   kind?: 'root' | 'subspace'
   subspaceRoomId?: string
+  nestingDepth?: number
+  parentSubspaceId?: string
   rootChildAnchorIds?: string[]
   canReorderRooms: boolean
   rooms: RoomItem[]
@@ -115,6 +117,31 @@ function toggleCategoryCollapsed(categoryId: string) {
     next.add(categoryId)
   }
   collapsedCategoryIds.value = next
+}
+
+function findCategoryById(categoryId: string): RoomSectionItem | undefined {
+  return localCategories.value.find((category) => category.id === categoryId)
+}
+
+function isHiddenByCollapsedAncestor(category: RoomSectionItem): boolean {
+  let parentId = category.parentSubspaceId
+  while (parentId) {
+    if (isCategoryCollapsed(parentId)) {
+      return true
+    }
+    parentId = findCategoryById(parentId)?.parentSubspaceId
+  }
+  return false
+}
+
+function categoryIndentStyle(category: RoomSectionItem): Record<string, string> {
+  const depth = category.nestingDepth ?? 0
+  if (depth === 0) {
+    return { paddingLeft: '0px' }
+  }
+  return {
+    paddingLeft: `${depth * 4}px`,
+  }
 }
 
 function parentSpaceIdFor(category: RoomSectionItem): string {
@@ -367,6 +394,7 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
       >
         <div
           v-for="category in localCategories"
+          v-show="!isHiddenByCollapsedAncestor(category)"
           :key="category.id"
           class="mb-4"
           :class="categoryDragEnabled
@@ -374,7 +402,8 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
             : ''"
         >
           <div
-            class="flex items-center gap-1 pr-2 pl-0 pb-1"
+            class="flex items-center gap-1 pr-2 pb-1"
+            :style="categoryIndentStyle(category)"
           >
             <button
               type="button"
@@ -403,6 +432,7 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
           <div
             v-show="!isCategoryCollapsed(category.id)"
             class="space-y-1"
+            :style="categoryIndentStyle(category)"
           >
             <VueDraggable
               v-model="category.rooms"

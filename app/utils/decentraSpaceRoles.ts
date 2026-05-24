@@ -42,6 +42,8 @@ export interface DecentraSpaceRolesContent {
   roles: SpaceRoleDefinition[]
   assignments: Record<string, string>
   everyoneRoleId: string
+  /** Space creator — always receives max(role PL) + 1 in Matrix PL sync */
+  ownerUserId?: string
 }
 
 export function defaultRolePermissions(
@@ -129,6 +131,7 @@ export function createInitialSpaceRolesContent(
     roles: [everyone, admin],
     assignments: { [creatorUserId]: admin.id },
     everyoneRoleId: EVERYONE_ROLE_ID,
+    ownerUserId: creatorUserId,
   }
 }
 
@@ -210,11 +213,14 @@ export function parseSpaceRolesContent(
     typeof raw.everyoneRoleId === 'string'
       ? raw.everyoneRoleId
       : EVERYONE_ROLE_ID
+  const ownerUserId =
+    typeof raw.ownerUserId === 'string' ? raw.ownerUserId : undefined
   return {
     version: 1,
     roles,
     assignments,
     everyoneRoleId,
+    ownerUserId,
   }
 }
 
@@ -345,11 +351,15 @@ export function buildUserPowerAssignments(
   content: DecentraSpaceRolesContent,
 ): Record<string, number> {
   const users: Record<string, number> = {}
-  for (const [userId, roleId] of Object.entries(content.assignments)) {
+  for (const [assignedUserId, roleId] of Object.entries(content.assignments)) {
     const role = getRoleById(content, roleId)
     if (role) {
-      users[userId] = role.powerLevel
+      users[assignedUserId] = role.powerLevel
     }
+  }
+  if (content.ownerUserId) {
+    const ownerLevel = Math.max(...content.roles.map((role) => role.powerLevel), 0) + 1
+    users[content.ownerUserId] = ownerLevel
   }
   return users
 }
@@ -387,6 +397,26 @@ export function validateRoleName(name: string): string | null {
   }
   if (trimmed.length > 100) {
     return 'Role name is too long'
+  }
+  return null
+}
+
+export function validateRolePowerLevel(
+  powerLevel: number,
+  roles: SpaceRoleDefinition[],
+  roleId: string,
+): string | null {
+  if (!Number.isFinite(powerLevel) || !Number.isInteger(powerLevel)) {
+    return 'Power level must be a whole number'
+  }
+  if (powerLevel < -100 || powerLevel > 1000) {
+    return 'Power level must be between -100 and 1000'
+  }
+  const duplicate = roles.find(
+    (role) => role.id !== roleId && role.powerLevel === powerLevel,
+  )
+  if (duplicate) {
+    return 'Power level must be unique for each role'
   }
   return null
 }

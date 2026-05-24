@@ -2,7 +2,10 @@
 import { VueDraggable } from 'vue-draggable-plus'
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useMatrixClient } from '~/composables/useMatrixClient'
-import { useSpaceRoles } from '~/composables/useSpaceRoles'
+import {
+  useSpaceRoles,
+  type SpaceRoleEditDraft,
+} from '~/composables/useSpaceRoles'
 import { useSpaceSettings } from '~/composables/useSpaceSettings'
 import { buildSpaceRoomCategories } from '~/utils/spaceRoomCategories'
 import type { SpaceRoleDefinition } from '~/utils/decentraSpaceRoles'
@@ -31,7 +34,7 @@ const {
   sortedRoles,
   saveError,
   addRole,
-  updateRole,
+  saveRoleEdits,
   deleteRole,
   reorderRoles,
   assignUserRole,
@@ -42,13 +45,20 @@ const {
 } = useSpaceRoles(spaceId)
 
 const newRoleName = ref('')
+const newRolePowerLevel = ref<number | ''>('')
 const avatarFile = ref<File | null>(null)
 const editingRoleId = ref<string | null>(null)
+const roleEditDraft = ref<SpaceRoleEditDraft | null>(null)
+const isSavingRole = ref(false)
+const roleSaveMessage = ref('')
 const localRolesForDrag = ref<SpaceRoleDefinition[]>([])
 
 watch(
   sortedRoles,
   (roles) => {
+    if (editingRoleId.value !== null) {
+      return
+    }
     localRolesForDrag.value = roles.map((role) => ({ ...role }))
   },
   { immediate: true },
@@ -78,7 +88,7 @@ const childRoomIds = computed(() => {
     getRoomId: (room) => String((room as { roomId: string }).roomId),
     getRoomDisplayName: (room) =>
       String((room as { name?: string }).name || ''),
-    generalCategoryLabel: translateText('layout.generalCategory'),
+    generalCategoryLabel: translateText('layout.spaceRoomsCategory'),
   })
   const roomIds = new Set<string>()
   for (const category of built) {
@@ -88,6 +98,85 @@ const childRoomIds = computed(() => {
   }
   return [...roomIds]
 })
+
+const childRoomEntries = computed(() => {
+  const matrixClient = client.value
+  return childRoomIds.value.map((roomId) => ({
+    roomId,
+    name:
+      matrixClient?.getRoom(roomId)?.name ||
+      roomId,
+  }))
+})
+
+function cloneRolePermissions(
+  permissions: SpaceRoleDefinition['permissions'],
+): SpaceRoleDefinition['permissions'] {
+  return {
+    ...permissions,
+    visibleRoomIds: [...permissions.visibleRoomIds],
+  }
+}
+
+function startEditRole(role: SpaceRoleDefinition) {
+  editingRoleId.value = role.id
+  roleEditDraft.value = {
+    name: role.name,
+    color: role.color,
+    powerLevel: role.powerLevel,
+    permissions: cloneRolePermissions(role.permissions),
+  }
+  roleSaveMessage.value = ''
+  saveError.value = ''
+}
+
+function cancelEditRole() {
+  editingRoleId.value = null
+  roleEditDraft.value = null
+  roleSaveMessage.value = ''
+  saveError.value = ''
+}
+
+function setVisibleRoomChecked(roomId: string, checked: boolean) {
+  const draft = roleEditDraft.value
+  if (!draft) {
+    return
+  }
+  const current = draft.permissions.visibleRoomIds
+  let next =
+    current.length === 0 ? [...childRoomIds.value] : [...current]
+  if (checked) {
+    if (!next.includes(roomId)) {
+      next.push(roomId)
+    }
+  } else {
+    next = next.filter((id) => id !== roomId)
+  }
+  if (next.length === childRoomIds.value.length) {
+    next = []
+  }
+  draft.permissions.visibleRoomIds = next
+}
+
+async function handleSaveRoleEdits() {
+  const roleId = editingRoleId.value
+  const draft = roleEditDraft.value
+  if (!roleId || !draft) {
+    return
+  }
+  isSavingRole.value = true
+  roleSaveMessage.value = ''
+  try {
+    const saved = await saveRoleEdits(roleId, draft, childRoomIds.value)
+    if (saved) {
+      roleSaveMessage.value = 'saved'
+      cancelEditRole()
+      reloadFromRoom()
+    }
+  } finally {
+    isSavingRole.value = false
+  }
+}
 
 onMounted(async () => {
   if (!client.value?.getRoom(spaceId.value)) {
@@ -107,6 +196,13 @@ const feedbackTitle = computed(() => {
   return feedbackMessage.value
 })
 
+const roleSaveTitle = computed(() => {
+  if (roleSaveMessage.value === 'saved') {
+    return translateText('settings.saved')
+  }
+  return ''
+})
+
 async function handleSaveProfile() {
   await saveProfile(avatarFile.value)
   avatarFile.value = null
@@ -120,13 +216,29 @@ function onAvatarSelected(event: Event) {
 
 async function handleCreateRole() {
   const name = newRoleName.value.trim()
-  if (!name) {
+  const powerLevelRaw = newRolePowerLevel.value
+  const powerLevel =
+    typeof powerLevelRaw === 'number'
+      ? powerLevelRaw
+      : Number.parseInt(String(powerLevelRaw), 10)
+  if (!name || !Number.isFinite(powerLevel)) {
     return
   }
-  await addRole(name, childRoomIds.value)
+  await addRole(name, powerLevel, childRoomIds.value)
   newRoleName.value = ''
+  newRolePowerLevel.value = ''
   reloadFromRoom()
 }
+
+const canSubmitNewRole = computed(() => {
+  const name = newRoleName.value.trim()
+  const powerLevelRaw = newRolePowerLevel.value
+  const powerLevel =
+    typeof powerLevelRaw === 'number'
+      ? powerLevelRaw
+      : Number.parseInt(String(powerLevelRaw), 10)
+  return Boolean(name) && Number.isFinite(powerLevel)
+})
 
 const spaceMembersForAssign = computed(() => {
   const matrixClient = client.value
@@ -275,10 +387,23 @@ const navItems = computed(() => [
         >
           <UInput
             v-model="newRoleName"
-            class="min-w-[12rem] flex-1"
+            class="min-w-[10rem] flex-1"
             :placeholder="translateText('settings.spaceRoleNamePlaceholder')"
           />
-          <UButton color="primary" @click="handleCreateRole">
+          <UInput
+            v-model.number="newRolePowerLevel"
+            type="number"
+            class="w-28"
+            min="-100"
+            max="1000"
+            step="1"
+            :placeholder="translateText('settings.spaceRolePowerLevel')"
+          />
+          <UButton
+            color="primary"
+            :disabled="!canSubmitNewRole"
+            @click="handleCreateRole"
+          >
             {{ translateText('settings.spaceRoleCreate') }}
           </UButton>
         </div>
@@ -288,15 +413,23 @@ const navItems = computed(() => [
         >
           {{ translateText('settings.spaceRolesDragHint') }}
         </p>
+        <UAlert
+          v-if="roleSaveTitle"
+          class="mb-2"
+          color="success"
+          :title="roleSaveTitle"
+        />
         <VueDraggable
           v-model="localRolesForDrag"
-          :disabled="!canManageRoles()"
+          :disabled="!canManageRoles() || editingRoleId !== null"
           :animation="150"
           handle=".decentra-role-drag-handle"
+          filter=".decentra-role-interactive"
+          :prevent-on-filter="true"
           class="space-y-3"
           @end="onRoleDragEnd"
         >
-          <li
+          <div
             v-for="role in localRolesForDrag"
             :key="role.id"
             class="rounded-lg border border-gray-200 p-3
@@ -319,111 +452,122 @@ const navItems = computed(() => [
               </span>
             </div>
             <div
-              v-if="editingRoleId === role.id"
-              class="mt-3 space-y-2"
+              v-if="editingRoleId === role.id && roleEditDraft"
+              class="decentra-role-interactive mt-3 space-y-3"
             >
+              <label class="flex flex-col gap-1 text-sm">
+                <span>{{ translateText('settings.spaceRoleNameLabel') }}</span>
+                <UInput
+                  v-model="roleEditDraft.name"
+                  :disabled="isSavingRole"
+                />
+              </label>
+              <label class="flex flex-col gap-1 text-sm">
+                <span>{{ translateText('settings.spaceRolePowerLevel') }}</span>
+                <UInput
+                  v-model.number="roleEditDraft.powerLevel"
+                  type="number"
+                  min="-100"
+                  max="1000"
+                  step="1"
+                  :disabled="isSavingRole"
+                />
+              </label>
               <label class="flex items-center gap-2 text-sm">
                 <input
+                  v-model="roleEditDraft.color"
                   type="color"
-                  :value="role.color"
-                  @input="updateRole(role.id, {
-                    color: ($event.target as HTMLInputElement).value,
-                  }, childRoomIds)"
+                  class="decentra-role-interactive"
+                  :disabled="isSavingRole"
                 >
                 {{ translateText('settings.spaceRoleColor') }}
               </label>
               <label class="flex items-center gap-2 text-sm">
                 <input
+                  v-model="roleEditDraft.permissions.manageRoles"
                   type="checkbox"
-                  :checked="role.permissions.manageRoles"
-                  @change="updateRole(role.id, {
-                    permissions: {
-                      ...role.permissions,
-                      manageRoles: ($event.target as HTMLInputElement)
-                        .checked,
-                    },
-                  }, childRoomIds)"
+                  class="decentra-role-interactive"
+                  :disabled="isSavingRole"
                 >
                 {{ translateText('settings.spacePermManageRoles') }}
               </label>
               <label class="flex items-center gap-2 text-sm">
                 <input
+                  v-model="roleEditDraft.permissions.redactOthers"
                   type="checkbox"
-                  :checked="role.permissions.redactOthers"
-                  @change="updateRole(role.id, {
-                    permissions: {
-                      ...role.permissions,
-                      redactOthers: ($event.target as HTMLInputElement)
-                        .checked,
-                    },
-                  }, childRoomIds)"
+                  class="decentra-role-interactive"
+                  :disabled="isSavingRole"
                 >
                 {{ translateText('settings.spacePermRedact') }}
               </label>
               <label class="flex items-center gap-2 text-sm">
                 <input
+                  v-model="roleEditDraft.permissions.reorderChannels"
                   type="checkbox"
-                  :checked="role.permissions.reorderChannels"
-                  @change="updateRole(role.id, {
-                    permissions: {
-                      ...role.permissions,
-                      reorderChannels: ($event.target as HTMLInputElement)
-                        .checked,
-                    },
-                  }, childRoomIds)"
+                  class="decentra-role-interactive"
+                  :disabled="isSavingRole"
                 >
                 {{ translateText('settings.spacePermReorder') }}
               </label>
               <p class="text-xs text-gray-500">
                 {{ translateText('settings.spaceVisibleRooms') }}:
-                {{ role.permissions.visibleRoomIds.length === 0
+                {{ roleEditDraft.permissions.visibleRoomIds.length === 0
                   ? translateText('settings.spaceVisibleRoomsAll')
-                  : role.permissions.visibleRoomIds.length }}
+                  : roleEditDraft.permissions.visibleRoomIds.length }}
               </p>
               <div class="flex flex-wrap gap-1">
                 <label
-                  v-for="roomId in childRoomIds"
-                  :key="roomId"
-                  class="flex items-center gap-1 rounded border px-2 py-1
-                         text-xs dark:border-gray-700"
+                  v-for="room in childRoomEntries"
+                  :key="room.roomId"
+                  class="decentra-role-interactive flex items-center gap-1
+                         rounded border px-2 py-1 text-xs dark:border-gray-700"
                 >
                   <input
                     type="checkbox"
-                    :checked="role.permissions.visibleRoomIds.length === 0
-                      || role.permissions.visibleRoomIds.includes(roomId)"
-                    @change="(event) => {
-                      const checked = (event.target as HTMLInputElement)
-                        .checked
-                      const current = role.permissions.visibleRoomIds
-                      let next = current.length === 0
-                        ? [...childRoomIds]
-                        : [...current]
-                      if (checked) {
-                        if (!next.includes(roomId)) next.push(roomId)
-                      } else {
-                        next = next.filter((id) => id !== roomId)
-                      }
-                      if (next.length === childRoomIds.length) {
-                        next = []
-                      }
-                      updateRole(role.id, {
-                        permissions: {
-                          ...role.permissions,
-                          visibleRoomIds: next,
-                        },
-                      }, childRoomIds)
-                    }"
+                    class="decentra-role-interactive"
+                    :checked="roleEditDraft.permissions.visibleRoomIds
+                        .length === 0
+                      || roleEditDraft.permissions.visibleRoomIds
+                        .includes(room.roomId)"
+                    :disabled="isSavingRole"
+                    @change="setVisibleRoomChecked(
+                      room.roomId,
+                      ($event.target as HTMLInputElement).checked,
+                    )"
                   >
-                  <span class="max-w-[8rem] truncate">{{ roomId }}</span>
+                  <span class="max-w-[10rem] truncate">{{ room.name }}</span>
                 </label>
               </div>
+              <div class="flex flex-wrap gap-2">
+                <UButton
+                  color="primary"
+                  size="sm"
+                  :disabled="isSavingRole"
+                  :loading="isSavingRole"
+                  @click="handleSaveRoleEdits"
+                >
+                  {{ translateText('settings.save') }}
+                </UButton>
+                <UButton
+                  color="neutral"
+                  variant="soft"
+                  size="sm"
+                  :disabled="isSavingRole"
+                  @click="cancelEditRole"
+                >
+                  {{ translateText('settings.cancel') }}
+                </UButton>
+              </div>
             </div>
-            <div class="mt-2 flex gap-2">
+            <div
+              v-else
+              class="decentra-role-interactive mt-2 flex gap-2"
+            >
               <UButton
+                v-if="canManageRoles()"
                 size="xs"
                 variant="soft"
-                @click="editingRoleId =
-                  editingRoleId === role.id ? null : role.id"
+                @click="startEditRole(role)"
               >
                 {{ translateText('settings.spaceRoleEdit') }}
               </UButton>
@@ -437,7 +581,7 @@ const navItems = computed(() => [
                 {{ translateText('settings.spaceRoleDelete') }}
               </UButton>
             </div>
-          </li>
+          </div>
         </VueDraggable>
       </section>
 

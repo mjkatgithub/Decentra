@@ -1,6 +1,5 @@
 import { useMatrixClient } from '~/composables/useMatrixClient'
 import {
-  allocatePowerLevelBetween,
   canAssignRole,
   canManageRoleDefinition,
   createEveryoneRole,
@@ -10,10 +9,24 @@ import {
   resolveUserRole,
   sortRolesByPositionDesc,
   validateRoleName,
+  validateRolePowerLevel,
   type DecentraSpaceRolesContent,
   type SpaceRoleDefinition,
 } from '~/utils/decentraSpaceRoles'
+import {
+  getEffectiveUserPowerLevel,
+  inferOwnerUserId,
+  readCinnyPowerLevelTagDefinitions,
+  resolveSpaceRolesFromClient,
+  validateRolePowerLevelAgainstActor,
+} from '~/utils/spaceRolesMatrixSync'
+import { getPowerLevelsContent } from '~/utils/matrixPowerLevels'
 import { getActorRoleInSpace } from '~/utils/decentraSpaceRolesPermissions'
+
+export type SpaceRoleEditDraft = Pick<
+  SpaceRoleDefinition,
+  'name' | 'color' | 'powerLevel' | 'permissions'
+>
 
 export function useSpaceRoles(spaceId: Ref<string>) {
   const { client, userId, saveSpaceRoles } = useMatrixClient()
@@ -40,7 +53,16 @@ export function useSpaceRoles(spaceId: Ref<string>) {
       return
     }
     const parsed = getSpaceRolesFromClient(matrixClient, spaceId.value)
-    rolesContent.value = parsed
+    const merged = resolveSpaceRolesFromClient(
+      matrixClient,
+      spaceId.value,
+      parsed,
+    )
+    if (merged && !merged.ownerUserId) {
+      const powerLevels = getPowerLevelsContent(matrixClient, spaceId.value)
+      merged.ownerUserId = inferOwnerUserId(merged, powerLevels)
+    }
+    rolesContent.value = merged
   }
 
   watch([client, spaceId], () => reloadFromRoom(), { immediate: true })
@@ -51,7 +73,20 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     if (!matrixClient || !matrixUserId || !spaceId.value) {
       return
     }
+    reloadFromRoom()
     if (rolesContent.value) {
+      const hasNonEveryoneRole = rolesContent.value.roles.some(
+        (role) => !role.isEveryone,
+      )
+      if (hasNonEveryoneRole) {
+        return
+      }
+    }
+    const cinnyTags = readCinnyPowerLevelTagDefinitions(
+      matrixClient,
+      spaceId.value,
+    )
+    if (cinnyTags.length > 0) {
       return
     }
     const initial = createInitialSpaceRolesContent(matrixUserId)
@@ -79,49 +114,127 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     }
   }
 
-  function createRoleDraft(name: string): SpaceRoleDefinition | null {
+  function createRoleDraft(
+    name: string,
+    powerLevel: number,
+  ): SpaceRoleDefinition | null {
     const content = rolesContent.value
     const actor = actorRole.value
     if (!content || !actor?.permissions.manageRoles) {
       return null
     }
-    const validationError = validateRoleName(name)
-    if (validationError) {
-      saveError.value = validationError
+    const nameError = validateRoleName(name)
+    if (nameError) {
+      saveError.value = nameError
       return null
     }
-    const maxPosition = Math.max(
-      ...content.roles.map((role) => role.position),
-      0,
+    const powerError = validateRolePowerLevel(
+      powerLevel,
+      content.roles,
+      '',
     )
-    const position = maxPosition + 10
+    if (powerError) {
+      saveError.value = powerError
+      return null
+    }
+    const actorCapError = validateRolePowerLevelAgainstActor(
+      powerLevel,
+      content,
+      userId.value,
+      '',
+    )
+    if (actorCapError) {
+      saveError.value = actorCapError
+      return null
+    }
     return {
-      id: `role_${Date.now()}_${Math.floor(Math.random() * 1_000_000)}`,
+      id: `pl_${powerLevel}`,
       name: name.trim(),
       color: '#5865f2',
-      position,
-      powerLevel: allocatePowerLevelBetween(content.roles, position),
+      position: powerLevel,
+      powerLevel,
       permissions: defaultRolePermissions(),
     }
   }
 
   async function addRole(
     name: string,
+    powerLevel: number,
     childRoomIds: string[],
   ): Promise<void> {
     const content = rolesContent.value
     if (!content) {
       return
     }
-    const draft = createRoleDraft(name)
+    const draft = createRoleDraft(name, powerLevel)
     if (!draft) {
       return
     }
+    const withoutDuplicate = content.roles.filter(
+      (role) => role.powerLevel !== powerLevel,
+    )
     const next: DecentraSpaceRolesContent = {
       ...content,
-      roles: [...content.roles, draft],
+      roles: [...withoutDuplicate, draft],
     }
     await persistRoles(next, childRoomIds)
+  }
+
+  async function saveRoleEdits(
+    roleId: string,
+    draft: SpaceRoleEditDraft,
+    childRoomIds: string[],
+  ): Promise<boolean> {
+    const content = rolesContent.value
+    const actor = actorRole.value
+    if (!content || !actor) {
+      return false
+    }
+    const target = content.roles.find((role) => role.id === roleId)
+    if (!target) {
+      return false
+    }
+    if (!canManageRoleDefinition(actor, target) && !target.isEveryone) {
+      return false
+    }
+    const nameError = validateRoleName(draft.name)
+    if (nameError) {
+      saveError.value = nameError
+      return false
+    }
+    const powerError = validateRolePowerLevel(
+      draft.powerLevel,
+      content.roles,
+      roleId,
+    )
+    if (powerError) {
+      saveError.value = powerError
+      return false
+    }
+    const actorCapError = validateRolePowerLevelAgainstActor(
+      draft.powerLevel,
+      content,
+      userId.value,
+      roleId,
+    )
+    if (actorCapError) {
+      saveError.value = actorCapError
+      return false
+    }
+    saveError.value = ''
+    const nextRoles = content.roles.map((role) =>
+      role.id === roleId
+        ? {
+            ...role,
+            name: draft.name.trim(),
+            color: draft.color,
+            powerLevel: draft.powerLevel,
+            permissions: { ...draft.permissions },
+          }
+        : role,
+    )
+    await persistRoles({ ...content, roles: nextRoles }, childRoomIds)
+    return true
   }
 
   async function updateRole(
@@ -251,6 +364,7 @@ export function useSpaceRoles(spaceId: Ref<string>) {
     reloadFromRoom,
     ensureInitialRoles,
     addRole,
+    saveRoleEdits,
     updateRole,
     deleteRole,
     reorderRoles,

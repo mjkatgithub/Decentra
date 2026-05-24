@@ -7,6 +7,11 @@ import {
   type DecentraSpaceRolesContent,
 } from '~/utils/decentraSpaceRoles'
 
+import {
+  buildCinnyPowerLevelTagsPayload,
+  CINNY_POWER_LEVEL_TAGS_TYPE,
+} from '~/utils/spaceRolesMatrixSync'
+
 const EMPTY_STATE_KEY = ''
 
 export async function sendSpaceRolesState(
@@ -47,4 +52,12 @@ export async function saveSpaceRolesAndSyncPowerLevels(
 ): Promise<void> {
   await sendSpaceRolesState(matrixClient, spaceRoomId, content)
   await syncSpacePowerLevelsFromRoles(matrixClient, spaceRoomId, content)
+  await matrixClient.sendStateEvent(
+    spaceRoomId,
+    CINNY_POWER_LEVEL_TAGS_TYPE as Parameters<
+      MatrixClient['sendStateEvent']
+    >[1],
+    buildCinnyPowerLevelTagsPayload(content),
+    EMPTY_STATE_KEY,
+  )
 }

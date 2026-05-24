@@ -113,6 +113,8 @@ interface RoomCategoryGroup {
   name: string;
   kind: "root" | "subspace";
   subspaceRoomId?: string;
+  nestingDepth?: number;
+  parentSubspaceId?: string;
   rootChildAnchorIds: string[];
   /** Power-level: may send m.space.child on the parent of these rooms */
   canReorderRooms: boolean;
@@ -478,22 +480,39 @@ const canReorderRootCategories = computed(() => {
 });
 
 function buildHomeSections(): RoomCategoryGroup[] {
-  const directRooms = visibleRoomsForSidebar.value.filter((room) =>
-    isDirectRoom(room),
+  const personalRooms = visibleRoomsForSidebar.value.filter((room) =>
+    isPersonalChatRoom(room),
+  );
+  const groupRooms = visibleRoomsForSidebar.value.filter((room) =>
+    isGroupChatRoom(room),
   );
   const unassignedRooms = visibleRoomsForSidebar.value.filter((room) => {
-    return room.parentSpaceIds.length === 0 && !isDirectRoom(room);
+    return (
+      room.parentSpaceIds.length === 0 &&
+      !isPersonalChatRoom(room) &&
+      !isGroupChatRoom(room)
+    );
   });
 
   const categories: RoomCategoryGroup[] = [];
-  if (directRooms.length > 0) {
+  if (personalRooms.length > 0) {
     categories.push({
       id: "personal-chats",
       name: translateText("layout.personalChats"),
       kind: "root",
       rootChildAnchorIds: [],
       canReorderRooms: false,
-      rooms: directRooms.map((room) => toCategoryRoomItem(room)),
+      rooms: personalRooms.map((room) => toCategoryRoomItem(room)),
+    });
+  }
+  if (groupRooms.length > 0) {
+    categories.push({
+      id: "group-chats",
+      name: translateText("layout.groupChats"),
+      kind: "root",
+      rootChildAnchorIds: [],
+      canReorderRooms: false,
+      rooms: groupRooms.map((room) => toCategoryRoomItem(room)),
     });
   }
   if (unassignedRooms.length > 0) {
@@ -525,7 +544,7 @@ function buildSpaceSections(): RoomCategoryGroup[] {
         (room as { name?: string }).name ||
           translateText("layout.roomFallback"),
       ),
-    generalCategoryLabel: translateText("layout.generalCategory"),
+    generalCategoryLabel: translateText("layout.spaceRoomsCategory"),
   });
   const matrixClient = client.value;
   const matrixUserId = userId.value;
@@ -561,6 +580,8 @@ function buildSpaceSections(): RoomCategoryGroup[] {
         name: category.name,
         kind: category.kind,
         subspaceRoomId: category.subspaceRoomId,
+        nestingDepth: category.nestingDepth,
+        parentSubspaceId: category.parentSubspaceId,
         rootChildAnchorIds: category.rootChildAnchorIds,
         canReorderRooms,
         rooms,
@@ -1098,21 +1119,115 @@ function roomIsListedInDirectAccountData(roomId: string): boolean {
   return Object.values(content).some((ids) => ids?.includes(roomId));
 }
 
-function isDirectRoom(room: RoomItem): boolean {
-  const matrixRoom = matrixRooms.value.find(
-    (entry) => entry.roomId === room.roomId,
-  );
+function countJoinedMembersForRoom(
+  matrixRoom: Record<string, unknown> | undefined,
+): number {
   if (!matrixRoom) {
-    return false;
+    return 0;
   }
+  const members = (
+    matrixRoom as { getMembers?: () => Array<{ membership?: string }> }
+  ).getMembers?.();
+  if (members && members.length > 0) {
+    const joinedCount = members.filter(
+      (member) => member.membership === "join",
+    ).length;
+    if (joinedCount > 0) {
+      return joinedCount;
+    }
+  }
+  const summaryCount = Number(
+    (matrixRoom as { getJoinedMemberCount?: () => number })
+      .getJoinedMemberCount?.() ?? 0,
+  );
+  if (summaryCount > 0) {
+    return summaryCount;
+  }
+  const currentState = (matrixRoom as {
+    currentState?: {
+      getStateEvents?: (eventType: string) => unknown;
+    };
+  }).currentState;
+  const memberEvents = currentState?.getStateEvents?.("m.room.member");
+  const normalizedEvents = Array.isArray(memberEvents)
+    ? memberEvents
+    : memberEvents
+      ? [memberEvents]
+      : [];
+  return normalizedEvents.filter((stateEvent) => {
+    const content = (
+      stateEvent as { getContent?: () => { membership?: string } }
+    ).getContent?.();
+    return content?.membership === "join";
+  }).length;
+}
+
+function roomCreateIsDirect(matrixRoom: Record<string, unknown>): boolean {
+  const currentState = (matrixRoom as {
+    currentState?: {
+      getStateEvents?: (
+        eventType: string,
+        stateKey: string,
+      ) => unknown;
+    };
+  }).currentState;
+  const createEvent = currentState?.getStateEvents?.(
+    "m.room.create",
+    "",
+  ) as { getContent?: () => { is_direct?: boolean } } | undefined;
+  return createEvent?.getContent?.()?.is_direct === true;
+}
+
+/** 1:1 DM: m.direct entry, is_direct on create, or Matrix DM inviter hint. */
+function isDirectMessageRoom(
+  roomId: string,
+  matrixRoom: Record<string, unknown> | undefined,
+): boolean {
+  if (roomIsListedInDirectAccountData(roomId)) {
+    return true;
+  }
+  if (matrixRoom && roomCreateIsDirect(matrixRoom)) {
+    return true;
+  }
+  const dmInviter = (
+    matrixRoom as { getDMInviter?: () => string | undefined }
+  ).getDMInviter?.();
+  return Boolean(dmInviter);
+}
+
+function isPersonalChatRoom(room: RoomItem): boolean {
   if (room.parentSpaceIds.length !== 0) {
     return false;
   }
-  if (roomIsListedInDirectAccountData(room.roomId)) {
+  const matrixRoom = matrixRooms.value.find(
+    (entry) => entry.roomId === room.roomId,
+  );
+  const joinedCount = countJoinedMembersForRoom(matrixRoom);
+  if (joinedCount !== 2) {
+    return false;
+  }
+  return isDirectMessageRoom(room.roomId, matrixRoom);
+}
+
+function isGroupChatRoom(room: RoomItem): boolean {
+  if (room.parentSpaceIds.length !== 0) {
+    return false;
+  }
+  const matrixRoom = matrixRooms.value.find(
+    (entry) => entry.roomId === room.roomId,
+  );
+  const joinedCount = countJoinedMembersForRoom(matrixRoom);
+  if (joinedCount > 2) {
     return true;
   }
-  const joinedMemberCount = Number(matrixRoom.getJoinedMemberCount?.() ?? 0);
-  return joinedMemberCount === 2;
+  if (joinedCount === 2 && !isDirectMessageRoom(room.roomId, matrixRoom)) {
+    return true;
+  }
+  return false;
+}
+
+function isDirectRoom(room: RoomItem): boolean {
+  return isPersonalChatRoom(room);
 }
 
 function getOwnReadAnchorEventId(room: Record<string, any>): string | undefined {

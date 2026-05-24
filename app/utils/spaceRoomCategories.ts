@@ -24,6 +24,10 @@ export interface SpaceRoomCategory {
   kind: SpaceCategoryKind;
   /** Present when kind === "subspace" */
   subspaceRoomId?: string;
+  /** 0 = root room group; 1+ = subspace nesting depth */
+  nestingDepth: number;
+  /** Parent subspace room id (for collapse + indent) */
+  parentSubspaceId?: string;
   /**
    * Child room IDs under the root space (m.space.child state keys) that this
    * UI block represents — used to reorder category blocks on the root.
@@ -312,6 +316,8 @@ function appendSubspaceCategoriesDepthFirst(
   getRoomDisplayName: (room: unknown) => string,
   categories: SpaceRoomCategory[],
   rootChildAnchorIds: string[],
+  nestingDepth: number,
+  parentSubspaceId?: string,
 ): void {
   const subspaceRoom = roomsById.get(subspaceId);
   if (!subspaceRoom || getRoomType(subspaceRoom) !== ROOM_TYPE_SPACE) {
@@ -347,6 +353,8 @@ function appendSubspaceCategoriesDepthFirst(
     name: getRoomDisplayName(subspaceRoom),
     kind: "subspace",
     subspaceRoomId: subspaceId,
+    nestingDepth,
+    parentSubspaceId,
     rootChildAnchorIds,
     rooms: roomsInSubspace,
   });
@@ -359,6 +367,8 @@ function appendSubspaceCategoriesDepthFirst(
       getRoomDisplayName,
       categories,
       [],
+      nestingDepth + 1,
+      subspaceId,
     );
   }
 }
@@ -413,6 +423,7 @@ export function buildSpaceRoomCategories(options: {
       id: `${rootSpaceId}-direct-${directSegmentIndex}`,
       name: generalCategoryLabel,
       kind: "root",
+      nestingDepth: 0,
       rootChildAnchorIds: directBuffer.map((entry) => entry.roomId),
       rooms: directBuffer,
     });
@@ -435,6 +446,7 @@ export function buildSpaceRoomCategories(options: {
         getRoomDisplayName,
         categories,
         [parsed.childRoomId],
+        1,
       );
     } else {
       directBuffer.push({
