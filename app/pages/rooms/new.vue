@@ -12,17 +12,34 @@ const visibility = ref<'private' | 'public'>('private')
 const submitting = ref(false)
 const errorMessage = ref('')
 
-const parentSpaceId = computed(() => {
-  const raw = route.query.space
+function readQueryParam(key: string): string {
+  const raw = route.query[key]
   const value = Array.isArray(raw) ? raw[0] : raw
   return typeof value === 'string' ? value.trim() : ''
+}
+
+/** Top-level space for the rail (never a nested subspace id). */
+const rootSpaceId = computed(() =>
+  readQueryParam('root') || readQueryParam('space'),
+)
+
+/** Parent space/subspace where m.space.child will be sent. */
+const parentSpaceId = computed(() =>
+  readQueryParam('parent') || rootSpaceId.value,
+)
+
+const insertIndex = computed(() => {
+  const raw = readQueryParam('insertIndex')
+  if (!raw) {
+    return undefined
+  }
+  const parsed = Number.parseInt(raw, 10)
+  return Number.isFinite(parsed) ? parsed : undefined
 })
 
-const createKind = computed<'room' | 'space'>(() => {
-  const raw = route.query.kind
-  const value = Array.isArray(raw) ? raw[0] : raw
-  return value === 'space' ? 'space' : 'room'
-})
+const createKind = computed<'room' | 'space'>(() =>
+  readQueryParam('kind') === 'space' ? 'space' : 'room',
+)
 
 const pageTitle = computed(() =>
   createKind.value === 'space'
@@ -42,16 +59,28 @@ const submitLabel = computed(() =>
     : translateText('rooms.createSubmit'),
 )
 
+const backToChatLocation = computed(() => {
+  if (!rootSpaceId.value) {
+    return '/chat'
+  }
+  return {
+    path: '/chat',
+    query: { root: rootSpaceId.value },
+  }
+})
+
 async function handleCreate() {
   errorMessage.value = ''
   submitting.value = true
   try {
+    const linkParentId = parentSpaceId.value
     const sharedInput = {
       name: name.value,
       topic: topic.value,
       visibility: visibility.value,
-      ...(parentSpaceId.value
-        ? { parentSpaceId: parentSpaceId.value }
+      ...(linkParentId ? { parentSpaceId: linkParentId } : {}),
+      ...(insertIndex.value !== undefined
+        ? { insertIndex: insertIndex.value }
         : {}),
     }
     const roomId =
@@ -59,8 +88,8 @@ async function handleCreate() {
         ? await createMatrixSpace(sharedInput)
         : await createGroupRoom(sharedInput)
     const query: Record<string, string> = { room: roomId }
-    if (parentSpaceId.value) {
-      query.space = parentSpaceId.value
+    if (rootSpaceId.value) {
+      query.root = rootSpaceId.value
     }
     await navigateTo({ path: '/chat', query })
   } catch (error) {
@@ -136,7 +165,11 @@ async function handleCreate() {
           >
             {{ submitLabel }}
           </UButton>
-          <UButton color="neutral" variant="soft" to="/chat">
+          <UButton
+            color="neutral"
+            variant="soft"
+            :to="backToChatLocation"
+          >
             {{ translateText('settings.backToChat') }}
           </UButton>
         </div>

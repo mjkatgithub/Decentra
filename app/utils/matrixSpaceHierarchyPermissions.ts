@@ -5,8 +5,11 @@ import {
   getUserPowerLevelInRoomFromState,
   readNumericPowerLevel,
 } from '~/utils/matrixPowerLevels'
+import { isSpaceRoomFounder } from '~/utils/spaceRolesMatrixSync'
 
-const SPACE_CHILD_TYPE = 'm.space.child'
+import { SPACE_CHILD_EVENT } from '~/utils/spaceRoomCategories'
+
+const SPACE_CHILD_TYPE = SPACE_CHILD_EVENT
 
 /**
  * Power level required to send `m.space.child` state on this room (space).
@@ -57,4 +60,23 @@ export function canUserSendSpaceChildState(
   const myLevel = getUserPowerLevelInRoomFromState(content, userId)
   const required = getRequiredPowerForSpaceChild(content)
   return myLevel >= required
+}
+
+/** Founder or PL high enough to link/reorder m.space.child on this space. */
+export function canManageSpaceChildren(
+  matrixClient: MatrixClient | null,
+  spaceRoomId: string | null | undefined,
+  userId: string | null | undefined,
+): boolean {
+  if (!matrixClient || !spaceRoomId || !userId) {
+    return false
+  }
+  if (isSpaceRoomFounder(matrixClient, spaceRoomId, userId)) {
+    return true
+  }
+  const roomState = matrixClient.getRoom(spaceRoomId)?.currentState
+  if (roomState?.maySendStateEvent?.(SPACE_CHILD_EVENT, userId)) {
+    return true
+  }
+  return canUserSendSpaceChildState(matrixClient, spaceRoomId, userId)
 }

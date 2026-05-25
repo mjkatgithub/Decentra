@@ -138,6 +138,7 @@ import {
   moveRoomBetweenParents,
   persistSpaceChildOrder
 } from './matrix/spaceStateHelpers'
+import { waitForRoomSpaceParentLink } from '~/utils/waitForRoomSpaceParent'
 import { buildTextEditContent } from '~/utils/matrixMessageEdit'
 import { buildThreadRelatesTo } from '~/utils/matrixThreadRelations'
 
@@ -333,6 +334,8 @@ export interface CreateGroupRoomInput {
   visibility: 'private' | 'public'
   /** Link new room as m.space.child of this space */
   parentSpaceId?: string
+  /** Sibling index on parent (default: append) */
+  insertIndex?: number
 }
 
 export interface CreateMatrixSpaceInput {
@@ -341,6 +344,7 @@ export interface CreateMatrixSpaceInput {
   visibility: 'private' | 'public'
   /** Link new space as m.space.child of this parent space */
   parentSpaceId?: string
+  insertIndex?: number
 }
 
 export interface UserDirectoryResultItem {
@@ -1536,12 +1540,16 @@ export function useMatrixClient() {
   async function linkRoomToParentSpace(
     roomId: string,
     parentSpaceId: string,
+    insertIndex?: number,
   ): Promise<void> {
+    const matrixClient = requireClient()
     await moveChannelBetweenSpaceParents({
       roomId,
       previousParentSpaceId: null,
       nextParentSpaceId: parentSpaceId,
+      insertIndex,
     })
+    await waitForRoomSpaceParentLink(matrixClient, roomId, parentSpaceId)
   }
 
   async function createMatrixSpace(
@@ -1564,7 +1572,11 @@ export function useMatrixClient() {
     try {
       const { room_id: roomId } = await matrixClient.createRoom(createOpts)
       if (input.parentSpaceId) {
-        await linkRoomToParentSpace(roomId, input.parentSpaceId)
+        await linkRoomToParentSpace(
+          roomId,
+          input.parentSpaceId,
+          input.insertIndex,
+        )
       }
       return roomId
     } catch (error) {
@@ -1596,7 +1608,11 @@ export function useMatrixClient() {
     try {
       const { room_id: roomId } = await matrixClient.createRoom(createOpts)
       if (input.parentSpaceId) {
-        await linkRoomToParentSpace(roomId, input.parentSpaceId)
+        await linkRoomToParentSpace(
+          roomId,
+          input.parentSpaceId,
+          input.insertIndex,
+        )
       }
       return roomId
     } catch (error) {

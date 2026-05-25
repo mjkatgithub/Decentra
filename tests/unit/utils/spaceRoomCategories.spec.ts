@@ -162,6 +162,79 @@ describe('spaceRoomCategories', () => {
     ])
   })
 
+  it('merges all root-level rooms into one block (Cinny-style)', () => {
+    const rootId = '!root:example.org'
+    const subId = '!sub:example.org'
+    const roomBeforeId = '!before:example.org'
+    const roomAfterId = '!after:example.org'
+    const roomUnderSubId = '!under:example.org'
+
+    const matrixRooms = [
+      {
+        roomId: rootId,
+        name: 'Root',
+        getType: () => 'm.space',
+        currentState: {
+          getStateEvents: (eventType: string) => {
+            if (eventType !== 'm.space.child') {
+              return []
+            }
+            return [
+              mockStateEvent(roomBeforeId, {
+                order: '1',
+                via: ['example.org'],
+              }),
+              mockStateEvent(subId, { order: '2', via: ['example.org'] }),
+              mockStateEvent(roomAfterId, { order: '3', via: ['example.org'] }),
+            ]
+          },
+        },
+      },
+      {
+        roomId: subId,
+        name: 'Sub',
+        getType: () => 'm.space',
+        currentState: {
+          getStateEvents: (eventType: string) => {
+            if (eventType !== 'm.space.child') {
+              return []
+            }
+            return [
+              mockStateEvent(roomUnderSubId, {
+                order: '1',
+                via: ['example.org'],
+              }),
+            ]
+          },
+        },
+      },
+      { roomId: roomBeforeId, name: 'Before', getType: () => undefined },
+      { roomId: roomAfterId, name: 'After', getType: () => undefined },
+      { roomId: roomUnderSubId, name: 'Under', getType: () => undefined },
+    ]
+
+    const categories = buildSpaceRoomCategories({
+      rootSpaceId: rootId,
+      matrixRooms,
+      getRoomType: (room: unknown) =>
+        (room as { getType?: () => string }).getType?.(),
+      getRoomId: (room: unknown) => (room as { roomId: string }).roomId,
+      getRoomDisplayName: (room: unknown) =>
+        String((room as { name?: string }).name ?? ''),
+      generalCategoryLabel: 'Rooms',
+    })
+
+    const rootBlocks = categories.filter((entry) => entry.kind === 'root')
+    rootBlocks.length.should.equal(1)
+    rootBlocks[0]!.rooms.map((room) => room.roomId).should.deep.equal([
+      roomBeforeId,
+      roomAfterId,
+    ])
+    categories.filter((entry) => entry.kind === 'subspace').length.should.equal(
+      1,
+    )
+  })
+
   it('detects nested parent association with ancestor space', () => {
     const rootId = '!root:example.org'
     const subId = '!sub:example.org'

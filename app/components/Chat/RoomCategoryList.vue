@@ -27,8 +27,12 @@ const props = defineProps<{
   selectedRoomId: string | null
   /** Reorder category blocks (m.space.child on root) — power-level gated */
   canReorderCategories: boolean
-  /** May add rooms/subspaces (m.space.child on target parent) */
+  /** May add rooms/subspaces on the root space (header buttons) */
   canAddChildren?: boolean
+  /** May add a room under a specific parent space/subspace */
+  canAddToParent?: (parentSpaceId: string) => boolean
+  /** Insert index for + on a root ROOMS block (before following subspaces) */
+  resolveRoomInsertIndex?: (category: RoomSectionItem) => number | undefined
   /** When null (e.g. Home), hierarchy DnD is off */
   selectedRootSpaceId: string | null
   threadsByRoomId?: Record<string, ThreadNavEntry[]>
@@ -41,7 +45,7 @@ const emit = defineEmits<{
   selectRoom: [roomId: string]
   selectThread: [payload: { roomId: string; rootEventId: string }]
   openSpaceSettings: []
-  addRoom: [parentSpaceId: string]
+  addRoom: [parentSpaceId: string, insertIndex?: number]
   addSubspace: [parentSpaceId: string]
   persistRoomOrder: [
     payload: { parentSpaceId: string; orderedRoomIds: string[] },
@@ -293,18 +297,26 @@ const spaceHeaderMenuItems = computed(() => {
 })
 
 function canAddRoomToCategory(category: RoomSectionItem): boolean {
-  if (!props.canAddChildren || !props.selectedRootSpaceId) {
+  if (!props.selectedRootSpaceId) {
     return false
   }
   const parentId = parentSpaceIdFor(category)
-  return Boolean(parentId)
+  if (!parentId) {
+    return false
+  }
+  if (props.canAddToParent) {
+    return props.canAddToParent(parentId)
+  }
+  return Boolean(props.canAddChildren)
 }
 
 function onAddRoomToCategory(category: RoomSectionItem) {
   const parentId = parentSpaceIdFor(category)
-  if (parentId) {
-    emit('addRoom', parentId)
+  if (!parentId) {
+    return
   }
+  const insertIndex = props.resolveRoomInsertIndex?.(category)
+  emit('addRoom', parentId, insertIndex)
 }
 
 function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
