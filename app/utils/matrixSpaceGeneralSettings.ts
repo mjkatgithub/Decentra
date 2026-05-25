@@ -22,8 +22,28 @@ export function readJoinRuleFromRoom(room: Room | null): JoinRule {
   return JoinRule.Invite
 }
 
-export function isPublishedToDirectory(joinRule: JoinRule): boolean {
-  return joinRule === JoinRule.Public
+export type RoomDirectoryVisibility = 'public' | 'private'
+
+export async function readDirectoryVisibility(
+  matrixClient: MatrixClient,
+  roomId: string,
+): Promise<boolean> {
+  try {
+    const response = await matrixClient.getRoomDirectoryVisibility(roomId)
+    const visibility = (response as { visibility?: string })?.visibility
+    return visibility === 'public'
+  } catch {
+    return false
+  }
+}
+
+export async function setDirectoryVisibility(
+  matrixClient: MatrixClient,
+  roomId: string,
+  published: boolean,
+): Promise<void> {
+  const visibility: RoomDirectoryVisibility = published ? 'public' : 'private'
+  await matrixClient.setRoomDirectoryVisibility(roomId, visibility)
 }
 
 export function readPublishedAddresses(room: Room | null): {

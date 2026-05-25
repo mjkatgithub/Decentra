@@ -9,72 +9,162 @@ export interface SpacePowerLevelPermissionField {
   labelKey: string
   kind: SpacePowerLevelFieldKind
   eventType?: string
+  /** Closed label uses role name only (e.g. default power). */
+  showAndAbove?: boolean
+}
+
+export interface SpacePowerLevelPermissionGroup {
+  id: string
+  labelKey: string
+  fields: SpacePowerLevelPermissionField[]
 }
 
 /** Matrix m.room.power_levels fields (Cinny/Sable permissions UI). */
-export const SPACE_POWER_LEVEL_PERMISSION_FIELDS: SpacePowerLevelPermissionField[] =
+export const SPACE_POWER_LEVEL_PERMISSION_GROUPS: SpacePowerLevelPermissionGroup[] =
   [
     {
-      id: 'users_default',
-      labelKey: 'settings.spacePlDefaultPower',
-      kind: 'scalar',
+      id: 'users',
+      labelKey: 'settings.spacePlGroupUsers',
+      fields: [
+        {
+          id: 'users_default',
+          labelKey: 'settings.spacePlDefaultPower',
+          kind: 'scalar',
+          showAndAbove: false,
+        },
+      ],
     },
     {
-      id: 'm.space.child',
-      labelKey: 'settings.spacePlManageRooms',
-      kind: 'event',
-      eventType: SPACE_CHILD_EVENT,
+      id: 'manage',
+      labelKey: 'settings.spacePlGroupManage',
+      fields: [
+        {
+          id: 'm.space.child',
+          labelKey: 'settings.spacePlManageRooms',
+          kind: 'event',
+          eventType: SPACE_CHILD_EVENT,
+        },
+        {
+          id: 'm.room.message',
+          labelKey: 'settings.spacePlMessageEvents',
+          kind: 'event',
+          eventType: 'm.room.message',
+        },
+      ],
     },
     {
-      id: 'm.room.message',
-      labelKey: 'settings.spacePlMessageEvents',
-      kind: 'event',
-      eventType: 'm.room.message',
+      id: 'moderation',
+      labelKey: 'settings.spacePlGroupModeration',
+      fields: [
+        {
+          id: 'invite',
+          labelKey: 'settings.spacePlInvite',
+          kind: 'scalar',
+        },
+        {
+          id: 'kick',
+          labelKey: 'settings.spacePlKick',
+          kind: 'scalar',
+        },
+        {
+          id: 'ban',
+          labelKey: 'settings.spacePlBan',
+          kind: 'scalar',
+        },
+        {
+          id: 'redact',
+          labelKey: 'settings.spacePlRedact',
+          kind: 'scalar',
+        },
+      ],
     },
     {
-      id: 'invite',
-      labelKey: 'settings.spacePlInvite',
-      kind: 'scalar',
+      id: 'spaceOverview',
+      labelKey: 'settings.spacePlGroupSpaceOverview',
+      fields: [
+        {
+          id: 'm.room.avatar',
+          labelKey: 'settings.spacePlSpaceAvatar',
+          kind: 'event',
+          eventType: 'm.room.avatar',
+        },
+        {
+          id: 'm.room.name',
+          labelKey: 'settings.spacePlSpaceName',
+          kind: 'event',
+          eventType: 'm.room.name',
+        },
+        {
+          id: 'm.room.topic',
+          labelKey: 'settings.spacePlSpaceTopic',
+          kind: 'event',
+          eventType: 'm.room.topic',
+        },
+      ],
     },
     {
-      id: 'kick',
-      labelKey: 'settings.spacePlKick',
-      kind: 'scalar',
+      id: 'settings',
+      labelKey: 'settings.spacePlGroupSettings',
+      fields: [
+        {
+          id: 'm.room.join_rules',
+          labelKey: 'settings.spacePlChangeAccess',
+          kind: 'event',
+          eventType: 'm.room.join_rules',
+        },
+        {
+          id: 'm.room.canonical_alias',
+          labelKey: 'settings.spacePlPublishAddress',
+          kind: 'event',
+          eventType: 'm.room.canonical_alias',
+        },
+        {
+          id: 'events_default',
+          labelKey: 'settings.spacePlChangeAllPermission',
+          kind: 'scalar',
+        },
+        {
+          id: POWER_LEVEL_TAGS_STATE_TYPE,
+          labelKey: 'settings.spacePlEditPowerLevels',
+          kind: 'event',
+          eventType: POWER_LEVEL_TAGS_STATE_TYPE,
+        },
+        {
+          id: 'm.room.tombstone',
+          labelKey: 'settings.spacePlUpgradeSpace',
+          kind: 'event',
+          eventType: 'm.room.tombstone',
+        },
+        {
+          id: 'state_default',
+          labelKey: 'settings.spacePlOtherSettings',
+          kind: 'scalar',
+        },
+      ],
     },
     {
-      id: 'ban',
-      labelKey: 'settings.spacePlBan',
-      kind: 'scalar',
-    },
-    {
-      id: 'm.room.avatar',
-      labelKey: 'settings.spacePlSpaceAvatar',
-      kind: 'event',
-      eventType: 'm.room.avatar',
-    },
-    {
-      id: 'm.room.name',
-      labelKey: 'settings.spacePlSpaceName',
-      kind: 'event',
-      eventType: 'm.room.name',
-    },
-    {
-      id: 'm.room.topic',
-      labelKey: 'settings.spacePlSpaceTopic',
-      kind: 'event',
-      eventType: 'm.room.topic',
-    },
-    {
-      id: 'redact',
-      labelKey: 'settings.spacePlRedact',
-      kind: 'scalar',
-    },
-    {
-      id: 'state_default',
-      labelKey: 'settings.spacePlStateDefault',
-      kind: 'scalar',
+      id: 'other',
+      labelKey: 'settings.spacePlGroupOther',
+      fields: [
+        {
+          id: 'im.ponies.room_emotes',
+          labelKey: 'settings.spacePlManageEmojis',
+          kind: 'event',
+          eventType: 'im.ponies.room_emotes',
+        },
+        {
+          id: 'm.room.server_acl',
+          labelKey: 'settings.spacePlServerAcls',
+          kind: 'event',
+          eventType: 'm.room.server_acl',
+        },
+      ],
     },
   ]
+
+/** Flat list of all permission fields (tests, lookups). */
+export const SPACE_POWER_LEVEL_PERMISSION_FIELDS: SpacePowerLevelPermissionField[] =
+  SPACE_POWER_LEVEL_PERMISSION_GROUPS.flatMap((group) => group.fields)
 
 export function readPowerLevelFieldValue(
   content: Record<string, unknown> | null,
@@ -131,8 +221,14 @@ export function createDefaultSpacePowerLevels(
       'm.room.name': moderatorLevel,
       'm.room.topic': moderatorLevel,
       'm.room.avatar': moderatorLevel,
+      'm.room.join_rules': moderatorLevel,
+      'm.room.canonical_alias': moderatorLevel,
+      'm.room.tombstone': maxRoleLevel,
+      'm.room.server_acl': maxRoleLevel,
+      'im.ponies.room_emotes': moderatorLevel,
       'm.room.pinned_events': maxRoleLevel,
       [POWER_LEVEL_TAGS_STATE_TYPE]: maxRoleLevel,
+      'm.room.power_levels': maxRoleLevel,
     },
   }
 }

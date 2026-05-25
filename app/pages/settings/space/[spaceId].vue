@@ -77,7 +77,7 @@ const canEditRoles = computed(() => {
 })
 
 const {
-  permissionFields,
+  permissionGroups,
   readFieldValue,
   saveFieldValue,
   isSaving: isSavingPermissions,
@@ -170,12 +170,18 @@ async function onPermissionFieldChange(
   fieldId: string,
   powerLevel: number,
 ) {
-  const field = permissionFields.find((entry) => entry.id === fieldId)
+  const field = permissionGroups
+    .flatMap((group) => group.fields)
+    .find((entry) => entry.id === fieldId)
   if (!field || !canEditRoles.value) {
     return
   }
-  await saveFieldValue(field, powerLevel)
-  reloadFromRoom()
+  try {
+    await saveFieldValue(field, powerLevel)
+    reloadFromRoom()
+  } catch {
+    /* saveError shown via UAlert */
+  }
 }
 
 async function handleSaveRoleEdits() {
@@ -859,38 +865,42 @@ async function onPublishDirectoryChange(event: Event) {
         </VueDraggable>
         <div
           v-if="canEditRoles"
-          class="mt-8 space-y-4 rounded-lg border border-gray-200 p-4
+          class="mt-8 space-y-6 rounded-lg border border-gray-200 p-4
                  dark:border-gray-800"
         >
           <h2 class="text-lg font-semibold">
             {{ translateText('settings.spacePlPermissionsTitle') }}
           </h2>
-          <label
-            v-for="field in permissionFields"
-            :key="field.id"
-            class="flex flex-col gap-1 text-sm sm:flex-row sm:items-center
-                   sm:justify-between"
+          <section
+            v-for="group in permissionGroups"
+            :key="group.id"
+            class="space-y-3"
           >
-            <span>{{ translateText(field.labelKey) }}</span>
-            <select
-              class="rounded border border-gray-300 bg-white px-2 py-1
-                     text-sm dark:border-gray-700 dark:bg-gray-900"
-              :disabled="isSavingPermissions"
-              :value="readFieldValue(field)"
-              @change="onPermissionFieldChange(
-                field.id,
-                Number(($event.target as HTMLSelectElement).value),
-              )"
-            >
-              <option
-                v-for="role in sortedRoles"
-                :key="role.id"
-                :value="role.powerLevel"
+            <h3 class="text-sm font-semibold text-gray-600 dark:text-gray-300">
+              {{ translateText(group.labelKey) }}
+            </h3>
+            <div class="space-y-2">
+              <div
+                v-for="field in group.fields"
+                :key="field.id"
+                class="flex flex-col gap-2 rounded-lg bg-gray-50 px-3 py-2
+                       text-sm sm:flex-row sm:items-center sm:justify-between
+                       dark:bg-gray-800/50"
               >
-                {{ role.name }} ({{ role.powerLevel }})
-              </option>
-            </select>
-          </label>
+                <span>{{ translateText(field.labelKey) }}</span>
+                <SettingsSpacePermissionRoleSelect
+                  :model-value="readFieldValue(field)"
+                  :roles="sortedRoles"
+                  :show-and-above="field.showAndAbove !== false"
+                  :disabled="isSavingPermissions"
+                  @update:model-value="onPermissionFieldChange(
+                    field.id,
+                    $event,
+                  )"
+                />
+              </div>
+            </div>
+          </section>
         </div>
       </section>
 

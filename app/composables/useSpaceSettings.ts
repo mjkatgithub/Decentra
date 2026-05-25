@@ -14,10 +14,11 @@ import {
 } from '~/utils/matrixRoomMetadata'
 import {
   canSetJoinRule,
-  isPublishedToDirectory,
+  readDirectoryVisibility,
   readJoinRuleFromRoom,
   readPublishedAddresses,
   readRoomVersion,
+  setDirectoryVisibility,
   setSpaceJoinRule,
   type SpaceAccessRule,
 } from '~/utils/matrixSpaceGeneralSettings'
@@ -48,6 +49,7 @@ export function useSpaceSettings(spaceId: Ref<string>) {
   const editableName = ref('')
   const editableTopic = ref('')
   const joinRule = ref<SpaceAccessRule>(JoinRule.Invite)
+  const directoryPublished = ref(false)
   const roomVersionLabel = ref('')
   const recommendedVersion = ref<{
     version: string
@@ -80,9 +82,19 @@ export function useSpaceSettings(spaceId: Ref<string>) {
     readPublishedAddresses(spaceRoom.value),
   )
 
-  const publishToDirectory = computed(() =>
-    isPublishedToDirectory(joinRule.value),
-  )
+  const publishToDirectory = computed(() => directoryPublished.value)
+
+  async function refreshDirectoryPublished(): Promise<void> {
+    const matrixClient = client.value
+    if (!matrixClient || !spaceId.value) {
+      directoryPublished.value = false
+      return
+    }
+    directoryPublished.value = await readDirectoryVisibility(
+      matrixClient,
+      spaceId.value,
+    )
+  }
 
   const canManageGeneral = computed(() => {
     const matrixClient = client.value
@@ -150,6 +162,7 @@ export function useSpaceSettings(spaceId: Ref<string>) {
   watch(spaceRoom, () => {
     syncFormFromRoom()
     void refreshRecommendedVersion()
+    void refreshDirectoryPublished()
   }, { immediate: true })
 
   watch(
@@ -263,11 +276,30 @@ export function useSpaceSettings(spaceId: Ref<string>) {
   }
 
   async function setPublishToDirectory(enabled: boolean): Promise<void> {
-    const nextRule = enabled ? JoinRule.Public : JoinRule.Invite
-    if (joinRule.value === nextRule) {
+    const matrixClient = client.value
+    if (!matrixClient || !spaceId.value || !canManageGeneral.value) {
       return
     }
-    await saveJoinRule(nextRule)
+    if (directoryPublished.value === enabled) {
+      return
+    }
+    isSavingOptions.value = true
+    feedbackMessage.value = ''
+    try {
+      await setDirectoryVisibility(matrixClient, spaceId.value, enabled)
+      await refreshDirectoryPublished()
+      feedbackTone.value = 'success'
+      feedbackMessage.value = 'saved'
+    } catch (thrownError) {
+      await refreshDirectoryPublished()
+      feedbackTone.value = 'error'
+      feedbackMessage.value =
+        thrownError instanceof Error
+          ? thrownError.message
+          : String(thrownError)
+    } finally {
+      isSavingOptions.value = false
+    }
   }
 
   async function runSpaceUpgrade(): Promise<void> {

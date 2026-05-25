@@ -3,6 +3,7 @@ import { saveSpacePowerLevelsContent } from '~/composables/matrix/spaceRolesStat
 import {
   readPowerLevelFieldValue,
   SPACE_POWER_LEVEL_PERMISSION_FIELDS,
+  SPACE_POWER_LEVEL_PERMISSION_GROUPS,
   writePowerLevelFieldValue,
   type SpacePowerLevelPermissionField,
 } from '~/utils/matrixSpacePowerLevelSettings'
@@ -52,6 +53,7 @@ export function useSpacePowerLevelSettings(spaceId: Ref<string>) {
 
   return {
     permissionFields: SPACE_POWER_LEVEL_PERMISSION_FIELDS,
+    permissionGroups: SPACE_POWER_LEVEL_PERMISSION_GROUPS,
     powerLevelsContent,
     readFieldValue,
     saveFieldValue,
