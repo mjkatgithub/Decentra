@@ -279,9 +279,39 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.spaceTopic': 'Space topic',
     'settings.spaceAvatar': 'Space icon',
     'settings.spaceAvatarRemove': 'Remove icon',
-    'settings.spaceNavProfile': 'Profile',
+    'settings.spaceNavGeneral': 'General',
     'settings.spaceNavRoles': 'Roles',
     'settings.spaceNavMembers': 'Members',
+    'settings.spaceGeneralProfile': 'Profile',
+    'settings.spaceGeneralProfileEdit': 'Edit',
+    'settings.spaceGeneralOptions': 'Options',
+    'settings.spaceAccess': 'Space access',
+    'settings.spaceAccessHint':
+      'Change how people can join the space.',
+    'settings.spaceAccessPublic': 'Public',
+    'settings.spaceAccessInvite': 'Invite only',
+    'settings.spaceAccessKnock': 'Knock & invite',
+    'settings.spacePublishDirectory': 'Publish to directory',
+    'settings.spacePublishDirectoryHint':
+      'List the space in the public directory so others can discover it.',
+    'settings.spaceGeneralAddresses': 'Addresses',
+    'settings.spacePublishedAddresses': 'Published addresses',
+    'settings.spacePublishedAddressesHint':
+      'If access is public, published addresses are used to join.',
+    'settings.spaceMainAlias': 'Main',
+    'settings.spaceNoPublishedAddress': 'No published address yet.',
+    'settings.spaceLocalAddresses': 'Local addresses',
+    'settings.spaceLocalAddressesHint':
+      'Set a local address so users can join through your homeserver.',
+    'settings.spaceExpand': 'Expand',
+    'settings.spaceCollapse': 'Collapse',
+    'settings.spaceGeneralAdvanced': 'Advanced options',
+    'settings.spaceUpgrade': 'Upgrade space',
+    'settings.spaceUpgradeHint': 'Current version: {version}.',
+    'settings.spaceUpgradeAvailable':
+      'Recommended version: {version}.',
+    'settings.spaceUpgradeButton': 'Upgrade',
+    'settings.spaceOldSpace': 'Old space',
     'settings.spaceRolesHint':
       'Roles and permissions use Matrix power levels (Cinny/Sable compatible).',
     'settings.spaceRolesDragHint':
@@ -673,9 +703,39 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.spaceTopic': 'Space-Thema',
     'settings.spaceAvatar': 'Space-Icon',
     'settings.spaceAvatarRemove': 'Icon entfernen',
-    'settings.spaceNavProfile': 'Profil',
+    'settings.spaceNavGeneral': 'Allgemein',
     'settings.spaceNavRoles': 'Rollen',
     'settings.spaceNavMembers': 'Mitglieder',
+    'settings.spaceGeneralProfile': 'Profil',
+    'settings.spaceGeneralProfileEdit': 'Bearbeiten',
+    'settings.spaceGeneralOptions': 'Optionen',
+    'settings.spaceAccess': 'Space-Zugang',
+    'settings.spaceAccessHint':
+      'Legt fest, wie Nutzer dem Space beitreten koennen.',
+    'settings.spaceAccessPublic': 'Oeffentlich',
+    'settings.spaceAccessInvite': 'Nur auf Einladung',
+    'settings.spaceAccessKnock': 'Klopfen & Einladung',
+    'settings.spacePublishDirectory': 'Im Verzeichnis veroeffentlichen',
+    'settings.spacePublishDirectoryHint':
+      'Space im oeffentlichen Verzeichnis auffindbar machen.',
+    'settings.spaceGeneralAddresses': 'Adressen',
+    'settings.spacePublishedAddresses': 'Veroeffentlichte Adressen',
+    'settings.spacePublishedAddressesHint':
+      'Bei oeffentlichem Zugang koennen Nutzer diese Adressen nutzen.',
+    'settings.spaceMainAlias': 'Haupt',
+    'settings.spaceNoPublishedAddress': 'Noch keine veroeffentlichte Adresse.',
+    'settings.spaceLocalAddresses': 'Lokale Adressen',
+    'settings.spaceLocalAddressesHint':
+      'Lokale Adresse fuer Beitritt ueber deinen Homeserver.',
+    'settings.spaceExpand': 'Aufklappen',
+    'settings.spaceCollapse': 'Zuklappen',
+    'settings.spaceGeneralAdvanced': 'Erweiterte Optionen',
+    'settings.spaceUpgrade': 'Space upgraden',
+    'settings.spaceUpgradeHint': 'Aktuelle Version: {version}.',
+    'settings.spaceUpgradeAvailable':
+      'Empfohlene Version: {version}.',
+    'settings.spaceUpgradeButton': 'Upgrade',
+    'settings.spaceOldSpace': 'Alter Space',
     'settings.spaceRolesHint':
       'Rollen und Rechte nutzen Matrix Power Levels (Cinny/Sable-kompatibel).',
     'settings.spaceRolesDragHint':

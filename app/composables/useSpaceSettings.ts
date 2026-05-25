@@ -1,4 +1,5 @@
 import type { MatrixClient, Room } from 'matrix-js-sdk'
+import { JoinRule, RoomEvent } from 'matrix-js-sdk'
 import { useMatrixClient } from '~/composables/useMatrixClient'
 import { useChatMedia } from '~/composables/useChatMedia'
 import {
@@ -11,10 +12,28 @@ import {
   getRoomNameFromState,
   getRoomTopicFromState,
 } from '~/utils/matrixRoomMetadata'
+import {
+  canSetJoinRule,
+  isPublishedToDirectory,
+  readJoinRuleFromRoom,
+  readPublishedAddresses,
+  readRoomVersion,
+  setSpaceJoinRule,
+  type SpaceAccessRule,
+} from '~/utils/matrixSpaceGeneralSettings'
+import { isSpaceRoomFounder } from '~/utils/spaceRolesMatrixSync'
 
 export function useSpaceSettings(spaceId: Ref<string>) {
-  const { client, userId, updateSpaceName, updateSpaceTopic, updateSpaceAvatar,
-    removeSpaceAvatar } = useMatrixClient()
+  const {
+    client,
+    userId,
+    updateSpaceName,
+    updateSpaceTopic,
+    updateSpaceAvatar,
+    removeSpaceAvatar,
+    updateSpaceJoinRule,
+    upgradeSpaceRoom,
+  } = useMatrixClient()
   const { getSpaceAvatarUrl } = useChatMedia(client)
 
   const spaceRoom = computed<Room | null>(() => {
@@ -24,11 +43,59 @@ export function useSpaceSettings(spaceId: Ref<string>) {
     return client.value.getRoom(spaceId.value) ?? null
   })
 
+  const isProfileEditing = ref(false)
+  const localAddressesExpanded = ref(false)
   const editableName = ref('')
   const editableTopic = ref('')
+  const joinRule = ref<SpaceAccessRule>(JoinRule.Invite)
+  const roomVersionLabel = ref('')
+  const recommendedVersion = ref<{
+    version: string
+    needsUpgrade: boolean
+    urgent: boolean
+  } | null>(null)
   const feedbackMessage = ref('')
   const feedbackTone = ref<'success' | 'error'>('success')
   const isSaving = ref(false)
+  const isSavingOptions = ref(false)
+  const isUpgrading = ref(false)
+
+  const displayName = computed(() => {
+    const room = spaceRoom.value
+    if (!room) {
+      return ''
+    }
+    return getRoomNameFromState(room) || room.name || spaceId.value
+  })
+
+  const displayTopic = computed(() => {
+    const room = spaceRoom.value
+    if (!room) {
+      return ''
+    }
+    return getRoomTopicFromState(room) || ''
+  })
+
+  const publishedAddresses = computed(() =>
+    readPublishedAddresses(spaceRoom.value),
+  )
+
+  const publishToDirectory = computed(() =>
+    isPublishedToDirectory(joinRule.value),
+  )
+
+  const canManageGeneral = computed(() => {
+    const matrixClient = client.value
+    const roomId = spaceId.value
+    const matrixUserId = userId.value
+    if (!matrixClient || !roomId || !matrixUserId) {
+      return false
+    }
+    if (isSpaceRoomFounder(matrixClient, roomId, matrixUserId)) {
+      return true
+    }
+    return canSetJoinRule(matrixClient, roomId, matrixUserId)
+  })
 
   const permissions = computed(() => {
     const matrixClient = client.value
@@ -63,14 +130,64 @@ export function useSpaceSettings(spaceId: Ref<string>) {
     editableName.value =
       getRoomNameFromState(room) || room.name || spaceId.value
     editableTopic.value = getRoomTopicFromState(room)
+    joinRule.value = readJoinRuleFromRoom(room)
+    roomVersionLabel.value = readRoomVersion(room)
   }
 
-  watch(spaceRoom, () => syncFormFromRoom(), { immediate: true })
+  async function refreshRecommendedVersion() {
+    const room = spaceRoom.value
+    if (!room?.getRecommendedVersion) {
+      recommendedVersion.value = null
+      return
+    }
+    try {
+      recommendedVersion.value = await room.getRecommendedVersion()
+    } catch {
+      recommendedVersion.value = null
+    }
+  }
+
+  watch(spaceRoom, () => {
+    syncFormFromRoom()
+    void refreshRecommendedVersion()
+  }, { immediate: true })
 
   watch(
     () => spaceRoom.value?.getLiveTimeline?.()?.getEvents?.()?.length,
     () => syncFormFromRoom(),
   )
+
+  watch([client, spaceId], (current, _previous, onCleanup) => {
+    const matrixClient = current[0]
+    const roomId = current[1]
+    if (!matrixClient || !roomId) {
+      return
+    }
+    const room = matrixClient.getRoom(roomId)
+    if (!room) {
+      return
+    }
+    const onStateUpdated = () => {
+      syncFormFromRoom()
+      void refreshRecommendedVersion()
+    }
+    room.on(RoomEvent.CurrentStateUpdated, onStateUpdated)
+    onCleanup(() => {
+      room.off(RoomEvent.CurrentStateUpdated, onStateUpdated)
+    })
+  }, { immediate: true })
+
+  function startProfileEdit() {
+    syncFormFromRoom()
+    isProfileEditing.value = true
+    feedbackMessage.value = ''
+  }
+
+  function cancelProfileEdit() {
+    isProfileEditing.value = false
+    syncFormFromRoom()
+    feedbackMessage.value = ''
+  }
 
   async function saveProfile(avatarFile: File | null): Promise<void> {
     if (!spaceId.value) {
@@ -90,6 +207,7 @@ export function useSpaceSettings(spaceId: Ref<string>) {
       }
       feedbackTone.value = 'success'
       feedbackMessage.value = 'saved'
+      isProfileEditing.value = false
       syncFormFromRoom()
     } catch (thrownError) {
       feedbackTone.value = 'error'
@@ -122,17 +240,88 @@ export function useSpaceSettings(spaceId: Ref<string>) {
     }
   }
 
+  async function saveJoinRule(nextRule: SpaceAccessRule): Promise<void> {
+    if (!spaceId.value || !canManageGeneral.value) {
+      return
+    }
+    isSavingOptions.value = true
+    feedbackMessage.value = ''
+    try {
+      await updateSpaceJoinRule(spaceId.value, nextRule)
+      joinRule.value = nextRule
+      feedbackTone.value = 'success'
+      feedbackMessage.value = 'saved'
+    } catch (thrownError) {
+      feedbackTone.value = 'error'
+      feedbackMessage.value =
+        thrownError instanceof Error
+          ? thrownError.message
+          : String(thrownError)
+    } finally {
+      isSavingOptions.value = false
+    }
+  }
+
+  async function setPublishToDirectory(enabled: boolean): Promise<void> {
+    const nextRule = enabled ? JoinRule.Public : JoinRule.Invite
+    if (joinRule.value === nextRule) {
+      return
+    }
+    await saveJoinRule(nextRule)
+  }
+
+  async function runSpaceUpgrade(): Promise<void> {
+    const recommendation = recommendedVersion.value
+    if (!spaceId.value || !recommendation?.needsUpgrade) {
+      return
+    }
+    isUpgrading.value = true
+    feedbackMessage.value = ''
+    try {
+      await upgradeSpaceRoom(spaceId.value, recommendation.version)
+      await refreshRecommendedVersion()
+      syncFormFromRoom()
+      feedbackTone.value = 'success'
+      feedbackMessage.value = 'saved'
+    } catch (thrownError) {
+      feedbackTone.value = 'error'
+      feedbackMessage.value =
+        thrownError instanceof Error
+          ? thrownError.message
+          : String(thrownError)
+    } finally {
+      isUpgrading.value = false
+    }
+  }
+
   return {
     spaceRoom,
+    displayName,
+    displayTopic,
     editableName,
     editableTopic,
+    joinRule,
+    publishToDirectory,
+    publishedAddresses,
+    localAddressesExpanded,
+    roomVersionLabel,
+    recommendedVersion,
+    isProfileEditing,
     permissions,
+    canManageGeneral,
     avatarPreviewUrl,
     feedbackMessage,
     feedbackTone,
     isSaving,
+    isSavingOptions,
+    isUpgrading,
     saveProfile,
     clearAvatar,
     syncFormFromRoom,
+    startProfileEdit,
+    cancelProfileEdit,
+    saveJoinRule,
+    setPublishToDirectory,
+    runSpaceUpgrade,
   }
 }

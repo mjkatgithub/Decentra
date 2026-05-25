@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { VueDraggable } from 'vue-draggable-plus'
+import { JoinRule } from 'matrix-js-sdk'
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useMatrixClient } from '~/composables/useMatrixClient'
 import {
@@ -18,19 +19,35 @@ const { translateText } = useAppI18n()
 const { client, userId } = useMatrixClient()
 
 const spaceId = computed(() => String(route.params.spaceId || ''))
-const activeSection = ref<'profile' | 'roles' | 'members'>('profile')
+const activeSection = ref<'general' | 'roles' | 'members'>('general')
 
 const {
+  displayName,
+  displayTopic,
   editableName,
   editableTopic,
+  joinRule,
+  publishToDirectory,
+  publishedAddresses,
+  localAddressesExpanded,
+  roomVersionLabel,
+  recommendedVersion,
+  isProfileEditing,
   permissions,
+  canManageGeneral,
   avatarPreviewUrl,
   feedbackMessage,
   feedbackTone,
   isSaving,
+  isSavingOptions,
+  isUpgrading,
   saveProfile,
   clearAvatar,
-  spaceRoom,
+  startProfileEdit,
+  cancelProfileEdit,
+  saveJoinRule,
+  setPublishToDirectory,
+  runSpaceUpgrade,
 } = useSpaceSettings(spaceId)
 
 const {
@@ -279,10 +296,35 @@ const spaceFounder = computed(() => {
 })
 
 const navItems = computed(() => [
-  { id: 'profile' as const, label: translateText('settings.spaceNavProfile') },
+  { id: 'general' as const, label: translateText('settings.spaceNavGeneral') },
   { id: 'roles' as const, label: translateText('settings.spaceNavRoles') },
   { id: 'members' as const, label: translateText('settings.spaceNavMembers') },
 ])
+
+const spaceAccessOptions = computed(() => [
+  {
+    value: JoinRule.Public,
+    label: translateText('settings.spaceAccessPublic'),
+  },
+  {
+    value: JoinRule.Invite,
+    label: translateText('settings.spaceAccessInvite'),
+  },
+  {
+    value: JoinRule.Knock,
+    label: translateText('settings.spaceAccessKnock'),
+  },
+])
+
+async function onJoinRuleChange(event: Event) {
+  const nextRule = (event.target as HTMLSelectElement).value as JoinRule
+  await saveJoinRule(nextRule)
+}
+
+async function onPublishDirectoryChange(event: Event) {
+  const enabled = (event.target as HTMLInputElement).checked
+  await setPublishToDirectory(enabled)
+}
 </script>
 
 <template>
@@ -338,63 +380,316 @@ const navItems = computed(() => [
         :title="saveError"
       />
 
-      <section v-if="activeSection === 'profile'" class="space-y-4">
+      <section v-if="activeSection === 'general'" class="space-y-8">
         <h1 class="text-xl font-semibold">
-          {{ translateText('settings.spaceNavProfile') }}
+          {{ translateText('settings.spaceNavGeneral') }}
         </h1>
-        <label class="flex flex-col gap-1 text-sm">
-          <span>{{ translateText('settings.spaceId') }}</span>
-          <code class="rounded bg-gray-100 px-2 py-1 dark:bg-gray-800">
-            {{ spaceId }}
-          </code>
-        </label>
-        <label class="flex flex-col gap-2 text-sm">
-          <span>{{ translateText('settings.spaceName') }}</span>
-          <UInput
-            v-model="editableName"
-            :disabled="!permissions.name || isSaving"
-          />
-        </label>
-        <label class="flex flex-col gap-2 text-sm">
-          <span>{{ translateText('settings.spaceTopic') }}</span>
-          <UTextarea
-            v-model="editableTopic"
-            :disabled="!permissions.topic || isSaving"
-            :rows="3"
-          />
-        </label>
-        <div class="flex flex-col gap-2 text-sm">
-          <span>{{ translateText('settings.spaceAvatar') }}</span>
-          <img
-            v-if="avatarPreviewUrl"
-            :src="avatarPreviewUrl"
-            alt=""
-            class="size-16 rounded-xl object-cover"
+
+        <div class="space-y-3">
+          <h2 class="text-sm font-semibold">
+            {{ translateText('settings.spaceGeneralProfile') }}
+          </h2>
+          <div
+            v-if="!isProfileEditing"
+            class="flex flex-wrap items-center justify-between gap-4
+                   rounded-lg border border-gray-200 p-4
+                   dark:border-gray-800"
           >
-          <input
-            type="file"
-            accept="image/*"
-            :disabled="!permissions.avatar || isSaving"
-            @change="onAvatarSelected"
-          >
-          <UButton
-            v-if="permissions.avatar"
-            size="xs"
-            color="neutral"
-            variant="soft"
-            :disabled="isSaving"
-            @click="clearAvatar"
-          >
-            {{ translateText('settings.spaceAvatarRemove') }}
-          </UButton>
+            <div class="flex min-w-0 items-center gap-3">
+              <img
+                v-if="avatarPreviewUrl"
+                :src="avatarPreviewUrl"
+                alt=""
+                class="size-14 shrink-0 rounded-xl object-cover"
+              >
+              <div
+                v-else
+                class="flex size-14 shrink-0 items-center justify-center
+                       rounded-xl bg-gray-200 text-lg font-semibold
+                       dark:bg-gray-800"
+              >
+                {{ displayName.slice(0, 1) || '?' }}
+              </div>
+              <div class="min-w-0">
+                <p class="truncate font-medium">{{ displayName }}</p>
+                <p
+                  class="truncate text-sm text-gray-500 dark:text-gray-400"
+                >
+                  {{ displayTopic || '—' }}
+                </p>
+              </div>
+            </div>
+            <UButton
+              v-if="canManageGeneral"
+              size="sm"
+              variant="soft"
+              @click="startProfileEdit"
+            >
+              {{ translateText('settings.spaceGeneralProfileEdit') }}
+            </UButton>
+          </div>
+          <div v-else class="space-y-4 rounded-lg border border-gray-200 p-4
+                             dark:border-gray-800">
+            <label class="flex flex-col gap-2 text-sm">
+              <span>{{ translateText('settings.spaceName') }}</span>
+              <UInput
+                v-model="editableName"
+                :disabled="!permissions.name || isSaving"
+              />
+            </label>
+            <label class="flex flex-col gap-2 text-sm">
+              <span>{{ translateText('settings.spaceTopic') }}</span>
+              <UTextarea
+                v-model="editableTopic"
+                :disabled="!permissions.topic || isSaving"
+                :rows="3"
+              />
+            </label>
+            <div class="flex flex-col gap-2 text-sm">
+              <span>{{ translateText('settings.spaceAvatar') }}</span>
+              <input
+                type="file"
+                accept="image/*"
+                :disabled="!permissions.avatar || isSaving"
+                @change="onAvatarSelected"
+              >
+              <UButton
+                v-if="permissions.avatar"
+                size="xs"
+                color="neutral"
+                variant="soft"
+                :disabled="isSaving"
+                @click="clearAvatar"
+              >
+                {{ translateText('settings.spaceAvatarRemove') }}
+              </UButton>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                color="primary"
+                :disabled="isSaving"
+                :loading="isSaving"
+                @click="handleSaveProfile"
+              >
+                {{ translateText('settings.save') }}
+              </UButton>
+              <UButton
+                color="neutral"
+                variant="soft"
+                :disabled="isSaving"
+                @click="cancelProfileEdit"
+              >
+                {{ translateText('settings.cancel') }}
+              </UButton>
+            </div>
+          </div>
         </div>
-        <UButton
-          color="primary"
-          :disabled="isSaving"
-          @click="handleSaveProfile"
-        >
-          {{ translateText('settings.save') }}
-        </UButton>
+
+        <div class="space-y-3">
+          <h2 class="text-sm font-semibold">
+            {{ translateText('settings.spaceGeneralOptions') }}
+          </h2>
+          <div
+            class="space-y-4 rounded-lg border border-gray-200 p-4
+                   dark:border-gray-800"
+          >
+            <label
+              class="flex flex-col gap-2 text-sm sm:flex-row
+                     sm:items-center sm:justify-between"
+            >
+              <span>
+                <span class="font-medium">
+                  {{ translateText('settings.spaceAccess') }}
+                </span>
+                <span
+                  class="mt-1 block text-xs text-gray-500
+                         dark:text-gray-400"
+                >
+                  {{ translateText('settings.spaceAccessHint') }}
+                </span>
+              </span>
+              <select
+                class="rounded border border-gray-300 bg-white px-2 py-1
+                       text-sm dark:border-gray-700 dark:bg-gray-900"
+                :disabled="!canManageGeneral || isSavingOptions"
+                :value="joinRule"
+                @change="onJoinRuleChange"
+              >
+                <option
+                  v-for="option in spaceAccessOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label
+              class="flex flex-col gap-2 text-sm sm:flex-row
+                     sm:items-center sm:justify-between"
+            >
+              <span>
+                <span class="font-medium">
+                  {{ translateText('settings.spacePublishDirectory') }}
+                </span>
+                <span
+                  class="mt-1 block text-xs text-gray-500
+                         dark:text-gray-400"
+                >
+                  {{ translateText('settings.spacePublishDirectoryHint') }}
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                class="size-4"
+                :checked="publishToDirectory"
+                :disabled="!canManageGeneral || isSavingOptions"
+                @change="onPublishDirectoryChange"
+              >
+            </label>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <h2 class="text-sm font-semibold">
+            {{ translateText('settings.spaceGeneralAddresses') }}
+          </h2>
+          <div
+            class="space-y-4 rounded-lg border border-gray-200 p-4
+                   dark:border-gray-800"
+          >
+            <div>
+              <p class="text-sm font-medium">
+                {{ translateText('settings.spacePublishedAddresses') }}
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{ translateText('settings.spacePublishedAddressesHint') }}
+              </p>
+              <div
+                v-if="publishedAddresses.canonical"
+                class="mt-2 flex flex-wrap items-center gap-2 rounded
+                       bg-gray-50 px-3 py-2 text-sm dark:bg-gray-800/60"
+              >
+                <code class="break-all">
+                  {{ publishedAddresses.canonical }}
+                </code>
+                <span
+                  class="rounded bg-primary-500/15 px-2 py-0.5 text-xs
+                         text-primary-500"
+                >
+                  {{ translateText('settings.spaceMainAlias') }}
+                </span>
+              </div>
+              <p
+                v-else
+                class="mt-2 text-sm text-gray-500 dark:text-gray-400"
+              >
+                {{ translateText('settings.spaceNoPublishedAddress') }}
+              </p>
+            </div>
+            <div>
+              <div
+                class="flex flex-wrap items-center justify-between gap-2"
+              >
+                <div>
+                  <p class="text-sm font-medium">
+                    {{ translateText('settings.spaceLocalAddresses') }}
+                  </p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ translateText('settings.spaceLocalAddressesHint') }}
+                  </p>
+                </div>
+                <UButton
+                  size="xs"
+                  variant="soft"
+                  color="neutral"
+                  @click="localAddressesExpanded = !localAddressesExpanded"
+                >
+                  {{
+                    localAddressesExpanded
+                      ? translateText('settings.spaceCollapse')
+                      : translateText('settings.spaceExpand')
+                  }}
+                </UButton>
+              </div>
+              <ul
+                v-if="localAddressesExpanded"
+                class="mt-2 space-y-1 text-sm"
+              >
+                <li>
+                  <code class="break-all">{{ spaceId }}</code>
+                </li>
+                <li
+                  v-for="alias in publishedAddresses.alternatives"
+                  :key="alias"
+                >
+                  <code class="break-all">{{ alias }}</code>
+                </li>
+                <li
+                  v-if="publishedAddresses.alternatives.length === 0"
+                  class="text-gray-500 dark:text-gray-400"
+                >
+                  —
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <h2 class="text-sm font-semibold">
+            {{ translateText('settings.spaceGeneralAdvanced') }}
+          </h2>
+          <div
+            class="flex flex-wrap items-center justify-between gap-4
+                   rounded-lg border border-gray-200 p-4
+                   dark:border-gray-800"
+          >
+            <div>
+              <p class="text-sm font-medium">
+                {{ translateText('settings.spaceUpgrade') }}
+              </p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">
+                {{
+                  translateText('settings.spaceUpgradeHint', {
+                    version: roomVersionLabel || '—',
+                  })
+                }}
+              </p>
+              <p
+                v-if="recommendedVersion?.needsUpgrade"
+                class="mt-1 text-xs text-amber-600 dark:text-amber-400"
+              >
+                {{
+                  translateText('settings.spaceUpgradeAvailable', {
+                    version: recommendedVersion.version,
+                  })
+                }}
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                size="sm"
+                variant="soft"
+                color="neutral"
+                disabled
+              >
+                {{ translateText('settings.spaceOldSpace') }}
+              </UButton>
+              <UButton
+                size="sm"
+                color="primary"
+                :disabled="!recommendedVersion?.needsUpgrade
+                  || !canManageGeneral
+                  || isUpgrading"
+                :loading="isUpgrading"
+                @click="runSpaceUpgrade"
+              >
+                {{ translateText('settings.spaceUpgradeButton') }}
+              </UButton>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section v-else-if="activeSection === 'roles'" class="space-y-4">

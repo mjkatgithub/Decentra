@@ -26,7 +26,10 @@ import {
 import {
   syncChildRoomPowerLevelsFromSpaceRoles,
 } from '~/composables/matrix/spaceRolesRoomSync'
-import type { SpaceRolesState } from '~/utils/decentraSpaceRoles'
+import {
+  setSpaceJoinRule,
+  type SpaceAccessRule,
+} from '~/utils/matrixSpaceGeneralSettings'
 import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
 import { readonly, shallowRef } from 'vue'
@@ -1353,6 +1356,22 @@ export function useMatrixClient() {
     await clearRoomAvatar(matrixClient, spaceId)
   }
 
+  async function updateSpaceJoinRule(
+    spaceId: string,
+    joinRule: SpaceAccessRule,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await setSpaceJoinRule(matrixClient, spaceId, joinRule)
+  }
+
+  async function upgradeSpaceRoom(
+    spaceId: string,
+    targetVersion: string,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await matrixClient.upgradeRoom(spaceId, targetVersion)
+  }
+
   async function saveSpaceRoles(
     spaceId: string,
     content: SpaceRolesState,
@@ -1673,6 +1692,8 @@ export function useMatrixClient() {
     updateSpaceTopic,
     updateSpaceAvatar,
     removeSpaceAvatar,
+    updateSpaceJoinRule,
+    upgradeSpaceRoom,
     saveSpaceRoles,
     incomingVerificationFromOtherOwnDeviceBeacon:
       getIncomingVerificationFromOtherOwnDeviceReadonly(),
