@@ -336,6 +336,13 @@ export interface CreateGroupRoomInput {
   parentSpaceId?: string
   /** Sibling index on parent (default: append) */
   insertIndex?: number
+  /** Matrix user IDs to invite on create */
+  inviteUserIds?: string[]
+}
+
+export interface InviteUsersToRoomResult {
+  invited: string[]
+  failed: Array<{ userId: string; error: string }>
 }
 
 export interface CreateMatrixSpaceInput {
@@ -345,6 +352,7 @@ export interface CreateMatrixSpaceInput {
   /** Link new space as m.space.child of this parent space */
   parentSpaceId?: string
   insertIndex?: number
+  inviteUserIds?: string[]
 }
 
 export interface UserDirectoryResultItem {
@@ -1562,11 +1570,18 @@ export function useMatrixClient() {
     }
     const topic = input.topic?.trim()
     const isPublic = input.visibility === 'public'
+    const selfId = matrixClient.getUserId()
+    const inviteUserIds = (input.inviteUserIds ?? []).filter(
+      (matrixUserId) =>
+        !selfId ||
+        matrixUserId.toLowerCase() !== selfId.toLowerCase(),
+    )
     const createOpts: sdk.ICreateRoomOpts = {
       name: trimmedName,
       ...(topic ? { topic } : {}),
       visibility: isPublic ? Visibility.Public : Visibility.Private,
       creation_content: { type: 'm.space' },
+      ...(inviteUserIds.length > 0 ? { invite: inviteUserIds } : {}),
       initial_state: buildRoomCreateInitialState(isPublic, false),
     }
     try {
@@ -1598,11 +1613,19 @@ export function useMatrixClient() {
     const topic = input.topic?.trim()
     const isPublic = input.visibility === 'public'
     const encryptionReady = await ensureCryptoReady()
+    const selfId = matrixClient.getUserId()
+    const inviteUserIds = (input.inviteUserIds ?? []).filter(
+      (matrixUserId) =>
+        !selfId ||
+        matrixUserId.toLowerCase() !== selfId.toLowerCase(),
+    )
     const createOpts: sdk.ICreateRoomOpts = {
       name: trimmedName,
       ...(topic ? { topic } : {}),
       visibility: isPublic ? Visibility.Public : Visibility.Private,
       ...(isPublic ? { preset: Preset.PublicChat } : {}),
+      is_direct: false,
+      ...(inviteUserIds.length > 0 ? { invite: inviteUserIds } : {}),
       initial_state: buildRoomCreateInitialState(isPublic, encryptionReady),
     }
     try {
@@ -1621,6 +1644,32 @@ export function useMatrixClient() {
       }
       throwMappedMatrixError(error, 'Could not create room')
     }
+  }
+
+  async function inviteUsersToRoom(
+    roomId: string,
+    matrixUserIds: string[],
+  ): Promise<InviteUsersToRoomResult> {
+    const matrixClient = requireClient()
+    const selfId = matrixClient.getUserId()?.toLowerCase()
+    const invited: string[] = []
+    const failed: InviteUsersToRoomResult['failed'] = []
+    for (const matrixUserId of matrixUserIds) {
+      if (selfId && matrixUserId.toLowerCase() === selfId) {
+        continue
+      }
+      try {
+        await matrixClient.invite(roomId, matrixUserId)
+        invited.push(matrixUserId)
+      } catch (error) {
+        failed.push({
+          userId: matrixUserId,
+          error:
+            error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return { invited, failed }
   }
 
   async function joinRoomByIdOrAlias(roomIdOrAlias: string): Promise<string> {
@@ -1762,6 +1811,7 @@ export function useMatrixClient() {
     getOrCreateDirectMessageRoom,
     createGroupRoom,
     createMatrixSpace,
+    inviteUsersToRoom,
     joinRoomByIdOrAlias,
     searchPublicRooms,
     searchUsersDirectory,

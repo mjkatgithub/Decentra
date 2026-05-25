@@ -5,25 +5,32 @@ import RoomsNewPage from '~/pages/rooms/new.vue'
 
 const navigateToMock = vi.fn(async () => undefined)
 const createGroupRoomMock = vi.fn(async () => '!created:example.org')
+const searchUsersDirectoryMock = vi.fn(async () => [])
 
 vi.mock('~/composables/useAppI18n', () => {
   return {
     useAppI18n: () => ({
-      translateText: (key: string) => key
-    })
+      translateText: (key: string) => key,
+    }),
   }
 })
 
 vi.mock('~/composables/useMatrixClient', () => {
   return {
     useMatrixClient: () => ({
-      createGroupRoom: createGroupRoomMock
-    })
+      userId: ref('@self:example.org'),
+      createGroupRoom: createGroupRoomMock,
+      createMatrixSpace: vi.fn(),
+      searchUsersDirectory: searchUsersDirectoryMock,
+    }),
   }
 })
 
+vi.stubGlobal('navigateTo', navigateToMock)
+vi.stubGlobal('useRoute', () => ({ query: {} }))
+
 const UCardStub = {
-  template: '<div><slot name="header" /><slot /><slot name="footer" /></div>'
+  template: '<div><slot name="header" /><slot /><slot name="footer" /></div>',
 }
 const UFormFieldStub = { template: '<div><slot /></div>' }
 const UInputStub = {
@@ -34,18 +41,27 @@ const UInputStub = {
       :value="modelValue"
       @input="$emit('update:modelValue', $event.target.value)"
     >
-  `
+  `,
+}
+const UTextareaStub = {
+  props: ['modelValue'],
+  emits: ['update:modelValue'],
+  template: `
+    <textarea
+      :value="modelValue"
+      @input="$emit('update:modelValue', $event.target.value)"
+    />
+  `,
 }
 const UAlertStub = { props: ['title'], template: '<p>{{ title }}</p>' }
 const UButtonStub = {
   props: ['to', 'disabled', 'loading'],
-  template: '<button><slot /></button>'
+  template: '<button><slot /></button>',
 }
 
 describe('rooms/new page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(globalThis as Record<string, unknown>).navigateTo = navigateToMock
     ;(globalThis as Record<string, unknown>).ref = ref
   })
 
@@ -56,26 +72,60 @@ describe('rooms/new page', () => {
           UCard: UCardStub,
           UFormField: UFormFieldStub,
           UInput: UInputStub,
+          UTextarea: UTextareaStub,
           UAlert: UAlertStub,
-          UButton: UButtonStub
-        }
-      }
+          UButton: UButtonStub,
+        },
+      },
     })
     const inputs = wrapper.findAll('input')
     await inputs[0].setValue('Team standup')
-    const buttons = wrapper.findAll('button')
-    expect(buttons.length).toBeGreaterThan(0)
-    await buttons[0].trigger('click')
+    const submitButton = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'rooms.createSubmit')
+    expect(submitButton).toBeDefined()
+    await submitButton!.trigger('click')
     await Promise.resolve()
 
     expect(createGroupRoomMock).toHaveBeenCalledWith({
       name: 'Team standup',
       topic: '',
-      visibility: 'private'
+      visibility: 'private',
     })
     expect(navigateToMock).toHaveBeenCalledWith({
       path: '/chat',
-      query: { room: '!created:example.org' }
+      query: { room: '!created:example.org' },
     })
+  })
+
+  it('passes inviteUserIds when invite field is filled', async () => {
+    const wrapper = mount(RoomsNewPage, {
+      global: {
+        stubs: {
+          UCard: UCardStub,
+          UFormField: UFormFieldStub,
+          UInput: UInputStub,
+          UTextarea: UTextareaStub,
+          UAlert: UAlertStub,
+          UButton: UButtonStub,
+        },
+      },
+    })
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('Party')
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('@guest:example.org')
+    const submitButton = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'rooms.createSubmit')
+    await submitButton!.trigger('click')
+    await Promise.resolve()
+
+    expect(createGroupRoomMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Party',
+        inviteUserIds: ['@guest:example.org'],
+      }),
+    )
   })
 })

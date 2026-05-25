@@ -11,6 +11,8 @@ import { useRoomTyping } from "~/composables/useRoomTyping";
 import ChatOnboardingPanel from "~/components/Chat/Onboarding/ChatOnboardingPanel.vue";
 import ChatDmStartPanel from "~/components/Chat/Onboarding/ChatDmStartPanel.vue";
 import ChatPublicRoomsPanel from "~/components/Chat/Onboarding/ChatPublicRoomsPanel.vue";
+import MatrixInvitePanel from "~/components/Chat/MatrixInvitePanel.vue";
+import { canUserInviteToRoom } from "~/utils/matrixRoomInvitePermissions";
 import {
   buildReactionSummaryByEventId,
   buildRoomThreadNavEntries,
@@ -41,6 +43,12 @@ import {
 } from "~/utils/matrixSpaceHierarchyPermissions";
 import { canPerformSpaceRoleAction } from "~/utils/decentraSpaceRolesPermissions";
 import { useSpaceMembers } from "~/composables/useSpaceMembers";
+import { getRoomNameFromState } from "~/utils/matrixRoomMetadata";
+import {
+  isHomeGroupChatFromCounts,
+  isPersonalChatFromCounts,
+} from "~/utils/homeRoomCategories";
+import type { Room } from "matrix-js-sdk";
 
 type PresenceStatus = "online" | "away" | "busy" | "offline" | "unknown";
 
@@ -304,12 +312,24 @@ const spaceItems = computed<SpaceItem[]>(() => {
   ];
 });
 
+function resolveSidebarRoomName(room: Record<string, unknown>): string {
+  const rawName = String((room as { name?: string }).name ?? "").trim();
+  if (rawName) {
+    return rawName;
+  }
+  const fromState = getRoomNameFromState(room as Room).trim();
+  if (fromState) {
+    return fromState;
+  }
+  return translateText("layout.roomFallback");
+}
+
 const roomItems = computed<RoomItem[]>(() => {
   return matrixRooms.value
     .filter((room) => getRoomType(room) !== "m.space")
     .map((room) => ({
       roomId: room.roomId,
-      name: room.name || translateText("layout.roomFallback"),
+      name: resolveSidebarRoomName(room),
       parentSpaceIds: getParentSpaceIds(room),
     }));
 });
@@ -333,10 +353,7 @@ const visibleRooms = computed(() => {
     matrixRooms.value.map((room) => [room.roomId, room]),
   );
   const roomDisplayName = (room: unknown) =>
-    String(
-      (room as { name?: string }).name ||
-        translateText("layout.roomFallback"),
-    );
+    resolveSidebarRoomName(room as Record<string, unknown>);
 
   return roomItems.value.filter((room) => {
     if (room.parentSpaceIds.length === 0) {
@@ -393,8 +410,71 @@ const spaceMemberCountLabel = computed(() => {
   return translateText("layout.spaceMembersCount", { count: String(total) });
 });
 
+const inviteTarget = ref<{ roomId: string; label: string } | null>(null);
+
+const canInviteToSpace = computed(() => {
+  const spaceId = selectedSpaceId.value;
+  if (!spaceId || spaceId === HOME_SPACE_ID) {
+    return false;
+  }
+  return canPerformSpaceRoleAction(
+    client.value,
+    spaceId,
+    userId.value,
+    "inviteMembers",
+    selectedRoomId.value ?? undefined,
+  );
+});
+
+function canInviteToRoom(roomId: string): boolean {
+  return canUserInviteToRoom(client.value, roomId, userId.value);
+}
+
+function openInviteToRoom(roomId: string) {
+  const matrixClient = client.value;
+  const label =
+    matrixClient?.getRoom(roomId)?.name ||
+    translateText("layout.roomFallback");
+  inviteTarget.value = { roomId, label };
+}
+
+function openInviteToSpace() {
+  const spaceId = selectedSpaceId.value;
+  if (!spaceId || spaceId === HOME_SPACE_ID) {
+    return;
+  }
+  inviteTarget.value = {
+    roomId: spaceId,
+    label: selectedSpaceName.value,
+  };
+}
+
+function closeInviteOverlay() {
+  inviteTarget.value = null;
+}
+
+function openHomeStartDm() {
+  selectedSpaceId.value = HOME_SPACE_ID;
+  selectedRoomId.value = null;
+  onboardingSubView.value = "dm";
+}
+
+function openHomeCreateRoom() {
+  navigateTo("/rooms/new");
+}
+
+function openHomeExplorePublic() {
+  selectedSpaceId.value = HOME_SPACE_ID;
+  selectedRoomId.value = null;
+  onboardingSubView.value = "public";
+}
+
 function spaceRoleAllows(
-  action: "sendMessages" | "pinMessages" | "redactOthers",
+  action:
+    | "sendMessages"
+    | "pinMessages"
+    | "redactOthers"
+    | "inviteMembers",
 ): boolean {
   const spaceId = selectedSpaceId.value;
   if (!spaceId || spaceId === HOME_SPACE_ID) {
@@ -477,13 +557,6 @@ function buildHomeSections(): RoomCategoryGroup[] {
   const groupRooms = visibleRoomsForSidebar.value.filter((room) =>
     isGroupChatRoom(room),
   );
-  const unassignedRooms = visibleRoomsForSidebar.value.filter((room) => {
-    return (
-      room.parentSpaceIds.length === 0 &&
-      !isPersonalChatRoom(room) &&
-      !isGroupChatRoom(room)
-    );
-  });
 
   const categories: RoomCategoryGroup[] = [];
   if (personalRooms.length > 0) {
@@ -506,17 +579,6 @@ function buildHomeSections(): RoomCategoryGroup[] {
       rooms: groupRooms.map((room) => toCategoryRoomItem(room)),
     });
   }
-  if (unassignedRooms.length > 0) {
-    categories.push({
-      id: "unassigned-rooms",
-      name: translateText("layout.unassignedRooms"),
-      kind: "root",
-      rootChildAnchorIds: [],
-      canReorderRooms: false,
-      rooms: unassignedRooms.map((room) => toCategoryRoomItem(room)),
-    });
-  }
-
   return categories;
 }
 
@@ -1205,35 +1267,27 @@ function isDirectMessageRoom(
   return Boolean(dmInviter);
 }
 
-function isPersonalChatRoom(room: RoomItem): boolean {
-  if (room.parentSpaceIds.length !== 0) {
-    return false;
-  }
+function homeRoomCategoryInput(room: RoomItem): {
+  parentSpaceIds: string[]
+  joinedMemberCount: number
+  isDirectMessage: boolean
+} {
   const matrixRoom = matrixRooms.value.find(
     (entry) => entry.roomId === room.roomId,
   );
-  const joinedCount = countJoinedMembersForRoom(matrixRoom);
-  if (joinedCount !== 2) {
-    return false;
-  }
-  return isDirectMessageRoom(room.roomId, matrixRoom);
+  return {
+    parentSpaceIds: room.parentSpaceIds,
+    joinedMemberCount: countJoinedMembersForRoom(matrixRoom),
+    isDirectMessage: isDirectMessageRoom(room.roomId, matrixRoom),
+  };
+}
+
+function isPersonalChatRoom(room: RoomItem): boolean {
+  return isPersonalChatFromCounts(homeRoomCategoryInput(room));
 }
 
 function isGroupChatRoom(room: RoomItem): boolean {
-  if (room.parentSpaceIds.length !== 0) {
-    return false;
-  }
-  const matrixRoom = matrixRooms.value.find(
-    (entry) => entry.roomId === room.roomId,
-  );
-  const joinedCount = countJoinedMembersForRoom(matrixRoom);
-  if (joinedCount > 2) {
-    return true;
-  }
-  if (joinedCount === 2 && !isDirectMessageRoom(room.roomId, matrixRoom)) {
-    return true;
-  }
-  return false;
+  return isHomeGroupChatFromCounts(homeRoomCategoryInput(room));
 }
 
 function isDirectRoom(room: RoomItem): boolean {
@@ -2084,7 +2138,14 @@ watch(
           @add-room="(parentId, insertIndex) =>
             openAddRoomToSpace(parentId, insertIndex)"
           @add-subspace="openAddSubspaceToSpace"
+          :can-invite-to-space="canInviteToSpace"
+          :can-invite-to-room="canInviteToRoom"
           :resolve-room-insert-index="resolveRoomInsertIndexForCategory"
+          @invite-space="openInviteToSpace"
+          @invite-room="openInviteToRoom"
+          @open-home-start-dm="openHomeStartDm"
+          @open-home-create-room="openHomeCreateRoom"
+          @open-home-explore-public="openHomeExplorePublic"
           @persist-room-order="onPersistRoomOrder"
           @move-room-between-categories="onMoveRoomBetweenCategories"
           @reorder-root-categories="onReorderRootCategories"
@@ -2352,5 +2413,19 @@ watch(
       />
       <ChatMemberList v-else :members="memberItems" />
     </aside>
+
+    <div
+      v-if="inviteTarget"
+      class="fixed inset-0 z-50 flex items-center justify-center
+             bg-black/50 p-4"
+      @click.self="closeInviteOverlay"
+    >
+      <MatrixInvitePanel
+        :target-room-id="inviteTarget.roomId"
+        :target-label="inviteTarget.label"
+        @close="closeInviteOverlay"
+        @invited="closeInviteOverlay"
+      />
+    </div>
   </div>
 </template>

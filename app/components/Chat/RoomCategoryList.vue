@@ -33,6 +33,8 @@ const props = defineProps<{
   canAddToParent?: (parentSpaceId: string) => boolean
   /** Insert index for + on a root ROOMS block (before following subspaces) */
   resolveRoomInsertIndex?: (category: RoomSectionItem) => number | undefined
+  canInviteToRoom?: (roomId: string) => boolean
+  canInviteToSpace?: boolean
   /** When null (e.g. Home), hierarchy DnD is off */
   selectedRootSpaceId: string | null
   threadsByRoomId?: Record<string, ThreadNavEntry[]>
@@ -47,6 +49,11 @@ const emit = defineEmits<{
   openSpaceSettings: []
   addRoom: [parentSpaceId: string, insertIndex?: number]
   addSubspace: [parentSpaceId: string]
+  inviteSpace: []
+  inviteRoom: [roomId: string]
+  openHomeStartDm: []
+  openHomeCreateRoom: []
+  openHomeExplorePublic: []
   persistRoomOrder: [
     payload: { parentSpaceId: string; orderedRoomIds: string[] },
   ]
@@ -288,6 +295,13 @@ const spaceHeaderMenuItems = computed(() => {
       },
     )
   }
+  if (props.canInviteToSpace && props.selectedRootSpaceId) {
+    items.push({
+      label: translateText('invite.spaceMenu'),
+      icon: 'i-lucide-user-plus',
+      onSelect: () => emit('inviteSpace'),
+    })
+  }
   items.push({
     label: translateText('layout.openSpaceSettings'),
     icon: 'i-lucide-settings-2',
@@ -295,6 +309,26 @@ const spaceHeaderMenuItems = computed(() => {
   })
   return [items]
 })
+
+const homeHeaderMenuItems = computed(() => [
+  [
+    {
+      label: translateText('onboarding.startDm'),
+      icon: 'i-lucide-message-circle',
+      onSelect: () => emit('openHomeStartDm'),
+    },
+    {
+      label: translateText('onboarding.createRoom'),
+      icon: 'i-lucide-plus',
+      onSelect: () => emit('openHomeCreateRoom'),
+    },
+    {
+      label: translateText('onboarding.explorePublic'),
+      icon: 'i-lucide-compass',
+      onSelect: () => emit('openHomeExplorePublic'),
+    },
+  ],
+])
 
 function canAddRoomToCategory(category: RoomSectionItem): boolean {
   if (!props.selectedRootSpaceId) {
@@ -399,8 +433,9 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
           {{ translateText('layout.channels') }}
         </p>
         <UDropdownMenu
-          v-if="selectedRootSpaceId"
-          :items="spaceHeaderMenuItems"
+          :items="selectedRootSpaceId
+            ? spaceHeaderMenuItems
+            : homeHeaderMenuItems"
         >
           <button
             type="button"
@@ -415,33 +450,6 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
             />
           </button>
         </UDropdownMenu>
-        <p
-          v-else
-          class="truncate text-sm font-semibold text-gray-800 dark:text-gray-100"
-        >
-          {{ selectedSpaceName }}
-        </p>
-      </div>
-      <div
-        v-if="canAddChildren && selectedRootSpaceId"
-        class="flex shrink-0 gap-1"
-      >
-        <UButton
-          size="xs"
-          color="primary"
-          variant="soft"
-          icon="i-lucide-plus"
-          :aria-label="translateText('layout.addRoom')"
-          @click="emit('addRoom', selectedRootSpaceId)"
-        />
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-layers"
-          :aria-label="translateText('layout.addSubspace')"
-          @click="emit('addSubspace', selectedRootSpaceId)"
-        />
       </div>
     </header>
 
@@ -538,31 +546,48 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                 :key="room.roomId"
                 class="space-y-0.5"
               >
-                <button
-                  type="button"
-                  class="decentra-channel-row flex w-full items-center
-                         justify-between gap-2 rounded-lg py-2 pr-2 pl-[14px]
-                         text-left text-sm transition"
+                <div
+                  class="decentra-channel-row group flex w-full items-center
+                         gap-1 rounded-lg py-1 pr-1 pl-[6px]"
                   :class="isRoomNavSelected(room.roomId)
                     ? 'bg-primary-500/15 text-primary-500'
                     : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'"
-                  :data-room-id="room.roomId"
-                  :data-unread="room.hasUnread ? 'true' : 'false'"
-                  :aria-label="roomNavAriaLabel(room)"
-                  @click="selectRoom(room.roomId)"
                 >
-                  <span
-                    class="min-w-0 truncate"
-                    :class="room.hasUnread ? 'font-semibold' : ''"
+                  <button
+                    type="button"
+                    class="decentra-channel-no-drag flex min-w-0 flex-1
+                           items-center justify-between gap-2 py-1 pl-2
+                           text-left text-sm"
+                    :data-room-id="room.roomId"
+                    :data-unread="room.hasUnread ? 'true' : 'false'"
+                    :aria-label="roomNavAriaLabel(room)"
+                    @click="selectRoom(room.roomId)"
                   >
-                    # {{ room.name }}
-                  </span>
-                  <span
-                    v-if="room.hasUnread"
-                    class="size-2 shrink-0 rounded-full bg-primary-500"
-                    aria-hidden="true"
+                    <span
+                      class="min-w-0 truncate"
+                      :class="room.hasUnread ? 'font-semibold' : ''"
+                    >
+                      # {{ room.name }}
+                    </span>
+                    <span
+                      v-if="room.hasUnread"
+                      class="size-2 shrink-0 rounded-full bg-primary-500"
+                      aria-hidden="true"
+                    />
+                  </button>
+                  <UButton
+                    v-if="canInviteToRoom?.(room.roomId)"
+                    size="xs"
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-user-plus"
+                    class="decentra-channel-no-drag shrink-0 opacity-0
+                           transition group-hover:opacity-100
+                           focus:opacity-100"
+                    :aria-label="translateText('invite.roomButton')"
+                    @click.stop="emit('inviteRoom', room.roomId)"
                   />
-                </button>
+                </div>
                 <button
                   v-for="thread in (
                     props.threadsByRoomId?.[room.roomId] ?? []
