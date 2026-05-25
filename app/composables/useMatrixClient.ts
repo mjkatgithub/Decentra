@@ -331,6 +331,16 @@ export interface CreateGroupRoomInput {
   topic?: string
   /** Private = invite-only; public = joinable and directory-listed */
   visibility: 'private' | 'public'
+  /** Link new room as m.space.child of this space */
+  parentSpaceId?: string
+}
+
+export interface CreateMatrixSpaceInput {
+  name: string
+  topic?: string
+  visibility: 'private' | 'public'
+  /** Link new space as m.space.child of this parent space */
+  parentSpaceId?: string
 }
 
 export interface UserDirectoryResultItem {
@@ -1489,6 +1499,82 @@ export function useMatrixClient() {
     return buildMatrixToUserLink(selfId)
   }
 
+  function buildRoomCreateInitialState(
+    isPublic: boolean,
+    includeEncryption: boolean,
+  ): sdk.ICreateRoomOpts['initial_state'] {
+    const encryptionReady = includeEncryption
+    const encryptionState =
+      encryptionReady
+        ? [
+            {
+              type: EventType.RoomEncryption,
+              state_key: '',
+              content: { algorithm: 'm.megolm.v1.aes-sha2' },
+            },
+          ]
+        : []
+    return [
+      {
+        type: EventType.RoomJoinRules,
+        state_key: '',
+        content: {
+          join_rule: isPublic ? JoinRule.Public : JoinRule.Invite,
+        },
+      },
+      {
+        type: EventType.RoomHistoryVisibility,
+        state_key: '',
+        content: {
+          history_visibility: isPublic ? 'world_readable' : 'invited',
+        },
+      },
+      ...encryptionState,
+    ]
+  }
+
+  async function linkRoomToParentSpace(
+    roomId: string,
+    parentSpaceId: string,
+  ): Promise<void> {
+    await moveChannelBetweenSpaceParents({
+      roomId,
+      previousParentSpaceId: null,
+      nextParentSpaceId: parentSpaceId,
+    })
+  }
+
+  async function createMatrixSpace(
+    input: CreateMatrixSpaceInput,
+  ): Promise<string> {
+    const matrixClient = requireClient()
+    const trimmedName = input.name.trim()
+    if (!trimmedName) {
+      throw new Error('Space name is required')
+    }
+    const topic = input.topic?.trim()
+    const isPublic = input.visibility === 'public'
+    const createOpts: sdk.ICreateRoomOpts = {
+      name: trimmedName,
+      ...(topic ? { topic } : {}),
+      visibility: isPublic ? Visibility.Public : Visibility.Private,
+      creation_content: { type: 'm.space' },
+      initial_state: buildRoomCreateInitialState(isPublic, false),
+    }
+    try {
+      const { room_id: roomId } = await matrixClient.createRoom(createOpts)
+      if (input.parentSpaceId) {
+        await linkRoomToParentSpace(roomId, input.parentSpaceId)
+      }
+      return roomId
+    } catch (error) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
+        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+      }
+      throwMappedMatrixError(error, 'Could not create space')
+    }
+  }
+
   async function createGroupRoom(
     input: CreateGroupRoomInput
   ): Promise<string> {
@@ -1500,40 +1586,18 @@ export function useMatrixClient() {
     const topic = input.topic?.trim()
     const isPublic = input.visibility === 'public'
     const encryptionReady = await ensureCryptoReady()
-    const encryptionState = encryptionReady
-      ? [
-          {
-            type: EventType.RoomEncryption,
-            state_key: '',
-            content: { algorithm: 'm.megolm.v1.aes-sha2' }
-          }
-        ]
-      : []
     const createOpts: sdk.ICreateRoomOpts = {
       name: trimmedName,
       ...(topic ? { topic } : {}),
       visibility: isPublic ? Visibility.Public : Visibility.Private,
       ...(isPublic ? { preset: Preset.PublicChat } : {}),
-      initial_state: [
-        {
-          type: EventType.RoomJoinRules,
-          state_key: '',
-          content: {
-            join_rule: isPublic ? JoinRule.Public : JoinRule.Invite
-          }
-        },
-        {
-          type: EventType.RoomHistoryVisibility,
-          state_key: '',
-          content: {
-            history_visibility: isPublic ? 'world_readable' : 'invited'
-          }
-        },
-        ...encryptionState
-      ]
+      initial_state: buildRoomCreateInitialState(isPublic, encryptionReady),
     }
     try {
       const { room_id: roomId } = await matrixClient.createRoom(createOpts)
+      if (input.parentSpaceId) {
+        await linkRoomToParentSpace(roomId, input.parentSpaceId)
+      }
       return roomId
     } catch (error) {
       if (isTransportFailureWithoutMatrixBody(error)) {
@@ -1681,6 +1745,7 @@ export function useMatrixClient() {
     buildOwnMatrixToLink,
     getOrCreateDirectMessageRoom,
     createGroupRoom,
+    createMatrixSpace,
     joinRoomByIdOrAlias,
     searchPublicRooms,
     searchUsersDirectory,

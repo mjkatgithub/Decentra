@@ -283,6 +283,8 @@ export function useSpaceSettings(spaceId: Ref<string>) {
     if (directoryPublished.value === enabled) {
       return
     }
+    const previousPublished = directoryPublished.value
+    directoryPublished.value = enabled
     isSavingOptions.value = true
     feedbackMessage.value = ''
     try {
@@ -291,6 +293,7 @@ export function useSpaceSettings(spaceId: Ref<string>) {
       feedbackTone.value = 'success'
       feedbackMessage.value = 'saved'
     } catch (thrownError) {
+      directoryPublished.value = previousPublished
       await refreshDirectoryPublished()
       feedbackTone.value = 'error'
       feedbackMessage.value =
@@ -333,6 +336,7 @@ export function useSpaceSettings(spaceId: Ref<string>) {
     editableName,
     editableTopic,
     joinRule,
+    directoryPublished,
     publishToDirectory,
     publishedAddresses,
     localAddressesExpanded,

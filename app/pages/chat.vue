@@ -1663,6 +1663,20 @@ function openCreateSpaceStub() {
   navigateTo("/spaces/new");
 }
 
+function openAddRoomToSpace(parentSpaceId: string) {
+  navigateTo({
+    path: "/rooms/new",
+    query: { space: parentSpaceId, kind: "room" },
+  });
+}
+
+function openAddSubspaceToSpace(parentSpaceId: string) {
+  navigateTo({
+    path: "/rooms/new",
+    query: { space: parentSpaceId, kind: "space" },
+  });
+}
+
 function onDirectMessageStarted(roomId: string) {
   onboardingSubView.value = null;
   selectedSpaceId.value = HOME_SPACE_ID;
@@ -1678,11 +1692,20 @@ function onPublicRoomJoined(roomId: string) {
 }
 
 function applyRoomIdFromRouteQuery() {
-  const raw = route.query.room;
-  const roomQuery = Array.isArray(raw) ? raw[0] : raw;
+  const rawRoom = route.query.room;
+  const roomQuery = Array.isArray(rawRoom) ? rawRoom[0] : rawRoom;
+  const rawSpace = route.query.space;
+  const spaceQuery = Array.isArray(rawSpace) ? rawSpace[0] : rawSpace;
+  if (typeof spaceQuery === "string" && spaceQuery.length > 0) {
+    selectedSpaceId.value = spaceQuery;
+  }
   if (typeof roomQuery === "string" && roomQuery.length > 0) {
-    selectedSpaceId.value = HOME_SPACE_ID;
+    if (!spaceQuery) {
+      selectedSpaceId.value = HOME_SPACE_ID;
+    }
     selectedRoomId.value = roomQuery;
+    void navigateTo({ path: "/chat", query: {} }, { replace: true });
+  } else if (typeof spaceQuery === "string" && spaceQuery.length > 0) {
     void navigateTo({ path: "/chat", query: {} }, { replace: true });
   }
 }
@@ -1869,6 +1892,7 @@ watch(
           :categories="roomCategories"
           :selected-room-id="selectedRoomId"
           :can-reorder-categories="canReorderRootCategories"
+          :can-add-children="canReorderRootCategories"
           :selected-root-space-id="
             selectedSpaceId === HOME_SPACE_ID ? null : selectedSpaceId
           "
@@ -1886,6 +1910,8 @@ watch(
           @select-room="selectRoom"
           @select-thread="openThreadFromRoomNav"
           @open-space-settings="openSpaceSettings"
+          @add-room="openAddRoomToSpace"
+          @add-subspace="openAddSubspaceToSpace"
           @persist-room-order="onPersistRoomOrder"
           @move-room-between-categories="onMoveRoomBetweenCategories"
           @reorder-root-categories="onReorderRootCategories"

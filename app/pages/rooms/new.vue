@@ -2,8 +2,9 @@
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useMatrixClient } from '~/composables/useMatrixClient'
 
+const route = useRoute()
 const { translateText } = useAppI18n()
-const { createGroupRoom } = useMatrixClient()
+const { createGroupRoom, createMatrixSpace } = useMatrixClient()
 
 const name = ref('')
 const topic = ref('')
@@ -11,16 +12,57 @@ const visibility = ref<'private' | 'public'>('private')
 const submitting = ref(false)
 const errorMessage = ref('')
 
+const parentSpaceId = computed(() => {
+  const raw = route.query.space
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return typeof value === 'string' ? value.trim() : ''
+})
+
+const createKind = computed<'room' | 'space'>(() => {
+  const raw = route.query.kind
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return value === 'space' ? 'space' : 'room'
+})
+
+const pageTitle = computed(() =>
+  createKind.value === 'space'
+    ? translateText('rooms.createSpaceTitle')
+    : translateText('rooms.createTitle'),
+)
+
+const pageDescription = computed(() =>
+  createKind.value === 'space'
+    ? translateText('rooms.createSpaceDescription')
+    : translateText('rooms.createDescription'),
+)
+
+const submitLabel = computed(() =>
+  createKind.value === 'space'
+    ? translateText('rooms.createSpaceSubmit')
+    : translateText('rooms.createSubmit'),
+)
+
 async function handleCreate() {
   errorMessage.value = ''
   submitting.value = true
   try {
-    const roomId = await createGroupRoom({
+    const sharedInput = {
       name: name.value,
       topic: topic.value,
-      visibility: visibility.value
-    })
-    await navigateTo({ path: '/chat', query: { room: roomId } })
+      visibility: visibility.value,
+      ...(parentSpaceId.value
+        ? { parentSpaceId: parentSpaceId.value }
+        : {}),
+    }
+    const roomId =
+      createKind.value === 'space'
+        ? await createMatrixSpace(sharedInput)
+        : await createGroupRoom(sharedInput)
+    const query: Record<string, string> = { room: roomId }
+    if (parentSpaceId.value) {
+      query.space = parentSpaceId.value
+    }
+    await navigateTo({ path: '/chat', query })
   } catch (error) {
     errorMessage.value =
       error instanceof Error ? error.message : String(error)
@@ -35,10 +77,16 @@ async function handleCreate() {
     <UCard class="w-full">
       <template #header>
         <h1 class="text-xl font-semibold">
-          {{ translateText('rooms.createTitle') }}
+          {{ pageTitle }}
         </h1>
         <p class="text-sm text-gray-500 dark:text-gray-400">
-          {{ translateText('rooms.createDescription') }}
+          {{ pageDescription }}
+        </p>
+        <p
+          v-if="parentSpaceId"
+          class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+        >
+          {{ translateText('rooms.createInSpaceHint') }}
         </p>
       </template>
 
@@ -57,7 +105,7 @@ async function handleCreate() {
                 type="radio"
                 value="private"
                 class="accent-primary"
-              />
+              >
               {{ translateText('rooms.visibilityPrivate') }}
             </label>
             <label class="flex items-center gap-2 text-sm">
@@ -66,7 +114,7 @@ async function handleCreate() {
                 type="radio"
                 value="public"
                 class="accent-primary"
-              />
+              >
               {{ translateText('rooms.visibilityPublic') }}
             </label>
           </div>
@@ -86,7 +134,7 @@ async function handleCreate() {
             :disabled="!name.trim()"
             @click="handleCreate"
           >
-            {{ translateText('rooms.createSubmit') }}
+            {{ submitLabel }}
           </UButton>
           <UButton color="neutral" variant="soft" to="/chat">
             {{ translateText('settings.backToChat') }}

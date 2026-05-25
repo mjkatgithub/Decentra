@@ -19,7 +19,7 @@ const { translateText } = useAppI18n()
 const { client, userId } = useMatrixClient()
 
 const spaceId = computed(() => String(route.params.spaceId || ''))
-const activeSection = ref<'general' | 'roles' | 'members'>('general')
+const activeSection = ref<'general' | 'permissions' | 'members'>('general')
 
 const {
   displayName,
@@ -27,7 +27,7 @@ const {
   editableName,
   editableTopic,
   joinRule,
-  publishToDirectory,
+  directoryPublished,
   publishedAddresses,
   localAddressesExpanded,
   roomVersionLabel,
@@ -303,7 +303,10 @@ const spaceFounder = computed(() => {
 
 const navItems = computed(() => [
   { id: 'general' as const, label: translateText('settings.spaceNavGeneral') },
-  { id: 'roles' as const, label: translateText('settings.spaceNavRoles') },
+  {
+    id: 'permissions' as const,
+    label: translateText('settings.spaceNavPermissions'),
+  },
   { id: 'members' as const, label: translateText('settings.spaceNavMembers') },
 ])
 
@@ -328,8 +331,10 @@ async function onJoinRuleChange(event: Event) {
 }
 
 async function onPublishDirectoryChange(event: Event) {
-  const enabled = (event.target as HTMLInputElement).checked
+  const input = event.target as HTMLInputElement
+  const enabled = input.checked
   await setPublishToDirectory(enabled)
+  input.checked = directoryPublished.value
 }
 </script>
 
@@ -548,7 +553,7 @@ async function onPublishDirectoryChange(event: Event) {
               <input
                 type="checkbox"
                 class="size-4"
-                :checked="publishToDirectory"
+                :checked="directoryPublished"
                 :disabled="!canManageGeneral || isSavingOptions"
                 @change="onPublishDirectoryChange"
               >
@@ -698,9 +703,9 @@ async function onPublishDirectoryChange(event: Event) {
         </div>
       </section>
 
-      <section v-else-if="activeSection === 'roles'" class="space-y-4">
+      <section v-else-if="activeSection === 'permissions'" class="space-y-4">
         <h1 class="text-xl font-semibold">
-          {{ translateText('settings.spaceNavRoles') }}
+          {{ translateText('settings.spaceNavPermissions') }}
         </h1>
         <p class="text-sm text-gray-500 dark:text-gray-400">
           {{ translateText('settings.spaceRolesHint') }}

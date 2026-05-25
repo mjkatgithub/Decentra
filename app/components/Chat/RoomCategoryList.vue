@@ -27,6 +27,8 @@ const props = defineProps<{
   selectedRoomId: string | null
   /** Reorder category blocks (m.space.child on root) — power-level gated */
   canReorderCategories: boolean
+  /** May add rooms/subspaces (m.space.child on target parent) */
+  canAddChildren?: boolean
   /** When null (e.g. Home), hierarchy DnD is off */
   selectedRootSpaceId: string | null
   threadsByRoomId?: Record<string, ThreadNavEntry[]>
@@ -39,6 +41,8 @@ const emit = defineEmits<{
   selectRoom: [roomId: string]
   selectThread: [payload: { roomId: string; rootEventId: string }]
   openSpaceSettings: []
+  addRoom: [parentSpaceId: string]
+  addSubspace: [parentSpaceId: string]
   persistRoomOrder: [
     payload: { parentSpaceId: string; orderedRoomIds: string[] },
   ]
@@ -260,15 +264,48 @@ function onCategoryDragEnd() {
   emit('reorderRootCategories', orderedRootChildIds)
 }
 
-const spaceHeaderMenuItems = computed(() => [
-  [
-    {
-      label: translateText('layout.openSpaceSettings'),
-      icon: 'i-lucide-settings-2',
-      onSelect: () => emit('openSpaceSettings'),
-    },
-  ],
-])
+const spaceHeaderMenuItems = computed(() => {
+  const items: Array<{
+    label: string
+    icon: string
+    onSelect: () => void
+  }> = []
+  if (props.canAddChildren && props.selectedRootSpaceId) {
+    items.push(
+      {
+        label: translateText('layout.addRoom'),
+        icon: 'i-lucide-plus',
+        onSelect: () => emit('addRoom', props.selectedRootSpaceId!),
+      },
+      {
+        label: translateText('layout.addSubspace'),
+        icon: 'i-lucide-layers',
+        onSelect: () => emit('addSubspace', props.selectedRootSpaceId!),
+      },
+    )
+  }
+  items.push({
+    label: translateText('layout.openSpaceSettings'),
+    icon: 'i-lucide-settings-2',
+    onSelect: () => emit('openSpaceSettings'),
+  })
+  return [items]
+})
+
+function canAddRoomToCategory(category: RoomSectionItem): boolean {
+  if (!props.canAddChildren || !props.selectedRootSpaceId) {
+    return false
+  }
+  const parentId = parentSpaceIdFor(category)
+  return Boolean(parentId)
+}
+
+function onAddRoomToCategory(category: RoomSectionItem) {
+  const parentId = parentSpaceIdFor(category)
+  if (parentId) {
+    emit('addRoom', parentId)
+  }
+}
 
 function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
   clearSortableDropTargets()
@@ -373,6 +410,27 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
           {{ selectedSpaceName }}
         </p>
       </div>
+      <div
+        v-if="canAddChildren && selectedRootSpaceId"
+        class="flex shrink-0 gap-1"
+      >
+        <UButton
+          size="xs"
+          color="primary"
+          variant="soft"
+          icon="i-lucide-plus"
+          :aria-label="translateText('layout.addRoom')"
+          @click="emit('addRoom', selectedRootSpaceId)"
+        />
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="soft"
+          icon="i-lucide-layers"
+          :aria-label="translateText('layout.addSubspace')"
+          @click="emit('addSubspace', selectedRootSpaceId)"
+        />
+      </div>
     </header>
 
     <div class="flex-1 overflow-y-auto px-2 py-3">
@@ -428,6 +486,16 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
             >
               {{ category.name }}
             </p>
+            <UButton
+              v-if="canAddRoomToCategory(category)"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-plus"
+              class="decentra-category-no-drag shrink-0"
+              :aria-label="translateText('layout.addRoom')"
+              @click.stop="onAddRoomToCategory(category)"
+            />
           </div>
           <div
             v-show="!isCategoryCollapsed(category.id)"
