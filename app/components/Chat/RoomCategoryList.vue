@@ -34,6 +34,7 @@ const props = defineProps<{
   /** Insert index for + on a root ROOMS block (before following subspaces) */
   resolveRoomInsertIndex?: (category: RoomSectionItem) => number | undefined
   canInviteToRoom?: (roomId: string) => boolean
+  canOpenRoomSettings?: (roomId: string) => boolean
   canInviteToSpace?: boolean
   /** When null (e.g. Home), hierarchy DnD is off */
   selectedRootSpaceId: string | null
@@ -51,6 +52,7 @@ const emit = defineEmits<{
   addSubspace: [parentSpaceId: string]
   inviteSpace: []
   inviteRoom: [roomId: string]
+  openRoomSettings: [roomId: string]
   openHomeStartDm: []
   openHomeCreateRoom: []
   openHomeExplorePublic: []
@@ -583,18 +585,30 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                       aria-hidden="true"
                     />
                   </button>
-                  <UButton
-                    v-if="canInviteToRoom?.(room.roomId)"
-                    size="xs"
-                    color="neutral"
-                    variant="ghost"
-                    icon="i-lucide-user-plus"
-                    class="decentra-channel-no-drag shrink-0 opacity-0
-                           transition group-hover:opacity-100
-                           focus:opacity-100"
-                    :aria-label="translateText('invite.roomButton')"
-                    @click.stop="emit('inviteRoom', room.roomId)"
-                  />
+                  <div
+                    class="decentra-channel-no-drag flex shrink-0 items-center
+                           gap-0.5 opacity-0 transition group-hover:opacity-100
+                           focus-within:opacity-100"
+                  >
+                    <UButton
+                      v-if="canInviteToRoom?.(room.roomId)"
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      icon="i-lucide-user-plus"
+                      :aria-label="translateText('invite.roomButton')"
+                      @click.stop="emit('inviteRoom', room.roomId)"
+                    />
+                    <UButton
+                      v-if="canOpenRoomSettings?.(room.roomId)"
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      icon="i-lucide-settings-2"
+                      :aria-label="translateText('layout.openRoomSettings')"
+                      @click.stop="emit('openRoomSettings', room.roomId)"
+                    />
+                  </div>
                 </div>
                 <button
                   v-for="thread in (

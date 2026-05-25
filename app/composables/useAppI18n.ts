@@ -186,6 +186,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'layout.collapseSpaces': 'Collapse spaces',
     'layout.openAccountSettings': 'Account settings',
     'layout.openSpaceSettings': 'Space settings',
+    'layout.openRoomSettings': 'Channel settings',
     'layout.expandCategory': 'Expand category',
     'layout.collapseCategory': 'Collapse category',
     'layout.createSpace': 'Create space',
@@ -288,6 +289,13 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'settings.verificationRecoveryErrorUnknown':
       'Could not restore encryption. Try again or use another client.',
     'settings.backToChat': 'Back to chat',
+    'settings.roomTitle': 'Channel settings',
+    'settings.roomDescription': 'Name and topic for this channel.',
+    'settings.roomId': 'Room ID',
+    'settings.roomName': 'Channel name',
+    'settings.roomTopic': 'Channel topic',
+    'settings.roomReadOnlyHint':
+      'You can view settings but cannot change name or topic.',
     'settings.spaceTitle': 'Space settings',
     'settings.spaceDescription': 'Basic settings for this space.',
     'settings.spaceId': 'Space ID',
@@ -645,6 +653,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'layout.collapseSpaces': 'Spaces einklappen',
     'layout.openAccountSettings': 'Account-Einstellungen',
     'layout.openSpaceSettings': 'Space-Einstellungen',
+    'layout.openRoomSettings': 'Kanal-Einstellungen',
     'layout.expandCategory': 'Kategorie aufklappen',
     'layout.collapseCategory': 'Kategorie zuklappen',
     'layout.createSpace': 'Space erstellen',
@@ -751,6 +760,13 @@ const messages: Record<AppLocale, Record<string, string>> = {
       'Verschluesselung konnte nicht wiederhergestellt werden. Erneut versuchen ' +
       'oder anderen Client nutzen.',
     'settings.backToChat': 'Zurück zum Chat',
+    'settings.roomTitle': 'Kanal-Einstellungen',
+    'settings.roomDescription': 'Name und Thema dieses Kanals.',
+    'settings.roomId': 'Raum-ID',
+    'settings.roomName': 'Kanalname',
+    'settings.roomTopic': 'Kanal-Thema',
+    'settings.roomReadOnlyHint':
+      'Einstellungen ansehen, Name und Thema nicht aenderbar.',
     'settings.spaceTitle': 'Space-Einstellungen',
     'settings.spaceDescription': 'Basis-Einstellungen für diesen Space.',
     'settings.spaceId': 'Space-ID',

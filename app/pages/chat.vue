@@ -12,7 +12,10 @@ import ChatOnboardingPanel from "~/components/Chat/Onboarding/ChatOnboardingPane
 import ChatDmStartPanel from "~/components/Chat/Onboarding/ChatDmStartPanel.vue";
 import ChatPublicRoomsPanel from "~/components/Chat/Onboarding/ChatPublicRoomsPanel.vue";
 import MatrixInvitePanel from "~/components/Chat/MatrixInvitePanel.vue";
-import { canUserInviteToRoom } from "~/utils/matrixRoomInvitePermissions";
+import {
+  canUserInviteToChannel,
+  isJoinedRoom,
+} from "~/utils/matrixRoomChannelPermissions";
 import {
   buildReactionSummaryByEventId,
   buildRoomThreadNavEntries,
@@ -427,7 +430,45 @@ const canInviteToSpace = computed(() => {
 });
 
 function canInviteToRoom(roomId: string): boolean {
-  return canUserInviteToRoom(client.value, roomId, userId.value);
+  const matrixClient = client.value;
+  const matrixUserId = userId.value;
+  const matrixRoom = matrixRooms.value.find(
+    (entry) => entry.roomId === roomId,
+  );
+  if (isDirectMessageRoom(roomId, matrixRoom)) {
+    return false;
+  }
+  const spaceId = selectedSpaceId.value;
+  if (!spaceId || spaceId === HOME_SPACE_ID) {
+    return canUserInviteToChannel(
+      matrixClient,
+      roomId,
+      matrixUserId,
+      null,
+    );
+  }
+  return canUserInviteToChannel(
+    matrixClient,
+    roomId,
+    matrixUserId,
+    spaceId,
+  );
+}
+
+function canOpenRoomSettings(roomId: string): boolean {
+  return isJoinedRoom(client.value, roomId);
+}
+
+function openRoomSettings(roomId: string) {
+  const query: Record<string, string> = { room: roomId };
+  const rootId = selectedSpaceId.value;
+  if (rootId && rootId !== HOME_SPACE_ID) {
+    query.root = rootId;
+  }
+  navigateTo({
+    path: `/settings/room/${roomId}`,
+    query,
+  });
 }
 
 function openInviteToRoom(roomId: string) {
@@ -2140,9 +2181,11 @@ watch(
           @add-subspace="openAddSubspaceToSpace"
           :can-invite-to-space="canInviteToSpace"
           :can-invite-to-room="canInviteToRoom"
+          :can-open-room-settings="canOpenRoomSettings"
           :resolve-room-insert-index="resolveRoomInsertIndexForCategory"
           @invite-space="openInviteToSpace"
           @invite-room="openInviteToRoom"
+          @open-room-settings="openRoomSettings"
           @open-home-start-dm="openHomeStartDm"
           @open-home-create-room="openHomeCreateRoom"
           @open-home-explore-public="openHomeExplorePublic"
