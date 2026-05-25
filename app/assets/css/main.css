@@ -15,3 +15,22 @@
     radial-gradient(circle at 88% 16%, rgb(244 114 182 / 10%), transparent 35%),
     linear-gradient(180deg, rgb(15 23 42 / 14%), transparent 28%);
 }
+
+/* Channel sidebar drag (Discord-like ghost + drop line) */
+.decentra-drag-ghost {
+  opacity: 0.35;
+}
+
+.decentra-drag-chosen {
+  cursor: grabbing;
+}
+
+.decentra-sortable-drop-target > *:first-child::before,
+.decentra-sortable-drop-target::before {
+  content: "";
+  display: block;
+  height: 2px;
+  margin: 2px 4px;
+  border-radius: 1px;
+  background: rgb(34 197 94);
+}

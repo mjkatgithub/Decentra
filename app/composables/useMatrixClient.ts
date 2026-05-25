@@ -13,6 +13,23 @@ import {
   pinRoomEvent as pinRoomEventState,
   unpinRoomEvent as unpinRoomEventState,
 } from '~/utils/matrixRoomPinnedEvents'
+import {
+  clearRoomAvatar,
+  setRoomAvatarFromMxc,
+  setRoomName,
+  setRoomTopic,
+  uploadRoomAvatarFile,
+} from '~/utils/matrixRoomMetadata'
+import {
+  saveSpaceRolesAndSyncPowerLevels,
+} from '~/composables/matrix/spaceRolesStateHelpers'
+import {
+  syncChildRoomPowerLevelsFromSpaceRoles,
+} from '~/composables/matrix/spaceRolesRoomSync'
+import {
+  setSpaceJoinRule,
+  type SpaceAccessRule,
+} from '~/utils/matrixSpaceGeneralSettings'
 import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
 import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
 import { readonly, shallowRef } from 'vue'
@@ -121,6 +138,7 @@ import {
   moveRoomBetweenParents,
   persistSpaceChildOrder
 } from './matrix/spaceStateHelpers'
+import { waitForRoomSpaceParentLink } from '~/utils/waitForRoomSpaceParent'
 import { buildTextEditContent } from '~/utils/matrixMessageEdit'
 import { buildThreadRelatesTo } from '~/utils/matrixThreadRelations'
 
@@ -314,6 +332,27 @@ export interface CreateGroupRoomInput {
   topic?: string
   /** Private = invite-only; public = joinable and directory-listed */
   visibility: 'private' | 'public'
+  /** Link new room as m.space.child of this space */
+  parentSpaceId?: string
+  /** Sibling index on parent (default: append) */
+  insertIndex?: number
+  /** Matrix user IDs to invite on create */
+  inviteUserIds?: string[]
+}
+
+export interface InviteUsersToRoomResult {
+  invited: string[]
+  failed: Array<{ userId: string; error: string }>
+}
+
+export interface CreateMatrixSpaceInput {
+  name: string
+  topic?: string
+  visibility: 'private' | 'public'
+  /** Link new space as m.space.child of this parent space */
+  parentSpaceId?: string
+  insertIndex?: number
+  inviteUserIds?: string[]
 }
 
 export interface UserDirectoryResultItem {
@@ -1312,6 +1351,72 @@ export function useMatrixClient() {
     await unpinRoomEventState(matrixClient, roomId, eventId)
   }
 
+  async function updateSpaceName(spaceId: string, name: string): Promise<void> {
+    const matrixClient = requireClient()
+    await setRoomName(matrixClient, spaceId, name)
+  }
+
+  async function updateSpaceTopic(
+    spaceId: string,
+    topic: string,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await setRoomTopic(matrixClient, spaceId, topic)
+  }
+
+  async function updateSpaceAvatar(
+    spaceId: string,
+    imageFile: File,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    const mxcUrl = await uploadRoomAvatarFile(matrixClient, imageFile)
+    await setRoomAvatarFromMxc(matrixClient, spaceId, mxcUrl)
+  }
+
+  async function removeSpaceAvatar(spaceId: string): Promise<void> {
+    const matrixClient = requireClient()
+    await clearRoomAvatar(matrixClient, spaceId)
+  }
+
+  async function updateSpaceJoinRule(
+    spaceId: string,
+    joinRule: SpaceAccessRule,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await setSpaceJoinRule(matrixClient, spaceId, joinRule)
+  }
+
+  async function upgradeSpaceRoom(
+    spaceId: string,
+    targetVersion: string,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await matrixClient.upgradeRoom(spaceId, targetVersion)
+  }
+
+  async function saveSpaceRoles(
+    spaceId: string,
+    content: SpaceRolesState,
+    childRoomIds: string[] = [],
+    scrubPowerLevel?: number,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await saveSpaceRolesAndSyncPowerLevels(
+      matrixClient,
+      spaceId,
+      content,
+      scrubPowerLevel,
+    )
+    if (childRoomIds.length > 0) {
+      await syncChildRoomPowerLevelsFromSpaceRoles(
+        matrixClient,
+        content,
+        childRoomIds,
+        scrubPowerLevel,
+      )
+    }
+  }
+
   async function mergeDirectAccountData(
     matrixClient: MatrixClient,
     peerUserId: string,
@@ -1406,6 +1511,97 @@ export function useMatrixClient() {
     return buildMatrixToUserLink(selfId)
   }
 
+  function buildRoomCreateInitialState(
+    isPublic: boolean,
+    includeEncryption: boolean,
+  ): sdk.ICreateRoomOpts['initial_state'] {
+    const encryptionReady = includeEncryption
+    const encryptionState =
+      encryptionReady
+        ? [
+            {
+              type: EventType.RoomEncryption,
+              state_key: '',
+              content: { algorithm: 'm.megolm.v1.aes-sha2' },
+            },
+          ]
+        : []
+    return [
+      {
+        type: EventType.RoomJoinRules,
+        state_key: '',
+        content: {
+          join_rule: isPublic ? JoinRule.Public : JoinRule.Invite,
+        },
+      },
+      {
+        type: EventType.RoomHistoryVisibility,
+        state_key: '',
+        content: {
+          history_visibility: isPublic ? 'world_readable' : 'invited',
+        },
+      },
+      ...encryptionState,
+    ]
+  }
+
+  async function linkRoomToParentSpace(
+    roomId: string,
+    parentSpaceId: string,
+    insertIndex?: number,
+  ): Promise<void> {
+    const matrixClient = requireClient()
+    await moveChannelBetweenSpaceParents({
+      roomId,
+      previousParentSpaceId: null,
+      nextParentSpaceId: parentSpaceId,
+      insertIndex,
+    })
+    await waitForRoomSpaceParentLink(matrixClient, roomId, parentSpaceId)
+  }
+
+  async function createMatrixSpace(
+    input: CreateMatrixSpaceInput,
+  ): Promise<string> {
+    const matrixClient = requireClient()
+    const trimmedName = input.name.trim()
+    if (!trimmedName) {
+      throw new Error('Space name is required')
+    }
+    const topic = input.topic?.trim()
+    const isPublic = input.visibility === 'public'
+    const selfId = matrixClient.getUserId()
+    const inviteUserIds = (input.inviteUserIds ?? []).filter(
+      (matrixUserId) =>
+        !selfId ||
+        matrixUserId.toLowerCase() !== selfId.toLowerCase(),
+    )
+    const createOpts: sdk.ICreateRoomOpts = {
+      name: trimmedName,
+      ...(topic ? { topic } : {}),
+      visibility: isPublic ? Visibility.Public : Visibility.Private,
+      creation_content: { type: 'm.space' },
+      ...(inviteUserIds.length > 0 ? { invite: inviteUserIds } : {}),
+      initial_state: buildRoomCreateInitialState(isPublic, false),
+    }
+    try {
+      const { room_id: roomId } = await matrixClient.createRoom(createOpts)
+      if (input.parentSpaceId) {
+        await linkRoomToParentSpace(
+          roomId,
+          input.parentSpaceId,
+          input.insertIndex,
+        )
+      }
+      return roomId
+    } catch (error) {
+      if (isTransportFailureWithoutMatrixBody(error)) {
+        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+      }
+      throwMappedMatrixError(error, 'Could not create space')
+    }
+  }
+
   async function createGroupRoom(
     input: CreateGroupRoomInput
   ): Promise<string> {
@@ -1417,40 +1613,30 @@ export function useMatrixClient() {
     const topic = input.topic?.trim()
     const isPublic = input.visibility === 'public'
     const encryptionReady = await ensureCryptoReady()
-    const encryptionState = encryptionReady
-      ? [
-          {
-            type: EventType.RoomEncryption,
-            state_key: '',
-            content: { algorithm: 'm.megolm.v1.aes-sha2' }
-          }
-        ]
-      : []
+    const selfId = matrixClient.getUserId()
+    const inviteUserIds = (input.inviteUserIds ?? []).filter(
+      (matrixUserId) =>
+        !selfId ||
+        matrixUserId.toLowerCase() !== selfId.toLowerCase(),
+    )
     const createOpts: sdk.ICreateRoomOpts = {
       name: trimmedName,
       ...(topic ? { topic } : {}),
       visibility: isPublic ? Visibility.Public : Visibility.Private,
       ...(isPublic ? { preset: Preset.PublicChat } : {}),
-      initial_state: [
-        {
-          type: EventType.RoomJoinRules,
-          state_key: '',
-          content: {
-            join_rule: isPublic ? JoinRule.Public : JoinRule.Invite
-          }
-        },
-        {
-          type: EventType.RoomHistoryVisibility,
-          state_key: '',
-          content: {
-            history_visibility: isPublic ? 'world_readable' : 'invited'
-          }
-        },
-        ...encryptionState
-      ]
+      is_direct: false,
+      ...(inviteUserIds.length > 0 ? { invite: inviteUserIds } : {}),
+      initial_state: buildRoomCreateInitialState(isPublic, encryptionReady),
     }
     try {
       const { room_id: roomId } = await matrixClient.createRoom(createOpts)
+      if (input.parentSpaceId) {
+        await linkRoomToParentSpace(
+          roomId,
+          input.parentSpaceId,
+          input.insertIndex,
+        )
+      }
       return roomId
     } catch (error) {
       if (isTransportFailureWithoutMatrixBody(error)) {
@@ -1458,6 +1644,32 @@ export function useMatrixClient() {
       }
       throwMappedMatrixError(error, 'Could not create room')
     }
+  }
+
+  async function inviteUsersToRoom(
+    roomId: string,
+    matrixUserIds: string[],
+  ): Promise<InviteUsersToRoomResult> {
+    const matrixClient = requireClient()
+    const selfId = matrixClient.getUserId()?.toLowerCase()
+    const invited: string[] = []
+    const failed: InviteUsersToRoomResult['failed'] = []
+    for (const matrixUserId of matrixUserIds) {
+      if (selfId && matrixUserId.toLowerCase() === selfId) {
+        continue
+      }
+      try {
+        await matrixClient.invite(roomId, matrixUserId)
+        invited.push(matrixUserId)
+      } catch (error) {
+        failed.push({
+          userId: matrixUserId,
+          error:
+            error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return { invited, failed }
   }
 
   async function joinRoomByIdOrAlias(roomIdOrAlias: string): Promise<string> {
@@ -1598,6 +1810,8 @@ export function useMatrixClient() {
     buildOwnMatrixToLink,
     getOrCreateDirectMessageRoom,
     createGroupRoom,
+    createMatrixSpace,
+    inviteUsersToRoom,
     joinRoomByIdOrAlias,
     searchPublicRooms,
     searchUsersDirectory,
@@ -1605,6 +1819,13 @@ export function useMatrixClient() {
     moveChannelBetweenSpaceParents,
     pinRoomEvent,
     unpinRoomEvent,
+    updateSpaceName,
+    updateSpaceTopic,
+    updateSpaceAvatar,
+    removeSpaceAvatar,
+    updateSpaceJoinRule,
+    upgradeSpaceRoom,
+    saveSpaceRoles,
     incomingVerificationFromOtherOwnDeviceBeacon:
       getIncomingVerificationFromOtherOwnDeviceReadonly(),
     consumeIncomingVerificationFromOtherOwnDeviceBeacon

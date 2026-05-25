@@ -7,8 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Space roles and permissions now use Matrix `m.room.power_levels` and
+  Cinny/Sable `in.cinny.room.power_level_tags` only; the custom
+  `decentra.space.roles` state event was removed. Permissions are edited
+  via power-level dropdowns (invite, kick, ban, etc.) like Sable; deleting
+  a role scrubs its PL from tags and power level content for interop.
+- Space “Publish to directory” uses the Matrix room-directory API
+  (`readDirectoryVisibility` / `setDirectoryVisibility`), not join rule
+  alone; failed saves revert the checkbox state.
+- Home sidebar groups channels into **Personal chats** (1:1 DMs) and
+  **Groups**; the former “Unassigned rooms” bucket is removed.
+- Space channel header: add room, add subspace, and invite-to-space live in
+  the space dropdown (no separate `+` buttons beside it).
+- Channel drag-and-drop: hold briefly on the channel row to reorder; invite
+  and thread controls stay click-only (`decentra-channel-no-drag`).
+
 ### Added
 
+- Space settings hub with Matrix profile (name, topic, icon), join rule,
+  directory publish, Discord-like custom roles, Cinny/Sable **Permissions**
+  tab, member assignment, Cinny-style member groups in the space sidebar,
+  and Discord-like channel drag-and-drop without grab handles (#23)
+- Matrix **invite** flow: `MatrixInvitePanel`, per-channel invite in the
+  sidebar (space-level `inviteMembers` when room PL is low), space-wide
+  invite from the dropdown, optional invites on `/rooms/new`; no invite on
+  personal DMs (`parseMatrixInviteTargets`, `matrixRoomInvitePermissions`,
+  `matrixRoomChannelPermissions`)
+- **Channel settings** at `/settings/room/[roomId]` (name/topic, PL-gated
+  edit) with gear icon in the channel list (`useRoomSettings`)
+- Create rooms and subspaces under a parent space via `root` / `parent`
+  query params, `linkRoomToParentSpace`, and `waitForRoomSpaceParent`
+- Cinny-style space channel tree: one merged root **Rooms** block, nested
+  subspaces, collapse/indent; `resolveRootSpaceIdForHierarchy` for stable
+  rail selection after create
+- Home **Get started** actions when no room is selected (same three buttons
+  as onboarding; optional title only on first empty home); Home dropdown
+  opens start-DM and explore-public panels in the main pane
+- Sidebar room labels fall back to `m.room.name` state when `room.name` is
+  not synced yet (`getRoomNameFromState`)
+- `SpacePermissionRoleSelect`, `useSpacePowerLevelSettings`,
+  `matrixSpacePowerLevelSettings`, and helpers for space/room metadata PL
+  checks
 - Typing indicators in the active room: receive `m.typing` via the SDK,
   debounced outbound `sendTyping` from the composer, compact label above the
   message input (EN/DE), and multi-user summaries (#77)

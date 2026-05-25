@@ -146,6 +146,49 @@ async function main() {
   )
   const sideRoomId = sideRoomResponse.room_id
 
+  const spaceName = process.env.E2E_TEST_SPACE_NAME || 'Decentra E2E Space'
+  const spaceChannelName =
+    process.env.E2E_TEST_SPACE_CHANNEL_NAME || 'E2E Space General'
+  const spaceResponse = await withAuth(
+    primarySession.access_token,
+    '/_matrix/client/v3/createRoom',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        name: spaceName,
+        creation_content: { type: 'm.space' },
+      }),
+    },
+  )
+  const spaceId = spaceResponse.room_id
+  const spaceChannelResponse = await withAuth(
+    primarySession.access_token,
+    '/_matrix/client/v3/createRoom',
+    {
+      method: 'POST',
+      body: JSON.stringify({ name: spaceChannelName }),
+    },
+  )
+  const spaceChannelId = spaceChannelResponse.room_id
+  const serverName = new URL(homeserver).hostname
+  const via = [serverName]
+  await withAuth(
+    primarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceId)}/state/m.space.child/${encodeURIComponent(spaceChannelId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ via, order: 'general' }),
+    },
+  )
+  await withAuth(
+    primarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceChannelId)}/state/m.space.parent/${encodeURIComponent(spaceId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ via }),
+    },
+  )
+
   await withAuth(
     secondarySession.access_token,
     `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/join`,
@@ -218,6 +261,9 @@ async function main() {
     `E2E_TEST_ROOM_ID=${roomId}`,
     `E2E_SIDE_TEST_ROOM_NAME=${sideRoomName}`,
     `E2E_SIDE_TEST_ROOM_ID=${sideRoomId}`,
+    `E2E_TEST_SPACE_NAME=${spaceName}`,
+    `E2E_TEST_SPACE_ID=${spaceId}`,
+    `E2E_TEST_SPACE_CHANNEL_ID=${spaceChannelId}`,
   ].join('\n')
   writeFileSync(generatedEnvPath, `${generatedEnv}\n`, 'utf8')
   console.log('Synapse E2E seeding completed')

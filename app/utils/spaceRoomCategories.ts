@@ -24,6 +24,10 @@ export interface SpaceRoomCategory {
   kind: SpaceCategoryKind;
   /** Present when kind === "subspace" */
   subspaceRoomId?: string;
+  /** 0 = root room group; 1+ = subspace nesting depth */
+  nestingDepth: number;
+  /** Parent subspace room id (for collapse + indent) */
+  parentSubspaceId?: string;
   /**
    * Child room IDs under the root space (m.space.child state keys) that this
    * UI block represents — used to reorder category blocks on the root.
@@ -123,6 +127,166 @@ export function isRootSpaceRoom(
   return !parents.some((parentId) => joinedSpaceIds.has(parentId));
 }
 
+/**
+ * Walk m.space.parent to the top-level space shown in the space rail.
+ */
+export function resolveRootSpaceIdForHierarchy(options: {
+  spaceId: string;
+  matrixRooms: unknown[];
+  getRoomId: (room: unknown) => string;
+  getRoomType: (room: unknown) => string | undefined;
+  getParentSpaceIds: (room: unknown) => string[];
+}): string {
+  const {
+    spaceId,
+    matrixRooms,
+    getRoomId,
+    getRoomType,
+    getParentSpaceIds,
+  } = options;
+  const joinedSpaceIds = getJoinedSpaceRoomIds(
+    matrixRooms.map((room) => ({
+      roomId: getRoomId(room),
+      getType: () => getRoomType(room),
+    })),
+  );
+  const roomsById = new Map(
+    matrixRooms.map((room) => [getRoomId(room), room]),
+  );
+  let currentId: string | null = spaceId;
+  let rootId = spaceId;
+  const visited = new Set<string>();
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const currentRoom = roomsById.get(currentId);
+    if (!currentRoom || getRoomType(currentRoom) !== ROOM_TYPE_SPACE) {
+      break;
+    }
+    rootId = currentId;
+    if (
+      isRootSpaceRoom(
+        { roomId: currentId, getType: () => ROOM_TYPE_SPACE },
+        joinedSpaceIds,
+        getParentSpaceIds,
+      )
+    ) {
+      return currentId;
+    }
+    const parents = getParentSpaceIds(currentRoom).filter(
+      (parentId) => getRoomType(roomsById.get(parentId) ?? {}) === ROOM_TYPE_SPACE,
+    );
+    currentId = parents[0] ?? null;
+  }
+  return rootId;
+}
+
+/**
+ * Joined spaces listed as m.space.child of another joined space (any depth
+ * link from a parent). Used for the space rail: subspaces stay in-channel only.
+ */
+export function getJoinedSpaceIdsListedAsChild(
+  matrixRooms: unknown[],
+  getRoomType: (room: unknown) => string | undefined,
+  getRoomId: (room: unknown) => string,
+): Set<string> {
+  const joinedSpaceIds = getJoinedSpaceRoomIds(
+    matrixRooms.map((room) => ({
+      roomId: getRoomId(room),
+      getType: () => getRoomType(room),
+    })),
+  );
+  const listedAsChild = new Set<string>();
+  for (const room of matrixRooms) {
+    if (getRoomType(room) !== ROOM_TYPE_SPACE) {
+      continue;
+    }
+    if (!joinedSpaceIds.has(getRoomId(room))) {
+      continue;
+    }
+    for (const parsed of parseSpaceChildEvents(room as MatrixRoomLike)) {
+      const childRoom = matrixRooms.find(
+        (candidate) => getRoomId(candidate) === parsed.childRoomId,
+      );
+      if (
+        childRoom &&
+        getRoomType(childRoom) === ROOM_TYPE_SPACE &&
+        joinedSpaceIds.has(parsed.childRoomId)
+      ) {
+        listedAsChild.add(parsed.childRoomId);
+      }
+    }
+  }
+  return listedAsChild;
+}
+
+/** Top-level space for the left rail (not a child of another joined space). */
+export function isTopLevelSpaceForRail(
+  spaceRoomId: string,
+  joinedSpaceIds: Set<string>,
+  joinedSpaceIdsListedAsChild: Set<string>,
+): boolean {
+  return (
+    joinedSpaceIds.has(spaceRoomId) &&
+    !joinedSpaceIdsListedAsChild.has(spaceRoomId)
+  );
+}
+
+/** All non-space room ids reachable via m.space.child under a space. */
+export function collectRoomIdsInSpaceSubtree(
+  rootSpaceId: string,
+  roomsById: Map<string, unknown>,
+  getRoomType: (room: unknown) => string | undefined,
+  getRoomDisplayName: (room: unknown) => string,
+): Set<string> {
+  const roomIds = new Set<string>();
+  const visitedSpaces = new Set<string>();
+
+  function walkSpace(spaceId: string): void {
+    if (visitedSpaces.has(spaceId)) {
+      return;
+    }
+    visitedSpaces.add(spaceId);
+    const spaceRoom = roomsById.get(spaceId);
+    if (!spaceRoom || getRoomType(spaceRoom) !== ROOM_TYPE_SPACE) {
+      return;
+    }
+    const parsedChildren = sortParsedSpaceChildren(
+      parseSpaceChildEvents(spaceRoom as MatrixRoomLike),
+      (childId) =>
+        getRoomDisplayName(roomsById.get(childId) ?? { roomId: childId }),
+    );
+    for (const parsed of parsedChildren) {
+      const childRoom = roomsById.get(parsed.childRoomId);
+      if (!childRoom) {
+        continue;
+      }
+      if (getRoomType(childRoom) === ROOM_TYPE_SPACE) {
+        walkSpace(parsed.childRoomId);
+      } else {
+        roomIds.add(parsed.childRoomId);
+      }
+    }
+  }
+
+  walkSpace(rootSpaceId);
+  return roomIds;
+}
+
+export function isRoomListedUnderSpaceSubtree(
+  roomId: string,
+  spaceId: string,
+  roomsById: Map<string, unknown>,
+  getRoomType: (room: unknown) => string | undefined,
+  getRoomDisplayName: (room: unknown) => string,
+): boolean {
+  return collectRoomIdsInSpaceSubtree(
+    spaceId,
+    roomsById,
+    getRoomType,
+    getRoomDisplayName,
+  ).has(roomId);
+}
+
 export function viaServersFromRoomId(roomId: string): string[] {
   const domain = roomId.split(":")[1];
   return domain ? [domain] : [];
@@ -198,11 +362,74 @@ export function isRoomUnderAncestorSpace(options: {
   return false;
 }
 
+function appendSubspaceCategoriesDepthFirst(
+  subspaceId: string,
+  roomsById: Map<string, unknown>,
+  getRoomType: (room: unknown) => string | undefined,
+  getRoomDisplayName: (room: unknown) => string,
+  categories: SpaceRoomCategory[],
+  rootChildAnchorIds: string[],
+  nestingDepth: number,
+  parentSubspaceId?: string,
+): void {
+  const subspaceRoom = roomsById.get(subspaceId);
+  if (!subspaceRoom || getRoomType(subspaceRoom) !== ROOM_TYPE_SPACE) {
+    return;
+  }
+
+  const parsedChildren = sortParsedSpaceChildren(
+    parseSpaceChildEvents(subspaceRoom as MatrixRoomLike),
+    (childId) =>
+      getRoomDisplayName(roomsById.get(childId) ?? { roomId: childId }),
+  );
+
+  const roomsInSubspace: Array<{ roomId: string; name: string }> = [];
+  const nestedSubspaceIds: string[] = [];
+
+  for (const parsed of parsedChildren) {
+    const memberRoom = roomsById.get(parsed.childRoomId);
+    if (!memberRoom) {
+      continue;
+    }
+    if (getRoomType(memberRoom) === ROOM_TYPE_SPACE) {
+      nestedSubspaceIds.push(parsed.childRoomId);
+    } else {
+      roomsInSubspace.push({
+        roomId: parsed.childRoomId,
+        name: getRoomDisplayName(memberRoom),
+      });
+    }
+  }
+
+  categories.push({
+    id: subspaceId,
+    name: getRoomDisplayName(subspaceRoom),
+    kind: "subspace",
+    subspaceRoomId: subspaceId,
+    nestingDepth,
+    parentSubspaceId,
+    rootChildAnchorIds,
+    rooms: roomsInSubspace,
+  });
+
+  for (const nestedSubspaceId of nestedSubspaceIds) {
+    appendSubspaceCategoriesDepthFirst(
+      nestedSubspaceId,
+      roomsById,
+      getRoomType,
+      getRoomDisplayName,
+      categories,
+      [],
+      nestingDepth + 1,
+      subspaceId,
+    );
+  }
+}
+
 /**
  * Build category sections for the middle column from Matrix space state.
- * Preserves m.space.child order on the root: consecutive non-space children
- * share one "General" segment; each subspace block lists its non-space
- * children (sorted by m.space.child order on that subspace).
+ * Cinny-style: one "Rooms" block for all root-level channels; each subspace
+ * (and nested subspaces) is its own section with its direct channels.
  */
 export function buildSpaceRoomCategories(options: {
   rootSpaceId: string;
@@ -236,24 +463,8 @@ export function buildSpaceRoomCategories(options: {
     (childId) => getRoomDisplayName(roomsById.get(childId) ?? { roomId: childId }),
   );
 
-  const categories: SpaceRoomCategory[] = [];
-  let directSegmentIndex = 0;
-  let directBuffer: Array<{ roomId: string; name: string }> = [];
-
-  function flushDirectBuffer() {
-    if (directBuffer.length === 0) {
-      return;
-    }
-    categories.push({
-      id: `${rootSpaceId}-direct-${directSegmentIndex}`,
-      name: generalCategoryLabel,
-      kind: "root",
-      rootChildAnchorIds: directBuffer.map((entry) => entry.roomId),
-      rooms: directBuffer,
-    });
-    directSegmentIndex += 1;
-    directBuffer = [];
-  }
+  const rootLevelRooms: Array<{ roomId: string; name: string }> = [];
+  const subspaceIdsInOrder: string[] = [];
 
   for (const parsed of parsedRootChildren) {
     const childRoom = roomsById.get(parsed.childRoomId);
@@ -262,42 +473,39 @@ export function buildSpaceRoomCategories(options: {
     }
     const childType = getRoomType(childRoom);
     if (childType === ROOM_TYPE_SPACE) {
-      flushDirectBuffer();
-      const subParsed = sortParsedSpaceChildren(
-        parseSpaceChildEvents(childRoom as MatrixRoomLike),
-        (childId) =>
-          getRoomDisplayName(roomsById.get(childId) ?? { roomId: childId }),
-      );
-      const roomsInSubspace: Array<{ roomId: string; name: string }> = [];
-      for (const sub of subParsed) {
-        const memberRoom = roomsById.get(sub.childRoomId);
-        if (!memberRoom) {
-          continue;
-        }
-        if (getRoomType(memberRoom) === ROOM_TYPE_SPACE) {
-          continue;
-        }
-        roomsInSubspace.push({
-          roomId: sub.childRoomId,
-          name: getRoomDisplayName(memberRoom),
-        });
-      }
-      categories.push({
-        id: parsed.childRoomId,
-        name: getRoomDisplayName(childRoom),
-        kind: "subspace",
-        subspaceRoomId: parsed.childRoomId,
-        rootChildAnchorIds: [parsed.childRoomId],
-        rooms: roomsInSubspace,
-      });
+      subspaceIdsInOrder.push(parsed.childRoomId);
     } else {
-      directBuffer.push({
+      rootLevelRooms.push({
         roomId: parsed.childRoomId,
         name: getRoomDisplayName(childRoom),
       });
     }
   }
-  flushDirectBuffer();
+
+  const categories: SpaceRoomCategory[] = [];
+
+  if (rootLevelRooms.length > 0) {
+    categories.push({
+      id: `${rootSpaceId}-rooms`,
+      name: generalCategoryLabel,
+      kind: "root",
+      nestingDepth: 0,
+      rootChildAnchorIds: rootLevelRooms.map((entry) => entry.roomId),
+      rooms: rootLevelRooms,
+    });
+  }
+
+  for (const subspaceId of subspaceIdsInOrder) {
+    appendSubspaceCategoriesDepthFirst(
+      subspaceId,
+      roomsById,
+      getRoomType,
+      getRoomDisplayName,
+      categories,
+      [subspaceId],
+      1,
+    );
+  }
 
   return categories;
 }

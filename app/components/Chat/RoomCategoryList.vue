@@ -14,6 +14,8 @@ interface RoomSectionItem {
   name: string
   kind?: 'root' | 'subspace'
   subspaceRoomId?: string
+  nestingDepth?: number
+  parentSubspaceId?: string
   rootChildAnchorIds?: string[]
   canReorderRooms: boolean
   rooms: RoomItem[]
@@ -25,6 +27,15 @@ const props = defineProps<{
   selectedRoomId: string | null
   /** Reorder category blocks (m.space.child on root) — power-level gated */
   canReorderCategories: boolean
+  /** May add rooms/subspaces on the root space (header buttons) */
+  canAddChildren?: boolean
+  /** May add a room under a specific parent space/subspace */
+  canAddToParent?: (parentSpaceId: string) => boolean
+  /** Insert index for + on a root ROOMS block (before following subspaces) */
+  resolveRoomInsertIndex?: (category: RoomSectionItem) => number | undefined
+  canInviteToRoom?: (roomId: string) => boolean
+  canOpenRoomSettings?: (roomId: string) => boolean
+  canInviteToSpace?: boolean
   /** When null (e.g. Home), hierarchy DnD is off */
   selectedRootSpaceId: string | null
   threadsByRoomId?: Record<string, ThreadNavEntry[]>
@@ -37,6 +48,14 @@ const emit = defineEmits<{
   selectRoom: [roomId: string]
   selectThread: [payload: { roomId: string; rootEventId: string }]
   openSpaceSettings: []
+  addRoom: [parentSpaceId: string, insertIndex?: number]
+  addSubspace: [parentSpaceId: string]
+  inviteSpace: []
+  inviteRoom: [roomId: string]
+  openRoomSettings: [roomId: string]
+  openHomeStartDm: []
+  openHomeCreateRoom: []
+  openHomeExplorePublic: []
   persistRoomOrder: [
     payload: { parentSpaceId: string; orderedRoomIds: string[] },
   ]
@@ -60,6 +79,34 @@ const collapsedCategoryIds = ref<Set<string>>(new Set())
 const categoryDragEnabled = computed(
   () => Boolean(props.selectedRootSpaceId) && props.canReorderCategories,
 )
+
+const sortableDragOptions = {
+  ghostClass: 'decentra-drag-ghost',
+  chosenClass: 'decentra-drag-chosen',
+  animation: 150,
+}
+
+function markSortableDropTarget(event: { to?: HTMLElement | null }) {
+  document
+    .querySelectorAll('.decentra-sortable-drop-target')
+    .forEach((element) => {
+      element.classList.remove('decentra-sortable-drop-target')
+    })
+  event.to?.classList.add('decentra-sortable-drop-target')
+}
+
+function clearSortableDropTargets() {
+  document
+    .querySelectorAll('.decentra-sortable-drop-target')
+    .forEach((element) => {
+      element.classList.remove('decentra-sortable-drop-target')
+    })
+}
+
+function onSortableMove(event: { to?: HTMLElement | null }): boolean {
+  markSortableDropTarget(event)
+  return true
+}
 
 watch(
   () => props.categories,
@@ -89,6 +136,31 @@ function toggleCategoryCollapsed(categoryId: string) {
   collapsedCategoryIds.value = next
 }
 
+function findCategoryById(categoryId: string): RoomSectionItem | undefined {
+  return localCategories.value.find((category) => category.id === categoryId)
+}
+
+function isHiddenByCollapsedAncestor(category: RoomSectionItem): boolean {
+  let parentId = category.parentSubspaceId
+  while (parentId) {
+    if (isCategoryCollapsed(parentId)) {
+      return true
+    }
+    parentId = findCategoryById(parentId)?.parentSubspaceId
+  }
+  return false
+}
+
+function categoryIndentStyle(category: RoomSectionItem): Record<string, string> {
+  const depth = category.nestingDepth ?? 0
+  if (depth === 0) {
+    return { paddingLeft: '0px' }
+  }
+  return {
+    paddingLeft: `${depth * 4}px`,
+  }
+}
+
 function parentSpaceIdFor(category: RoomSectionItem): string {
   if (category.kind === 'subspace' && category.subspaceRoomId) {
     return category.subspaceRoomId
@@ -98,6 +170,10 @@ function parentSpaceIdFor(category: RoomSectionItem): string {
 
 function roomListDragEnabled(category: RoomSectionItem): boolean {
   return Boolean(props.selectedRootSpaceId) && category.canReorderRooms
+}
+
+function roomListDragDelay(category: RoomSectionItem): number {
+  return roomListDragEnabled(category) ? 200 : 0
 }
 
 function selectRoom(roomId: string) {
@@ -170,6 +246,7 @@ function onRoomSortableMove(event: {
   from?: HTMLElement
   to?: HTMLElement
 }): boolean {
+  markSortableDropTarget(event)
   if (!props.selectedRootSpaceId) {
     return false
   }
@@ -189,6 +266,7 @@ function onRoomSortableMove(event: {
 }
 
 function onCategoryDragEnd() {
+  clearSortableDropTargets()
   if (!categoryDragEnabled.value || !props.selectedRootSpaceId) {
     return
   }
@@ -203,7 +281,86 @@ function onCategoryDragEnd() {
   emit('reorderRootCategories', orderedRootChildIds)
 }
 
+const spaceHeaderMenuItems = computed(() => {
+  const items: Array<{
+    label: string
+    icon: string
+    onSelect: () => void
+  }> = []
+  if (props.canAddChildren && props.selectedRootSpaceId) {
+    items.push(
+      {
+        label: translateText('layout.addRoom'),
+        icon: 'i-lucide-plus',
+        onSelect: () => emit('addRoom', props.selectedRootSpaceId!),
+      },
+      {
+        label: translateText('layout.addSubspace'),
+        icon: 'i-lucide-layers',
+        onSelect: () => emit('addSubspace', props.selectedRootSpaceId!),
+      },
+    )
+  }
+  if (props.canInviteToSpace && props.selectedRootSpaceId) {
+    items.push({
+      label: translateText('invite.spaceMenu'),
+      icon: 'i-lucide-user-plus',
+      onSelect: () => emit('inviteSpace'),
+    })
+  }
+  items.push({
+    label: translateText('layout.openSpaceSettings'),
+    icon: 'i-lucide-settings-2',
+    onSelect: () => emit('openSpaceSettings'),
+  })
+  return [items]
+})
+
+const homeHeaderMenuItems = computed(() => [
+  [
+    {
+      label: translateText('onboarding.startDm'),
+      icon: 'i-lucide-message-circle',
+      onSelect: () => emit('openHomeStartDm'),
+    },
+    {
+      label: translateText('onboarding.createRoom'),
+      icon: 'i-lucide-plus',
+      onSelect: () => emit('openHomeCreateRoom'),
+    },
+    {
+      label: translateText('onboarding.explorePublic'),
+      icon: 'i-lucide-compass',
+      onSelect: () => emit('openHomeExplorePublic'),
+    },
+  ],
+])
+
+function canAddRoomToCategory(category: RoomSectionItem): boolean {
+  if (!props.selectedRootSpaceId) {
+    return false
+  }
+  const parentId = parentSpaceIdFor(category)
+  if (!parentId) {
+    return false
+  }
+  if (props.canAddToParent) {
+    return props.canAddToParent(parentId)
+  }
+  return Boolean(props.canAddChildren)
+}
+
+function onAddRoomToCategory(category: RoomSectionItem) {
+  const parentId = parentSpaceIdFor(category)
+  if (!parentId) {
+    return
+  }
+  const insertIndex = props.resolveRoomInsertIndex?.(category)
+  emit('addRoom', parentId, insertIndex)
+}
+
 function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
+  clearSortableDropTargets()
   if (!props.selectedRootSpaceId) {
     return
   }
@@ -271,28 +428,35 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
            dark:border-gray-800 dark:bg-gray-900"
   >
     <header
-      class="flex items-center justify-between border-b border-gray-200 px-3 py-2
-             dark:border-gray-800"
+      class="flex items-center justify-between gap-2 border-b border-gray-200
+             px-3 py-2 dark:border-gray-800"
     >
-      <div class="min-w-0">
+      <div class="min-w-0 flex-1">
         <p
           class="text-xs font-semibold uppercase tracking-wide text-gray-500
                  dark:text-gray-400"
         >
           {{ translateText('layout.channels') }}
         </p>
-        <p class="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">
-          {{ selectedSpaceName }}
-        </p>
+        <UDropdownMenu
+          :items="selectedRootSpaceId
+            ? spaceHeaderMenuItems
+            : homeHeaderMenuItems"
+        >
+          <button
+            type="button"
+            class="flex max-w-full items-center gap-1 rounded-md px-0.5 py-0.5
+                   text-left text-sm font-semibold text-gray-800 transition
+                   hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-800"
+          >
+            <span class="truncate">{{ selectedSpaceName }}</span>
+            <UIcon
+              name="i-lucide-chevron-down"
+              class="size-4 shrink-0 text-gray-500 dark:text-gray-400"
+            />
+          </button>
+        </UDropdownMenu>
       </div>
-      <UButton
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        icon="i-lucide-settings-2"
-        :aria-label="translateText('layout.openSpaceSettings')"
-        @click="emit('openSpaceSettings')"
-      />
     </header>
 
     <div class="flex-1 overflow-y-auto px-2 py-3">
@@ -304,24 +468,32 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
       <VueDraggable
         v-else
         v-model="localCategories"
-        :handle="categoryDragEnabled ? '.decentra-category-title' : undefined"
         :disabled="!categoryDragEnabled"
-        :animation="150"
+        :filter="categoryDragEnabled ? '.decentra-category-no-drag' : undefined"
+        :prevent-on-filter="true"
+        v-bind="sortableDragOptions"
         class="space-y-4"
+        @move="onSortableMove"
         @end="onCategoryDragEnd"
       >
         <div
           v-for="category in localCategories"
+          v-show="!isHiddenByCollapsedAncestor(category)"
           :key="category.id"
           class="mb-4"
+          :class="categoryDragEnabled
+            ? 'touch-none select-none active:cursor-grabbing'
+            : ''"
         >
           <div
-            class="flex items-center gap-1 px-2 pb-1 select-none"
+            class="flex items-center gap-1 pr-2 pb-1"
+            :style="categoryIndentStyle(category)"
           >
             <button
               type="button"
-              class="shrink-0 rounded p-0.5 text-gray-500 transition
-                     hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800"
+              class="decentra-category-no-drag shrink-0 rounded p-0.5
+                     text-gray-500 transition hover:bg-gray-100
+                     dark:text-gray-400 dark:hover:bg-gray-800"
               :aria-expanded="!isCategoryCollapsed(category.id)"
               :aria-label="isCategoryCollapsed(category.id)
                 ? translateText('layout.expandCategory')
@@ -335,24 +507,36 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
               >></span>
             </button>
             <p
-              class="decentra-category-title min-w-0 flex-1 text-xs font-semibold
-                     uppercase tracking-wide text-gray-500 dark:text-gray-400"
-              :class="categoryDragEnabled
-                ? 'cursor-grab touch-none active:cursor-grabbing'
-                : ''"
+              class="min-w-0 flex-1 text-xs font-semibold uppercase
+                     tracking-wide text-gray-500 dark:text-gray-400"
             >
               {{ category.name }}
             </p>
+            <UButton
+              v-if="canAddRoomToCategory(category)"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-plus"
+              class="decentra-category-no-drag shrink-0"
+              :aria-label="translateText('layout.addRoom')"
+              @click.stop="onAddRoomToCategory(category)"
+            />
           </div>
           <div
             v-show="!isCategoryCollapsed(category.id)"
             class="space-y-1"
+            :style="categoryIndentStyle(category)"
           >
             <VueDraggable
               v-model="category.rooms"
               group="decentra-space-channels"
               :disabled="!roomListDragEnabled(category)"
-              :animation="150"
+              :delay="roomListDragDelay(category)"
+              :delay-on-touch-only="false"
+              :filter="'.decentra-channel-no-drag'"
+              :prevent-on-filter="true"
+              v-bind="sortableDragOptions"
               class="space-y-1"
               @move="onRoomSortableMove"
               @end="(event: unknown) => onRoomDragEnd(category, event as {
@@ -368,38 +552,72 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                 :key="room.roomId"
                 class="space-y-0.5"
               >
-                <button
-                  type="button"
-                  class="flex w-full items-center justify-between gap-2
-                         rounded-lg px-2 py-2 text-left text-sm transition"
-                  :class="isRoomNavSelected(room.roomId)
-                    ? 'bg-primary-500/15 text-primary-500'
-                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'"
-                  :data-room-id="room.roomId"
-                  :data-unread="room.hasUnread ? 'true' : 'false'"
-                  :aria-label="roomNavAriaLabel(room)"
-                  @click="selectRoom(room.roomId)"
+                <div
+                  class="decentra-channel-row group flex w-full items-center
+                         gap-1 rounded-lg py-1 pr-1 pl-[6px]"
+                  :class="[
+                    isRoomNavSelected(room.roomId)
+                      ? 'bg-primary-500/15 text-primary-500'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800',
+                    roomListDragEnabled(category)
+                      ? 'cursor-grab active:cursor-grabbing'
+                      : '',
+                  ]"
                 >
-                  <span
-                    class="min-w-0 truncate"
-                    :class="room.hasUnread ? 'font-semibold' : ''"
+                  <button
+                    type="button"
+                    class="flex min-w-0 flex-1 items-center justify-between
+                           gap-2 py-1 pl-2 text-left text-sm"
+                    :data-room-id="room.roomId"
+                    :data-unread="room.hasUnread ? 'true' : 'false'"
+                    :aria-label="roomNavAriaLabel(room)"
+                    @click="selectRoom(room.roomId)"
                   >
-                    # {{ room.name }}
-                  </span>
-                  <span
-                    v-if="room.hasUnread"
-                    class="size-2 shrink-0 rounded-full bg-primary-500"
-                    aria-hidden="true"
-                  />
-                </button>
+                    <span
+                      class="min-w-0 truncate"
+                      :class="room.hasUnread ? 'font-semibold' : ''"
+                    >
+                      # {{ room.name }}
+                    </span>
+                    <span
+                      v-if="room.hasUnread"
+                      class="size-2 shrink-0 rounded-full bg-primary-500"
+                      aria-hidden="true"
+                    />
+                  </button>
+                  <div
+                    class="decentra-channel-no-drag flex shrink-0 items-center
+                           gap-0.5 opacity-0 transition group-hover:opacity-100
+                           focus-within:opacity-100"
+                  >
+                    <UButton
+                      v-if="canInviteToRoom?.(room.roomId)"
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      icon="i-lucide-user-plus"
+                      :aria-label="translateText('invite.roomButton')"
+                      @click.stop="emit('inviteRoom', room.roomId)"
+                    />
+                    <UButton
+                      v-if="canOpenRoomSettings?.(room.roomId)"
+                      size="xs"
+                      color="neutral"
+                      variant="ghost"
+                      icon="i-lucide-settings-2"
+                      :aria-label="translateText('layout.openRoomSettings')"
+                      @click.stop="emit('openRoomSettings', room.roomId)"
+                    />
+                  </div>
+                </div>
                 <button
                   v-for="thread in (
                     props.threadsByRoomId?.[room.roomId] ?? []
                   )"
                   :key="thread.rootEventId"
                   type="button"
-                  class="flex w-full items-center gap-2 rounded-lg py-1.5 pr-2 pl-6
-                         text-left text-sm transition"
+                  class="decentra-channel-no-drag flex w-full items-center gap-2
+                         rounded-lg py-1.5 pr-2 pl-6 text-left text-sm transition"
                   :class="isThreadNavSelected(thread.rootEventId, room.roomId)
                     ? 'bg-primary-500/15 text-primary-500'
                     : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'"
