@@ -170,6 +170,10 @@ function roomListDragEnabled(category: RoomSectionItem): boolean {
   return Boolean(props.selectedRootSpaceId) && category.canReorderRooms
 }
 
+function roomListDragDelay(category: RoomSectionItem): number {
+  return roomListDragEnabled(category) ? 200 : 0
+}
+
 function selectRoom(roomId: string) {
   emit('selectRoom', roomId)
 }
@@ -526,8 +530,8 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
               v-model="category.rooms"
               group="decentra-space-channels"
               :disabled="!roomListDragEnabled(category)"
-              :delay="200"
-              :delay-on-touch-only="true"
+              :delay="roomListDragDelay(category)"
+              :delay-on-touch-only="false"
               :filter="'.decentra-channel-no-drag'"
               :prevent-on-filter="true"
               v-bind="sortableDragOptions"
@@ -549,15 +553,19 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                 <div
                   class="decentra-channel-row group flex w-full items-center
                          gap-1 rounded-lg py-1 pr-1 pl-[6px]"
-                  :class="isRoomNavSelected(room.roomId)
-                    ? 'bg-primary-500/15 text-primary-500'
-                    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800'"
+                  :class="[
+                    isRoomNavSelected(room.roomId)
+                      ? 'bg-primary-500/15 text-primary-500'
+                      : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-800',
+                    roomListDragEnabled(category)
+                      ? 'cursor-grab active:cursor-grabbing'
+                      : '',
+                  ]"
                 >
                   <button
                     type="button"
-                    class="decentra-channel-no-drag flex min-w-0 flex-1
-                           items-center justify-between gap-2 py-1 pl-2
-                           text-left text-sm"
+                    class="flex min-w-0 flex-1 items-center justify-between
+                           gap-2 py-1 pl-2 text-left text-sm"
                     :data-room-id="room.roomId"
                     :data-unread="room.hasUnread ? 'true' : 'false'"
                     :aria-label="roomNavAriaLabel(room)"
