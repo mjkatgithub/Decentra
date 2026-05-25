@@ -2247,30 +2247,23 @@ watch(
         v-if="!selectedRoomId"
         class="flex flex-1 items-center justify-center overflow-auto p-4"
       >
-        <template v-if="!hasJoinedNonSpaceRooms">
-          <ChatOnboardingPanel
-            v-if="!onboardingSubView"
-            @open-dm="onboardingSubView = 'dm'"
-            @open-create-room="navigateTo('/rooms/new')"
-            @open-public-rooms="onboardingSubView = 'public'"
-          />
-          <ChatDmStartPanel
-            v-else-if="onboardingSubView === 'dm'"
-            @back="onboardingSubView = null"
-            @started="onDirectMessageStarted"
-          />
-          <ChatPublicRoomsPanel
-            v-else-if="onboardingSubView === 'public'"
-            @back="onboardingSubView = null"
-            @joined="onPublicRoomJoined"
-          />
-        </template>
-        <p
+        <ChatDmStartPanel
+          v-if="onboardingSubView === 'dm'"
+          @back="onboardingSubView = null"
+          @started="onDirectMessageStarted"
+        />
+        <ChatPublicRoomsPanel
+          v-else-if="onboardingSubView === 'public'"
+          @back="onboardingSubView = null"
+          @joined="onPublicRoomJoined"
+        />
+        <ChatOnboardingPanel
           v-else
-          class="text-sm text-gray-500 dark:text-gray-400"
-        >
-          {{ translateText("chat.selectRoom") }}
-        </p>
+          :show-header="!hasJoinedNonSpaceRooms"
+          @open-dm="onboardingSubView = 'dm'"
+          @open-create-room="navigateTo('/rooms/new')"
+          @open-public-rooms="onboardingSubView = 'public'"
+        />
       </div>
       <template v-else>
         <template v-if="activeThread?.presentation === 'main'">
