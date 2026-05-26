@@ -1,6 +1,45 @@
 import { beforeEach, describe, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { ref } from 'vue'
 import ChatMessageInput from '~/components/Chat/MessageInput.vue'
+
+const voicePhase = ref<'idle' | 'preview' | 'error'>('idle')
+const voicePreviewBlob = ref<Blob | null>(null)
+const voicePreviewUrl = ref<string | null>(null)
+const voicePreviewDurationMs = ref<number | undefined>(undefined)
+const voiceError = ref<{ code: string } | null>(null)
+const voiceElapsedMs = ref(0)
+const voiceCanPause = ref(false)
+const finishSending = vi.fn()
+const getPreviewFileName = vi.fn(() => 'voice-message.webm')
+const beginRecording = vi.fn(async () => undefined)
+const cancelRecording = vi.fn()
+const discardPreview = vi.fn()
+const markSending = vi.fn()
+const markUploadFailed = vi.fn()
+
+vi.mock('~/composables/useVoiceRecorder', () => ({
+  useVoiceRecorder: () => ({
+    phase: voicePhase,
+    error: voiceError,
+    elapsedMs: voiceElapsedMs,
+    previewBlob: voicePreviewBlob,
+    previewUrl: voicePreviewUrl,
+    previewDurationMs: voicePreviewDurationMs,
+    canPause: voiceCanPause,
+    isRecordingActive: ref(false),
+    beginRecording,
+    pauseRecording: vi.fn(),
+    resumeRecording: vi.fn(),
+    stopRecording: vi.fn(),
+    cancelRecording,
+    discardPreview,
+    markSending,
+    markUploadFailed,
+    finishSending,
+    getPreviewFileName,
+  }),
+}))
 
 const UInputStub = {
   props: ['modelValue', 'placeholder', 'disabled'],
@@ -82,6 +121,7 @@ function defaultMatrixClientStub(
     sendMessage: vi.fn(async () => undefined),
     sendEditMessage: vi.fn(async () => undefined),
     sendImageMessage: vi.fn(async () => undefined),
+    sendAudioMessage: vi.fn(async () => undefined),
     sendRoomTyping: vi.fn(async () => undefined),
     ...overrides,
   }
@@ -89,6 +129,15 @@ function defaultMatrixClientStub(
 
 describe('MessageInput', () => {
   beforeEach(() => {
+    voicePhase.value = 'idle'
+    voicePreviewBlob.value = null
+    voicePreviewUrl.value = null
+    voicePreviewDurationMs.value = undefined
+    voiceError.value = null
+    finishSending.mockClear()
+    markSending.mockClear()
+    markUploadFailed.mockClear()
+    beginRecording.mockClear()
     ;(globalThis as Record<string, unknown>).useMatrixClient =
       () => defaultMatrixClientStub()
   })
@@ -350,5 +399,80 @@ describe('MessageInput', () => {
 
     sendMessage.mock.calls.length.should.equal(1)
     sendMessage.mock.calls[0]?.[1].should.equal('🙈')
+  })
+
+  it('starts voice recording from mic button', async () => {
+    const wrapper = mountInput()
+    await wrapper.get('[data-testid="composer-voice-button"]').trigger('click')
+    beginRecording.mock.calls.length.should.equal(1)
+  })
+
+  it('sends voice preview with reply relation', async () => {
+    const sendAudioMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendAudioMessage })
+
+    voicePhase.value = 'preview'
+    voicePreviewBlob.value = new Blob(['audio'], { type: 'audio/webm' })
+    voicePreviewUrl.value = 'blob:preview'
+    voicePreviewDurationMs.value = 1500
+
+    const wrapper = mountInput({
+      replyTo: {
+        eventId: '$reply-target',
+        senderName: 'Alice',
+        body: 'Hello',
+      },
+    })
+
+    await wrapper.get('[data-testid="voice-send-button"]').trigger('click')
+
+    sendAudioMessage.mock.calls.length.should.equal(1)
+    sendAudioMessage.mock.calls[0]?.[0].should.equal('!room:example.org')
+    sendAudioMessage.mock.calls[0]?.[3].should.deep.equal({
+      durationMs: 1500,
+      replyTo: { eventId: '$reply-target' },
+    })
+    finishSending.mock.calls.length.should.equal(1)
+    const cancelReplyEvents = wrapper.emitted('cancelReply') || []
+    cancelReplyEvents.length.should.equal(1)
+  })
+
+  it('sends voice preview in thread with thread relation', async () => {
+    const sendAudioMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendAudioMessage })
+
+    voicePhase.value = 'preview'
+    voicePreviewBlob.value = new Blob(['audio'], { type: 'audio/webm' })
+    voicePreviewDurationMs.value = 900
+
+    const wrapper = mountInput({
+      threadRootEventId: '$thread-root',
+      replyTo: {
+        eventId: '$in-thread',
+        senderName: 'Bob',
+        body: 'Thread msg',
+      },
+    })
+
+    await wrapper.get('[data-testid="voice-send-button"]').trigger('click')
+
+    sendAudioMessage.mock.calls[0]?.[3].should.deep.equal({
+      durationMs: 900,
+      threadRootEventId: '$thread-root',
+      replyTo: { eventId: '$in-thread' },
+    })
+  })
+
+  it('shows permission denied feedback', async () => {
+    voicePhase.value = 'error'
+    voiceError.value = { code: 'permissionDenied' }
+
+    const wrapper = mountInput()
+    wrapper.find('[data-testid="voice-recorder-error"]').exists().should.equal(
+      true
+    )
+    wrapper.text().should.include('Microphone access was denied')
   })
 })

@@ -14,7 +14,7 @@ vi.mock('matrix-js-sdk', () => {
       RoomJoinRules: 'm.room.join_rules',
       RoomHistoryVisibility: 'm.room.history_visibility'
     },
-    MsgType: { Text: 'm.text', Image: 'm.image' },
+    MsgType: { Text: 'm.text', Image: 'm.image', Audio: 'm.audio' },
     ClientEvent: {},
     Preset: { PrivateChat: 'private_chat', PublicChat: 'public_chat' },
     JoinRule: { Invite: 'invite', Public: 'public' },
@@ -858,6 +858,209 @@ describe('useMatrixClient', () => {
       })
     )
     ;(globalThis as Record<string, unknown>).Image = originalImage
+  })
+
+  it('sends plain audio message with voice marker and duration', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null)
+        }
+      })),
+      uploadContent: vi.fn(async () => ({
+        content_uri: 'mxc://example.org/plain-audio'
+      })),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendAudioMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const audioBlob = new Blob(['audio-data'], { type: 'audio/webm' })
+    await sendAudioMessage(
+      '!room:example.org',
+      audioBlob,
+      'voice.webm',
+      { durationMs: 3200 },
+    )
+
+    expect(matrixClient.sendEvent).toHaveBeenCalledWith(
+      '!room:example.org',
+      'm.room.message',
+      expect.objectContaining({
+        msgtype: 'm.audio',
+        body: 'voice.webm',
+        url: 'mxc://example.org/plain-audio',
+        'org.matrix.msc3245.voice': {},
+        info: expect.objectContaining({
+          mimetype: 'audio/webm',
+          duration: 3200,
+        }),
+      }),
+    )
+  })
+
+  it('sends audio message with reply relation', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null)
+        }
+      })),
+      uploadContent: vi.fn(async () => ({
+        content_uri: 'mxc://example.org/reply-audio'
+      })),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendAudioMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const audioBlob = new Blob(['audio-data'], { type: 'audio/ogg' })
+    await sendAudioMessage('!room:example.org', audioBlob, 'voice.ogg', {
+      replyTo: { eventId: '$reply-target' },
+    })
+
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload['m.relates_to']).to.deep.equal({
+      'm.in_reply_to': { event_id: '$reply-target' },
+    })
+  })
+
+  it('sends audio message with thread relation', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null)
+        }
+      })),
+      uploadContent: vi.fn(async () => ({
+        content_uri: 'mxc://example.org/thread-audio'
+      })),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendAudioMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const audioBlob = new Blob(['audio-data'], { type: 'audio/webm' })
+    await sendAudioMessage('!room:example.org', audioBlob, 'voice.webm', {
+      threadRootEventId: '$thread-root',
+      replyTo: { eventId: '$in-thread' },
+    })
+
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload['m.relates_to']).to.deep.equal({
+      rel_type: 'm.thread',
+      event_id: '$thread-root',
+      'm.in_reply_to': { event_id: '$in-thread' },
+    })
+  })
+
+  it('rejects non-audio uploads in sendAudioMessage', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null)
+        }
+      })),
+      uploadContent: vi.fn(async () => undefined),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendAudioMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const imageBlob = new Blob(['img'], { type: 'image/png' })
+
+    await expect(
+      sendAudioMessage('!room:example.org', imageBlob, 'photo.png'),
+    ).rejects.toThrow('Only audio uploads are supported')
+  })
+
+  it('sends encrypted audio message for E2EE room', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getCrypto: vi.fn(() => ({})),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => ({ type: 'm.room.encryption' }))
+        }
+      })),
+      uploadContent: vi.fn(async () => 'mxc://example.org/encrypted-audio'),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendAudioMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const audioBlob = new Blob(['audio-data'], { type: 'audio/webm' })
+    await sendAudioMessage('!room:example.org', audioBlob, 'secure.webm')
+
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload.msgtype).toBe('m.audio')
+    expect(sendEventPayload['org.matrix.msc3245.voice']).to.deep.equal({})
+    expect(sendEventPayload.file.url).toBe('mxc://example.org/encrypted-audio')
+    expect(sendEventPayload.url).toBeUndefined()
   })
 
   it('sends reaction event payload', async () => {

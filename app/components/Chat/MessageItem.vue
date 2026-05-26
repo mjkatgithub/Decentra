@@ -5,6 +5,7 @@ import type {
 } from "~/utils/chatTimeline";
 import ChatThreadPreview from "~/components/Chat/ChatThreadPreview.vue";
 import ReplyQuotePreview from "~/components/Chat/ReplyQuotePreview.vue";
+import VoiceMessagePlayer from "~/components/Chat/VoiceMessagePlayer.vue";
 import { useHoverCapable } from "~/composables/useHoverCapable";
 import {
   isInteractiveMessageRowTarget,
@@ -23,6 +24,7 @@ interface MediaInfo {
     w?: number;
     h?: number;
     size?: number;
+    duration?: number;
   };
 }
 
@@ -88,6 +90,10 @@ const emit = defineEmits<{
     ownReactionEventIds: string[];
   }];
 }>();
+
+const isAudioMedia = computed(() => {
+  return props.message.media?.mimetype?.startsWith("audio/") === true;
+});
 
 const showEditButton = computed(() => {
   if (!props.canSendMessages || !props.currentUserId) {
@@ -264,26 +270,35 @@ function onMessageRowPointerUp(pointerEvent: PointerEvent) {
           v-if="message.media"
           class="mt-1 max-w-sm overflow-hidden rounded-lg border border-gray-200 dark:border-gray-800"
         >
-          <div
-            v-if="loadingMedia"
-            class="flex h-48 w-full items-center justify-center bg-gray-50 dark:bg-gray-950"
-          >
-            <span class="text-xs text-gray-400">Loading…</span>
-          </div>
-          <img
-            v-else-if="displayUrl"
+          <VoiceMessagePlayer
+            v-if="isAudioMedia"
             :src="displayUrl"
-            :alt="message.body"
-            class="max-h-96 w-full cursor-pointer object-contain bg-gray-50 dark:bg-gray-950"
-            loading="lazy"
-            @click="emit('openLightbox')"
+            :duration-ms="message.media.info?.duration"
+            :label="message.body"
+            :loading="loadingMedia"
           />
-          <div
-            v-else
-            class="flex h-48 w-full items-center justify-center bg-gray-50 dark:bg-gray-950"
-          >
-            <span class="text-xs text-gray-400">{{ message.body }}</span>
-          </div>
+          <template v-else>
+            <div
+              v-if="loadingMedia"
+              class="flex h-48 w-full items-center justify-center bg-gray-50 dark:bg-gray-950"
+            >
+              <span class="text-xs text-gray-400">Loading…</span>
+            </div>
+            <img
+              v-else-if="displayUrl"
+              :src="displayUrl"
+              :alt="message.body"
+              class="max-h-96 w-full cursor-pointer object-contain bg-gray-50 dark:bg-gray-950"
+              loading="lazy"
+              @click="emit('openLightbox')"
+            />
+            <div
+              v-else
+              class="flex h-48 w-full items-center justify-center bg-gray-50 dark:bg-gray-950"
+            >
+              <span class="text-xs text-gray-400">{{ message.body }}</span>
+            </div>
+          </template>
         </div>
         <p v-else class="text-sm wrap-break-word">
           {{ message.body }}

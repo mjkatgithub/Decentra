@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Voice message recording in chat: microphone capture, preview, upload,
+  Matrix `m.audio` send with MSC3245 voice marker, timeline playback, and
+  reply/thread support for voice sends (#27)
 - Space settings hub with Matrix profile (name, topic, icon), join rule,
   directory publish, Discord-like custom roles, Cinny/Sable **Permissions**
   tab, member assignment, Cinny-style member groups in the space sidebar,

@@ -285,12 +285,25 @@ interface ImageInfo {
   h?: number
 }
 
+interface AudioInfo {
+  mimetype: string
+  size: number
+  duration?: number
+}
+
 interface MessageReplyOptions {
   eventId: string
 }
 
 /** Options for {@link sendMessage}; legacy shape `{ eventId }` is still reply-only */
 export interface SendTextMessageOptions {
+  replyTo?: MessageReplyOptions
+  threadRootEventId?: string
+}
+
+/** Options for {@link sendAudioMessage} */
+export interface SendAudioMessageOptions {
+  durationMs?: number
   replyTo?: MessageReplyOptions
   threadRootEventId?: string
 }
@@ -305,6 +318,27 @@ function normalizeSendTextOptions(
     return options as SendTextMessageOptions
   }
   return { replyTo: options as MessageReplyOptions }
+}
+
+function applyMessageRelations(
+  content: Record<string, unknown>,
+  options?: SendTextMessageOptions,
+): void {
+  const normalized = normalizeSendTextOptions(options)
+  const threadRootId = normalized.threadRootEventId
+  const replyEventId = normalized.replyTo?.eventId
+  if (threadRootId) {
+    content['m.relates_to'] = buildThreadRelatesTo({
+      threadRootEventId: threadRootId,
+      inReplyToEventId: replyEventId,
+    })
+  } else if (replyEventId) {
+    content['m.relates_to'] = {
+      'm.in_reply_to': {
+        event_id: replyEventId,
+      },
+    }
+  }
 }
 
 interface ReactionToggleOptions {
@@ -636,6 +670,20 @@ function getImageInfo(imageFile: Blob, dimensions: { w?: number; h?: number }): 
     size: imageFile.size,
     ...dimensions
   }
+}
+
+function getAudioInfo(
+  audioFile: Blob,
+  durationMs?: number,
+): AudioInfo {
+  const info: AudioInfo = {
+    mimetype: audioFile.type || 'application/octet-stream',
+    size: audioFile.size,
+  }
+  if (typeof durationMs === 'number' && durationMs > 0) {
+    info.duration = Math.round(durationMs)
+  }
+  return info
 }
 
 function isRoomEncrypted(room: sdk.Room): boolean {
@@ -1139,21 +1187,7 @@ export function useMatrixClient() {
       body,
     }
 
-    const threadRootId = normalized.threadRootEventId
-    const replyEventId = normalized.replyTo?.eventId
-
-    if (threadRootId) {
-      content['m.relates_to'] = buildThreadRelatesTo({
-        threadRootEventId: threadRootId,
-        inReplyToEventId: replyEventId,
-      })
-    } else if (replyEventId) {
-      content['m.relates_to'] = {
-        'm.in_reply_to': {
-          event_id: replyEventId,
-        },
-      }
-    }
+    applyMessageRelations(content, normalized)
 
     await client.value.sendEvent(
       roomId,
@@ -1242,6 +1276,77 @@ export function useMatrixClient() {
       body: fileName,
       info: imageInfo,
       url: mxcUrl
+    })
+  }
+
+  async function sendAudioMessage(
+    roomId: string,
+    audioFile: File | Blob,
+    fileName = 'voice-message',
+    options?: SendAudioMessageOptions,
+  ): Promise<void> {
+    const matrixClient = client.value
+    if (!matrixClient) {
+      throw new Error('Not logged in')
+    }
+    const mimetype = audioFile.type || ''
+    if (!mimetype.startsWith('audio/')) {
+      throw new Error('Only audio uploads are supported')
+    }
+    const room = matrixClient.getRoom(roomId)
+    if (!room) {
+      throw new Error('Room not found')
+    }
+    const audioInfo = getAudioInfo(audioFile, options?.durationMs)
+    const encryptedRoom = isRoomEncrypted(room)
+    const relationOptions: SendTextMessageOptions = {
+      replyTo: options?.replyTo,
+      threadRootEventId: options?.threadRootEventId,
+    }
+
+    const voiceContentBase: Record<string, unknown> = {
+      msgtype: MsgType.Audio,
+      body: fileName,
+      info: audioInfo,
+      'org.matrix.msc3245.voice': {},
+    }
+    applyMessageRelations(voiceContentBase, relationOptions)
+
+    if (encryptedRoom) {
+      const cryptoReady = await ensureCryptoReady()
+      if (!cryptoReady) {
+        throw new Error('Encryption is not ready for media upload')
+      }
+      const plaintextData = await audioFile.arrayBuffer()
+      const encryptedResult = await encryptAttachmentData(plaintextData)
+      const encryptedBlob = new Blob(
+        [encryptedResult.encryptedData],
+        { type: 'application/octet-stream' }
+      )
+      const uploadResponse = await matrixClient.uploadContent(
+        encryptedBlob,
+        { type: 'application/octet-stream', includeFilename: true }
+      )
+      const mxcUrl = extractMxcUrl(uploadResponse)
+      const encryptedFile: MatrixEncryptedFile = {
+        ...encryptedResult.encryptedFile,
+        url: mxcUrl
+      }
+      await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
+        ...voiceContentBase,
+        file: encryptedFile,
+      })
+      return
+    }
+
+    const uploadResponse = await matrixClient.uploadContent(
+      audioFile,
+      { type: audioInfo.mimetype, includeFilename: true }
+    )
+    const mxcUrl = extractMxcUrl(uploadResponse)
+    await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
+      ...voiceContentBase,
+      url: mxcUrl,
     })
   }
 
@@ -1799,6 +1904,7 @@ export function useMatrixClient() {
     sendMessage,
     sendEditMessage,
     sendImageMessage,
+    sendAudioMessage,
     sendReaction,
     redactEvent,
     toggleReaction,

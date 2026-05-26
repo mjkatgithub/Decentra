@@ -17,6 +17,7 @@ const { translateText } = useAppI18n()
 
 const isImageReply = () => props.replyTo.msgtype === 'm.image'
 const isVideoReply = () => props.replyTo.msgtype === 'm.video'
+const isAudioReply = () => props.replyTo.msgtype === 'm.audio'
 const showMediaThumb = () =>
   Boolean(props.replyTo.media) && (isImageReply() || isVideoReply())
 
@@ -101,7 +102,10 @@ function onKeydown(keyEvent: KeyboardEvent) {
           v-if="!showMediaThumb() || replyTo.body"
           class="truncate"
         >
-          <template v-if="isVideoReply() && !showMediaThumb()">
+          <template v-if="isAudioReply()">
+            {{ translateText('chat.replyVoice') }}
+          </template>
+          <template v-else-if="isVideoReply() && !showMediaThumb()">
             {{ translateText('chat.replyVideo') }}
           </template>
           <template v-else>

@@ -26,6 +26,7 @@ import {
   type ShortcodeSuggestion,
 } from '~/utils/composerEmoji'
 import { createComposerTypingNotifier } from '~/utils/composerTypingNotifier'
+import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
 
 const message = ref('')
 const loading = ref(false)
@@ -64,8 +65,11 @@ const {
   sendMessage,
   sendEditMessage,
   sendImageMessage,
+  sendAudioMessage,
   sendRoomTyping,
 } = useMatrixClient()
+
+const voiceRecorder = useVoiceRecorder()
 
 const typingNotifier = createComposerTypingNotifier({
   getRoomId: () => props.roomId,
@@ -121,6 +125,54 @@ watch(
 )
 
 const autocompleteOpen = computed(() => suggestions.value.length > 0)
+
+const voiceComposerActive = computed(() => {
+  return voiceRecorder.phase.value !== 'idle' &&
+    voiceRecorder.phase.value !== 'error'
+})
+
+const voiceErrorMessage = computed(() => {
+  const voiceError = voiceRecorder.error.value
+  if (!voiceError) {
+    return ''
+  }
+  switch (voiceError.code) {
+    case 'permissionDenied':
+      return translateText('chat.microphonePermissionDenied')
+    case 'recordingFailed':
+      return translateText('chat.recordingFailed')
+    case 'uploadFailed':
+      return translateText('chat.voiceUploadFailed')
+    case 'unsupported':
+      return translateText('chat.voiceRecordingUnsupported')
+    default:
+      return translateText('chat.recordingFailed')
+  }
+})
+
+function formatVoiceElapsed(elapsedMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+}
+
+function buildVoiceSendOptions(durationMs?: number) {
+  const options: {
+    durationMs?: number
+    replyTo?: { eventId: string }
+    threadRootEventId?: string
+  } = { durationMs }
+  if (props.threadRootEventId) {
+    options.threadRootEventId = props.threadRootEventId
+    if (props.replyTo?.eventId) {
+      options.replyTo = { eventId: props.replyTo.eventId }
+    }
+  } else if (props.replyTo?.eventId) {
+    options.replyTo = { eventId: props.replyTo.eventId }
+  }
+  return options
+}
 
 watch(
   () => props.editTo,
@@ -387,6 +439,49 @@ async function handleImageSend(imageFile: File | Blob, fileName: string) {
   }
 }
 
+async function handleVoiceSend() {
+  if (!props.roomId || props.disabled || loading.value) {
+    return
+  }
+  const recordedBlob = voiceRecorder.previewBlob.value
+  if (!recordedBlob) {
+    return
+  }
+  typingNotifier.notifyStopped()
+  voiceRecorder.markSending()
+  loading.value = true
+  try {
+    await sendAudioMessage(
+      props.roomId,
+      recordedBlob,
+      voiceRecorder.getPreviewFileName(),
+      buildVoiceSendOptions(voiceRecorder.previewDurationMs.value),
+    )
+    voiceRecorder.finishSending()
+    emit('send', '')
+    if (props.replyTo) {
+      emit('cancelReply')
+    }
+  } catch (thrownError) {
+    console.error('Failed to send voice message', thrownError)
+    voiceRecorder.markUploadFailed()
+  } finally {
+    loading.value = false
+  }
+}
+
+async function startVoiceRecording() {
+  if (!props.roomId || props.disabled || loading.value || props.editTo) {
+    return
+  }
+  typingNotifier.notifyStopped()
+  await voiceRecorder.beginRecording()
+}
+
+function cancelVoiceRecording() {
+  voiceRecorder.cancelRecording()
+}
+
 async function onFileChange(event: Event) {
   const target = event.target as HTMLInputElement
   const selectedFile = target.files?.[0]
@@ -476,6 +571,112 @@ async function onPaste(event: ClipboardEvent) {
         </UButton>
       </div>
     </div>
+    <div
+      v-if="voiceErrorMessage"
+      class="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2
+             text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40
+             dark:text-red-200"
+      data-testid="voice-recorder-error"
+    >
+      {{ voiceErrorMessage }}
+      <UButton
+        type="button"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        class="ml-2"
+        @click="voiceRecorder.cancelRecording()"
+      >
+        {{ translateText('chat.dismissVoiceError') }}
+      </UButton>
+    </div>
+    <div
+      v-if="voiceRecorder.isRecordingActive.value"
+      class="mb-3 flex flex-wrap items-center gap-2 rounded-md border
+             border-gray-200 bg-gray-50 px-3 py-2 dark:border-gray-700
+             dark:bg-gray-900"
+      data-testid="voice-recording-bar"
+    >
+      <span class="text-xs font-medium text-red-600 dark:text-red-400">
+        {{ translateText('chat.recording') }}
+        {{ formatVoiceElapsed(voiceRecorder.elapsedMs.value) }}
+      </span>
+      <UButton
+        v-if="voiceRecorder.canPause.value"
+        type="button"
+        size="xs"
+        color="neutral"
+        variant="soft"
+        data-testid="voice-pause-button"
+        @click="voiceRecorder.phase.value === 'paused'
+          ? voiceRecorder.resumeRecording()
+          : voiceRecorder.pauseRecording()"
+      >
+        {{
+          voiceRecorder.phase.value === 'paused'
+            ? translateText('chat.resumeRecording')
+            : translateText('chat.pauseRecording')
+        }}
+      </UButton>
+      <UButton
+        type="button"
+        size="xs"
+        color="primary"
+        data-testid="voice-stop-button"
+        @click="voiceRecorder.stopRecording()"
+      >
+        {{ translateText('chat.stopRecording') }}
+      </UButton>
+      <UButton
+        type="button"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        data-testid="voice-cancel-button"
+        @click="cancelVoiceRecording()"
+      >
+        {{ translateText('chat.cancelRecording') }}
+      </UButton>
+    </div>
+    <div
+      v-else-if="voiceRecorder.phase.value === 'preview'"
+      class="mb-3 space-y-2 rounded-md border border-gray-200 bg-gray-50 px-3
+             py-2 dark:border-gray-700 dark:bg-gray-900"
+      data-testid="voice-preview-bar"
+    >
+      <p class="text-xs font-medium text-gray-600 dark:text-gray-300">
+        {{ translateText('chat.voicePreview') }}
+      </p>
+      <audio
+        v-if="voiceRecorder.previewUrl.value"
+        :src="voiceRecorder.previewUrl.value"
+        controls
+        class="w-full"
+        data-testid="voice-preview-audio"
+      />
+      <div class="flex flex-wrap gap-2">
+        <UButton
+          type="button"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          data-testid="voice-discard-button"
+          @click="voiceRecorder.discardPreview()"
+        >
+          {{ translateText('chat.discardVoice') }}
+        </UButton>
+        <UButton
+          type="button"
+          size="xs"
+          color="primary"
+          :loading="loading"
+          data-testid="voice-send-button"
+          @click="handleVoiceSend()"
+        >
+          {{ translateText('chat.sendVoice') }}
+        </UButton>
+      </div>
+    </div>
     <form
       ref="pickerRoot"
       class="relative flex gap-2"
@@ -497,6 +698,17 @@ async function onPaste(event: ClipboardEvent) {
         :disabled="disabled || !roomId || loading || Boolean(editTo)"
         :aria-label="translateText('chat.sendImage')"
         @click="openFilePicker"
+      />
+      <UButton
+        type="button"
+        icon="i-lucide-mic"
+        color="neutral"
+        variant="soft"
+        :disabled="disabled || !roomId || loading || Boolean(editTo)
+          || voiceComposerActive"
+        :aria-label="translateText('chat.recordVoice')"
+        data-testid="composer-voice-button"
+        @click="startVoiceRecording()"
       />
       <UButton
         type="button"
@@ -552,7 +764,7 @@ async function onPaste(event: ClipboardEvent) {
           v-model="message"
           :placeholder="translateText('chat.messagePlaceholder')"
           class="w-full"
-          :disabled="disabled || !roomId || loading"
+          :disabled="disabled || !roomId || loading || voiceComposerActive"
           @input="onMessageInput"
           @keydown="onMessageKeydown"
           @paste="onPaste"
@@ -572,7 +784,7 @@ async function onPaste(event: ClipboardEvent) {
       <UButton
         type="submit"
         :loading="loading"
-        :disabled="!message.trim() || !roomId || disabled"
+        :disabled="!message.trim() || !roomId || disabled || voiceComposerActive"
       >
         {{ translateText('chat.sendMessage') }}
       </UButton>

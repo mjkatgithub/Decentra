@@ -144,6 +144,46 @@ describe('chatTimeline helpers', () => {
     media.mimetype!.should.equal('image/png')
   })
 
+  it('maps m.audio messages with mxcUrl and duration', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_audio_1',
+            getContent: () => ({
+              body: 'voice.webm',
+              msgtype: 'm.audio',
+              url: 'mxc://example.org/audio123',
+              info: { mimetype: 'audio/webm', duration: 4200, size: 100 }
+            }),
+            isDecryptionFailure: () => false
+          }
+        ]
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@bob:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: (mxc: string) => `http://server/media/${mxc.split('//')[1]}`,
+      buildDeletedMessageText,
+      buildNoticeText: () => ''
+    })
+
+    messages.length.should.equal(1)
+    const media = messages[0]!.media!
+    media.url.should.equal('http://server/media/example.org/audio123')
+    media.mxcUrl.should.equal('mxc://example.org/audio123')
+    media.mimetype!.should.equal('audio/webm')
+    media.info?.duration!.should.equal(4200)
+  })
+
   it('keeps image url empty for gif media to force blob fetch', () => {
     const mockRoom = {
       getLiveTimeline: () => ({
