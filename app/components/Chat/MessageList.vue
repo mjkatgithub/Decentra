@@ -24,6 +24,7 @@ interface MediaInfo {
     w?: number;
     h?: number;
     size?: number;
+    duration?: number;
   };
 }
 
@@ -124,6 +125,9 @@ function inferMessageMsgtype(msg: MessageItem): ChatTimelineReplyMsgtype {
   }
   if (msg.media.mimetype?.startsWith("video/")) {
     return "m.video";
+  }
+  if (msg.media.mimetype?.startsWith("audio/")) {
+    return "m.audio";
   }
   return "m.image";
 }

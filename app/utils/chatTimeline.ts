@@ -14,6 +14,7 @@ export interface ChatTimelineMedia {
     w?: number
     h?: number
     size?: number
+    duration?: number
   }
 }
 
@@ -63,7 +64,11 @@ export interface ChatTimelineReaction {
   ownReactionEventIds: string[]
 }
 
-export type ChatTimelineReplyMsgtype = 'm.text' | 'm.image' | 'm.video'
+export type ChatTimelineReplyMsgtype =
+  | 'm.text'
+  | 'm.image'
+  | 'm.video'
+  | 'm.audio'
 
 export interface ChatTimelineReply {
   eventId: string
@@ -1079,6 +1084,19 @@ export function buildTimelineMediaFromContent(input: {
         ? content.info?.thumbnail_file
         : (isEncryptedMedia ? content.file : undefined),
       info: content.info?.thumbnail_info ?? content.info,
+    }
+  }
+
+  if (msgtype === 'm.audio' && mxcUrl) {
+    return {
+      url: isEncryptedMedia
+        ? ''
+        : (getMediaUrl(mxcUrl, mimetype, body) || mxcUrl),
+      mxcUrl,
+      mimetype,
+      isEncrypted: isEncryptedMedia,
+      encryptionInfo: isEncryptedMedia ? content.file : undefined,
+      info: content.info,
     }
   }
 

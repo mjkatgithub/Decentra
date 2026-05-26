@@ -20,12 +20,23 @@ const englishMessages: Record<string, string> = {
   'chat.noMessages': 'No messages yet',
   'chat.loadOlder': 'Load older',
   'chat.sendImage': 'Send image',
+  'chat.recordVoice': 'Record voice message',
+  'chat.recording': 'Recording',
+  'chat.voicePreview': 'Voice preview',
+  'chat.sendVoice': 'Send voice',
+  'chat.microphonePermissionDenied': 'Microphone access was denied.',
+  'chat.replyVoice': 'Voice message',
+  'chat.voicePlay': 'Play voice message',
 }
 
 const globalScope = globalThis as Record<string, unknown>
 globalScope.ref = ref
 globalScope.computed = computed
 globalScope.watch = watch
+globalScope.useState = <T>(key: string, init: () => T) => {
+  const state = ref(init())
+  return state
+}
 
 globalScope.useAppI18n = () => ({
   locale: { value: 'en' },

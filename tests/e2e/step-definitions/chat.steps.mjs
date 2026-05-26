@@ -531,3 +531,95 @@ Then(
     })
   }
 )
+
+When('voice recording APIs are mocked in the browser', async function () {
+  await this.page.addInitScript(() => {
+    class MockMediaRecorder {
+      constructor(stream, options) {
+        this.stream = stream
+        this.mimeType = options?.mimeType || 'audio/webm'
+        this.state = 'inactive'
+        this.ondataavailable = null
+        this.onstop = null
+        this.onerror = null
+      }
+
+      start() {
+        this.state = 'recording'
+        setTimeout(() => {
+          if (typeof this.ondataavailable === 'function') {
+            this.ondataavailable({
+              data: new Blob(['mock-audio-data'], { type: this.mimeType })
+            })
+          }
+        }, 0)
+      }
+
+      stop() {
+        this.state = 'inactive'
+        if (typeof this.onstop === 'function') {
+          this.onstop()
+        }
+      }
+
+      pause() {
+        this.state = 'paused'
+      }
+
+      resume() {
+        this.state = 'recording'
+      }
+
+      static isTypeSupported() {
+        return true
+      }
+    }
+
+    navigator.mediaDevices.getUserMedia = async () => ({
+      getTracks: () => [{ stop: () => undefined }]
+    })
+    window.MediaRecorder = MockMediaRecorder
+  })
+})
+
+When('voice recording permission is denied in the browser', async function () {
+  await this.page.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () => {
+      throw new DOMException('Permission denied', 'NotAllowedError')
+    }
+  })
+})
+
+Then(
+  'I should see voice message player for {string}',
+  async function (voiceLabel) {
+    const voicePlayer = this.page
+      .locator('[data-testid="voice-message-player"]')
+      .filter({ hasText: voiceLabel })
+      .first()
+    await expect(voicePlayer).toBeVisible({ timeout: 20000 })
+  }
+)
+
+When('I start voice recording from the composer', async function () {
+  const voiceButton = this.page.getByTestId('composer-voice-button').last()
+  await expect(voiceButton).toBeVisible({ timeout: 15000 })
+  await voiceButton.click()
+})
+
+When('I record preview and send a voice message', async function () {
+  await this.page.getByTestId('composer-voice-button').last().click()
+  const recordingBar = this.page.getByTestId('voice-recording-bar').last()
+  await expect(recordingBar).toBeVisible({ timeout: 10000 })
+  await this.page.getByTestId('voice-stop-button').last().click()
+  const previewBar = this.page.getByTestId('voice-preview-bar').last()
+  await expect(previewBar).toBeVisible({ timeout: 10000 })
+  await this.page.getByTestId('voice-send-button').last().click()
+})
+
+Then('I should see voice recording permission denied feedback', async function () {
+  await expect(this.page.getByTestId('voice-recorder-error').last())
+    .toBeVisible({ timeout: 15000 })
+  await expect(this.page.getByTestId('voice-recorder-error').last())
+    .toContainText(/Microphone access was denied|Mikrofonzugriff verweigert/i)
+})

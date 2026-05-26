@@ -119,6 +119,27 @@ async function uploadImage(accessToken) {
   return body.content_uri
 }
 
+async function uploadAudio(accessToken) {
+  const audioBytes = Buffer.from('mock-audio-bytes-for-e2e', 'utf8')
+  const uploadResponse = await fetch(
+    apiUrl('/_matrix/media/v3/upload?filename=e2e-seeded-voice.webm'),
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'audio/webm'
+      },
+      body: audioBytes
+    }
+  )
+  const bodyText = await uploadResponse.text()
+  const body = bodyText ? JSON.parse(bodyText) : {}
+  if (!uploadResponse.ok || !body?.content_uri) {
+    throw new Error('Failed to upload seeded audio')
+  }
+  return body.content_uri
+}
+
 async function main() {
   const primarySession = await ensureUser(primaryLocalpart, primaryPassword)
   const secondarySession = await ensureUser(secondaryLocalpart, secondaryPassword)
@@ -215,6 +236,14 @@ async function main() {
     body: 'E2E_SEED_IMAGE',
     info: { mimetype: 'image/png', size: 68, w: 1, h: 1 },
     url: uploadedMxcUrl
+  })
+  const uploadedAudioMxcUrl = await uploadAudio(primarySession.access_token)
+  await sendMessage(primarySession.access_token, roomId, 'seed-voice-1', {
+    msgtype: 'm.audio',
+    body: 'E2E_SEED_VOICE',
+    info: { mimetype: 'audio/webm', duration: 1000, size: 28 },
+    'org.matrix.msc3245.voice': {},
+    url: uploadedAudioMxcUrl
   })
   await sendMessage(primarySession.access_token, roomId, 'seed-reply-to-image', {
     msgtype: 'm.text',

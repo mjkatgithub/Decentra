@@ -47,6 +47,28 @@ Feature: Chat
     Then the lightbox should not be visible
     And I should see image fallback label "E2E_INVALID_IMAGE_FALLBACK"
 
+  Scenario: Voice message playback in timeline
+    When I open the login page
+    And I sign in with secondary configured credentials
+    And I open the seeded test room
+    Then I should see voice message player for "E2E_SEED_VOICE"
+
+  Scenario: Record preview and send voice message
+    When voice recording APIs are mocked in the browser
+    And I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    When I record preview and send a voice message
+    Then I should see voice message player for "voice-message.webm"
+
+  Scenario: Voice recording permission denied feedback
+    When voice recording permission is denied in the browser
+    And I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    When I start voice recording from the composer
+    Then I should see voice recording permission denied feedback
+
   Scenario: Thread sidebar open post and persist after reload
     When I open the login page
     And I sign in with configured credentials
