@@ -45,18 +45,21 @@ const UInputStub = {
   props: ['modelValue', 'placeholder', 'disabled'],
   emits: ['update:modelValue', 'paste', 'keydown', 'input'],
   template: `
-    <input
-      type="text"
-      :value="modelValue"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      @input="
-        $emit('update:modelValue', $event.target.value);
-        $emit('input', $event)
-      "
-      @paste="$emit('paste', $event)"
-      @keydown="$emit('keydown', $event)"
-    >
+    <div class="u-input-stub">
+      <input
+        type="text"
+        :value="modelValue"
+        :placeholder="placeholder"
+        :disabled="disabled"
+        @input="
+          $emit('update:modelValue', $event.target.value);
+          $emit('input', $event)
+        "
+        @paste="$emit('paste', $event)"
+        @keydown="$emit('keydown', $event)"
+      >
+      <slot name="trailing" />
+    </div>
   `
 }
 
@@ -107,8 +110,9 @@ function mountInput(
       stubs: {
         UInput: UInputStub,
         UButton: UButtonStub,
-        ChatReactionEmojiPicker: ChatReactionEmojiPickerStub
-      }
+        UIcon: true,
+        ChatReactionEmojiPicker: ChatReactionEmojiPickerStub,
+      },
     }
   })
 }
@@ -405,6 +409,24 @@ describe('MessageInput', () => {
     const wrapper = mountInput()
     await wrapper.get('[data-testid="composer-voice-button"]').trigger('click')
     beginRecording.mock.calls.length.should.equal(1)
+  })
+
+  it('shows send icon when typing and hides voice button', async () => {
+    const wrapper = mountInput()
+    wrapper.find('[data-testid="composer-send-button"]').exists().should.equal(
+      false
+    )
+    wrapper.find('[data-testid="composer-voice-button"]').exists().should.equal(
+      true
+    )
+    await wrapper.find('input[type="text"]').setValue('hello')
+    await wrapper.vm.$nextTick()
+    wrapper.find('[data-testid="composer-send-button"]').exists().should.equal(
+      true
+    )
+    wrapper.find('[data-testid="composer-voice-button"]').exists().should.equal(
+      false
+    )
   })
 
   it('sends voice preview with reply relation', async () => {

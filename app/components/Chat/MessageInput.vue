@@ -131,6 +131,36 @@ const voiceComposerActive = computed(() => {
     voiceRecorder.phase.value !== 'error'
 })
 
+const composerHasText = computed(() => message.value.trim().length > 0)
+
+const showVoiceAction = computed(() => {
+  return (
+    !composerHasText.value &&
+    !props.editTo &&
+    !voiceComposerActive.value
+  )
+})
+
+const showSendAction = computed(() => {
+  return composerHasText.value && !voiceComposerActive.value
+})
+
+const composerInlineIconButtonClass =
+  'inline-flex shrink-0 items-center justify-center rounded-md ' +
+  'border-0 bg-transparent p-1.5 shadow-none text-dimmed ' +
+  'hover:bg-transparent hover:text-default ' +
+  'focus-visible:outline-none focus-visible:ring-2 ' +
+  'focus-visible:ring-primary/40 disabled:cursor-not-allowed ' +
+  'disabled:opacity-50'
+
+const composerActionButtonClass =
+  'inline-flex size-9 shrink-0 items-center justify-center rounded-md ' +
+  'border-0 bg-transparent text-dimmed transition ' +
+  'hover:bg-gray-100 hover:text-default dark:hover:bg-gray-800 ' +
+  'focus-visible:outline-none focus-visible:ring-2 ' +
+  'focus-visible:ring-primary/40 disabled:cursor-not-allowed ' +
+  'disabled:opacity-50'
+
 const voiceErrorMessage = computed(() => {
   const voiceError = voiceRecorder.error.value
   if (!voiceError) {
@@ -699,28 +729,6 @@ async function onPaste(event: ClipboardEvent) {
         :aria-label="translateText('chat.sendImage')"
         @click="openFilePicker"
       />
-      <UButton
-        type="button"
-        icon="i-lucide-mic"
-        color="neutral"
-        variant="soft"
-        :disabled="disabled || !roomId || loading || Boolean(editTo)
-          || voiceComposerActive"
-        :aria-label="translateText('chat.recordVoice')"
-        data-testid="composer-voice-button"
-        @click="startVoiceRecording()"
-      />
-      <UButton
-        type="button"
-        icon="i-lucide-smile"
-        color="neutral"
-        variant="soft"
-        :disabled="disabled || !roomId || loading"
-        :aria-label="translateText('chat.insertEmoji')"
-        :aria-expanded="pickerOpen"
-        data-testid="composer-emoji-button"
-        @click="togglePicker"
-      />
       <div class="relative min-w-0 flex-1">
         <ul
           v-if="autocompleteOpen"
@@ -768,26 +776,61 @@ async function onPaste(event: ClipboardEvent) {
           @input="onMessageInput"
           @keydown="onMessageKeydown"
           @paste="onPaste"
-        />
+        >
+          <template #trailing>
+            <button
+              type="button"
+              :class="composerInlineIconButtonClass"
+              :disabled="disabled || !roomId || loading"
+              :aria-label="translateText('chat.insertEmoji')"
+              :aria-expanded="pickerOpen"
+              data-testid="composer-emoji-button"
+              @click.stop="togglePicker"
+            >
+              <UIcon name="i-lucide-smile" class="size-5 shrink-0" />
+            </button>
+          </template>
+        </UInput>
+        <div
+          v-if="pickerOpen"
+          data-testid="composer-emoji-picker"
+          class="absolute bottom-full right-0 z-20 mb-1"
+          @click.stop
+        >
+          <ChatReactionEmojiPicker
+            :frequent-scope-key="frequentScopeKey"
+            @select="onPickerSelect"
+          />
+        </div>
       </div>
-      <div
-        v-if="pickerOpen"
-        data-testid="composer-emoji-picker"
-        class="absolute bottom-full right-0 z-20 mb-1"
-        @click.stop
+      <button
+        v-if="showVoiceAction"
+        type="button"
+        :class="composerActionButtonClass"
+        :disabled="disabled || !roomId || loading"
+        :aria-label="translateText('chat.recordVoice')"
+        data-testid="composer-voice-button"
+        @click="startVoiceRecording()"
       >
-        <ChatReactionEmojiPicker
-          :frequent-scope-key="frequentScopeKey"
-          @select="onPickerSelect"
-        />
-      </div>
-      <UButton
+        <UIcon name="i-lucide-mic" class="size-5 shrink-0" />
+      </button>
+      <button
+        v-else-if="showSendAction"
         type="submit"
-        :loading="loading"
-        :disabled="!message.trim() || !roomId || disabled || voiceComposerActive"
+        :class="[
+          composerActionButtonClass,
+          'text-primary-500 hover:text-primary-600 dark:text-primary-400',
+        ]"
+        :disabled="!roomId || disabled || loading"
+        :aria-label="translateText('chat.sendMessage')"
+        data-testid="composer-send-button"
       >
-        {{ translateText('chat.sendMessage') }}
-      </UButton>
+        <UIcon
+          name="i-lucide-send"
+          class="size-5 shrink-0"
+          :class="loading ? 'opacity-50' : ''"
+        />
+      </button>
     </form>
   </div>
 </template>
