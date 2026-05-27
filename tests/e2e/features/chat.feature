@@ -15,6 +15,12 @@ Feature: Chat
     When I open the space settings page for "space-demo"
     Then I am redirected to the root page
 
+  Scenario: Create space from rail appears in navigation
+    When I open the login page
+    And I sign in with configured credentials
+    And I create a new space with a unique name
+    Then I should see that space in the space rail
+
   Scenario: Reload on chat with valid session keeps chat
     When I open the login page
     And I sign in with configured credentials

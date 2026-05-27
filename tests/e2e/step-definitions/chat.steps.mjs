@@ -623,3 +623,31 @@ Then('I should see voice recording permission denied feedback', async function (
   await expect(this.page.getByTestId('voice-recorder-error').last())
     .toContainText(/Microphone access was denied|Mikrofonzugriff verweigert/i)
 })
+
+When('I create a new space with a unique name', async function () {
+  const uniqueName = `E2E_CREATE_SPACE_${Date.now()}`
+  this.lastCreatedSpaceName = uniqueName
+  await this.page.goto(`${BASE_URL}/chat`)
+  await expect(this.page).toHaveURL(/\/chat/, { timeout: 15000 })
+  const createSpaceButton = this.page.getByRole('button', {
+    name: /Create space|Space erstellen/i,
+  })
+  await expect(createSpaceButton).toBeVisible({ timeout: 15000 })
+  await createSpaceButton.click()
+  await expect(this.page).toHaveURL(/\/spaces\/new/, { timeout: 15000 })
+  await this.page.getByLabel(/Space name|Space-Name/i).fill(uniqueName)
+  await this.page.getByRole('button', {
+    name: /Create space|Space erstellen/i,
+  }).click()
+  await expect(this.page).toHaveURL(/\/chat/, { timeout: 30000 })
+})
+
+Then('I should see that space in the space rail', async function () {
+  const spaceName = this.lastCreatedSpaceName
+  if (!spaceName) {
+    throw new Error('Missing lastCreatedSpaceName from previous step')
+  }
+  await expect(
+    this.page.getByRole('button', { name: spaceName }),
+  ).toBeVisible({ timeout: 30000 })
+})

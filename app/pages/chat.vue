@@ -1792,7 +1792,7 @@ function toggleSpaceRail() {
   spaceRailExpanded.value = !spaceRailExpanded.value;
 }
 
-function openCreateSpaceStub() {
+function openCreateSpace() {
   navigateTo("/spaces/new");
 }
 
@@ -2150,7 +2150,7 @@ watch(
           :expanded="spaceRailExpanded"
           @select-space="selectSpace"
           @toggle-expanded="toggleSpaceRail"
-          @create-space="openCreateSpaceStub"
+          @create-space="openCreateSpace"
         />
         <ChatRoomCategoryList
           :selected-space-name="selectedSpaceName"

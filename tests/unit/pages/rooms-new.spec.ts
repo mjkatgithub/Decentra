@@ -5,6 +5,7 @@ import RoomsNewPage from '~/pages/rooms/new.vue'
 
 const navigateToMock = vi.fn(async () => undefined)
 const createGroupRoomMock = vi.fn(async () => '!created:example.org')
+const createMatrixSpaceMock = vi.fn(async () => '!created-subspace:example.org')
 const searchUsersDirectoryMock = vi.fn(async () => [])
 
 vi.mock('~/composables/useAppI18n', () => {
@@ -20,7 +21,7 @@ vi.mock('~/composables/useMatrixClient', () => {
     useMatrixClient: () => ({
       userId: ref('@self:example.org'),
       createGroupRoom: createGroupRoomMock,
-      createMatrixSpace: vi.fn(),
+      createMatrixSpace: createMatrixSpaceMock,
       searchUsersDirectory: searchUsersDirectoryMock,
     }),
   }
@@ -127,5 +128,51 @@ describe('rooms/new page', () => {
         inviteUserIds: ['@guest:example.org'],
       }),
     )
+  })
+
+  it('creates subspace and navigates with room and root query', async () => {
+    vi.stubGlobal('useRoute', () => ({
+      query: {
+        kind: 'space',
+        parent: '!parent:example.org',
+        root: '!parent:example.org',
+      },
+    }))
+    const wrapper = mount(RoomsNewPage, {
+      global: {
+        stubs: {
+          UCard: UCardStub,
+          UFormField: UFormFieldStub,
+          UInput: UInputStub,
+          UTextarea: UTextareaStub,
+          UAlert: UAlertStub,
+          UButton: UButtonStub,
+        },
+      },
+    })
+    const inputs = wrapper.findAll('input')
+    await inputs[0].setValue('Nested Space')
+    const submitButton = wrapper
+      .findAll('button')
+      .find((button) => button.text() === 'rooms.createSpaceSubmit')
+    expect(submitButton).toBeDefined()
+    await submitButton!.trigger('click')
+    await Promise.resolve()
+
+    expect(createMatrixSpaceMock).toHaveBeenCalledWith({
+      name: 'Nested Space',
+      topic: '',
+      visibility: 'private',
+      parentSpaceId: '!parent:example.org',
+    })
+    expect(createGroupRoomMock).not.toHaveBeenCalled()
+    expect(navigateToMock).toHaveBeenCalledWith({
+      path: '/chat',
+      query: {
+        room: '!created-subspace:example.org',
+        root: '!parent:example.org',
+      },
+    })
+    vi.stubGlobal('useRoute', () => ({ query: {} }))
   })
 })
