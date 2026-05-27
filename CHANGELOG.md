@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Matrix space creation from the UI: `/spaces/new` form, space-rail entry,
+  `createMatrixSpace` API wiring, navigation to the new space in chat,
+  and subspace create via `/rooms/new?kind=space` (#22)
 - Voice message recording in chat: microphone capture, preview, upload,
   Matrix `m.audio` send with MSC3245 voice marker, timeline playback, and
   reply/thread support for voice sends (#27)
