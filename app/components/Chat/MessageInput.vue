@@ -187,12 +187,15 @@ function formatVoiceElapsed(elapsedMs: number): string {
   return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
-function buildVoiceSendOptions(durationMs?: number) {
+function buildMessageRelationOptions(durationMs?: number) {
   const options: {
     durationMs?: number
     replyTo?: { eventId: string }
     threadRootEventId?: string
-  } = { durationMs }
+  } = {}
+  if (durationMs !== undefined) {
+    options.durationMs = durationMs
+  }
   if (props.threadRootEventId) {
     options.threadRootEventId = props.threadRootEventId
     if (props.replyTo?.eventId) {
@@ -463,7 +466,15 @@ async function handleImageSend(imageFile: File | Blob, fileName: string) {
   }
   loading.value = true
   try {
-    await sendImageMessage(props.roomId, imageFile, fileName)
+    await sendImageMessage(
+      props.roomId,
+      imageFile,
+      fileName,
+      buildMessageRelationOptions(),
+    )
+    if (props.replyTo) {
+      emit('cancelReply')
+    }
   } finally {
     loading.value = false
   }
@@ -485,7 +496,7 @@ async function handleVoiceSend() {
       props.roomId,
       recordedBlob,
       voiceRecorder.getPreviewFileName(),
-      buildVoiceSendOptions(voiceRecorder.previewDurationMs.value),
+      buildMessageRelationOptions(voiceRecorder.previewDurationMs.value),
     )
     voiceRecorder.finishSending()
     emit('send', '')
@@ -716,6 +727,7 @@ async function onPaste(event: ClipboardEvent) {
         ref="fileInput"
         type="file"
         accept="image/*"
+        data-testid="composer-file-input"
         class="hidden"
         :disabled="disabled || !roomId || loading || Boolean(editTo)"
         @change="onFileChange"

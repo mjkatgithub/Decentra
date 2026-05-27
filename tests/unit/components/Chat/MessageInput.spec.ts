@@ -169,6 +169,76 @@ describe('MessageInput', () => {
     sendImageMessage.mock.calls[0]?.[2].should.equal('picked.png')
   })
 
+  it('sends image with reply relation from file picker', async () => {
+    const sendImageMessage = vi.fn(async () => undefined)
+    const sendMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendImageMessage })
+
+    const wrapper = mountInput({
+      replyTo: {
+        eventId: 'evt-original',
+        senderName: 'Alice',
+        body: 'Original message',
+      }
+    })
+
+    const imageFile = new File(['img-data'], 'picked.png', {
+      type: 'image/png'
+    })
+    const fileInput = wrapper.find('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [imageFile],
+      configurable: true
+    })
+
+    await fileInput.trigger('change')
+
+    sendImageMessage.mock.calls.length.should.equal(1)
+    sendImageMessage.mock.calls[0]?.[3].should.deep.equal({
+      replyTo: { eventId: 'evt-original' },
+    })
+
+    const cancelReplyEvents = wrapper.emitted('cancelReply') || []
+    cancelReplyEvents.length.should.equal(1)
+  })
+
+  it('sends image in thread with threadRootEventId and replyTo', async () => {
+    const sendImageMessage = vi.fn(async () => undefined)
+    const sendMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendMessage, sendImageMessage })
+
+    const wrapper = mountInput({
+      threadRootEventId: '$root-event',
+      replyTo: {
+        eventId: '$in-thread',
+        senderName: 'Bob',
+        body: 'Prior',
+      }
+    })
+
+    const imageFile = new File(['img-data'], 'picked.png', {
+      type: 'image/png'
+    })
+    const fileInput = wrapper.find('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [imageFile],
+      configurable: true
+    })
+
+    await fileInput.trigger('change')
+
+    sendImageMessage.mock.calls.length.should.equal(1)
+    sendImageMessage.mock.calls[0]?.[3].should.deep.equal({
+      threadRootEventId: '$root-event',
+      replyTo: { eventId: '$in-thread' },
+    })
+
+    const cancelReplyEvents = wrapper.emitted('cancelReply') || []
+    cancelReplyEvents.length.should.equal(1)
+  })
+
   it('sends image from clipboard paste', async () => {
     const sendImageMessage = vi.fn(async () => undefined)
     const sendMessage = vi.fn(async () => undefined)

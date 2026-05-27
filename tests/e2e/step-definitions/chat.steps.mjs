@@ -1,5 +1,6 @@
 import { When, Then } from '@cucumber/cucumber'
 import { expect } from '@playwright/test'
+import * as path from 'node:path'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
@@ -166,6 +167,38 @@ When('I send {string} from the message composer', async function (text) {
   await input.fill(text)
   await input.press('Enter')
 })
+
+function composerFileInput(page) {
+  return page.getByTestId('composer-file-input').last()
+}
+
+When(
+  'I upload image {string} in the message composer',
+  async function (imageFileName) {
+    const filePath = path.resolve(
+      process.cwd(),
+      'tests/e2e/fixtures',
+      imageFileName,
+    )
+    const fileInput = composerFileInput(this.page)
+    await expect(fileInput).toBeAttached({ timeout: 15000 })
+    await fileInput.setInputFiles(filePath)
+  }
+)
+
+When(
+  'I upload image {string} in the thread composer',
+  async function (imageFileName) {
+    const filePath = path.resolve(
+      process.cwd(),
+      'tests/e2e/fixtures',
+      imageFileName,
+    )
+    const fileInput = composerFileInput(this.page)
+    await expect(fileInput).toBeAttached({ timeout: 15000 })
+    await fileInput.setInputFiles(filePath)
+  }
+)
 
 function composerInput(page) {
   return page.getByPlaceholder(/Write a message|Nachricht eingeben/i).last()
@@ -442,6 +475,21 @@ Then(
     }).first()
     const thumbnail = replyContainer.locator('.reply-preview img')
     await expect(thumbnail).toBeVisible({ timeout: 15000 })
+  },
+)
+
+Then(
+  'the image message {string} should show reply quote for {string}',
+  async function (imageAltLabel, quotedBodyText) {
+    const messageGroup = this.page.locator('div.group').filter({
+      has: this.page.locator(`img[alt="${imageAltLabel}"]`),
+    }).first()
+
+    const replyQuote = messageGroup.locator('.reply-preview').filter({
+      hasText: quotedBodyText,
+    }).first()
+
+    await expect(replyQuote).toBeVisible({ timeout: 20000 })
   },
 )
 

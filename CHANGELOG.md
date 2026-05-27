@@ -94,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MVP signup page with Matrix registration and user-facing error feedback (#52)
 - Chat image messages with inline preview and lightbox support
 - E2EE image sending support from chat input
+- Image sending preserves reply/thread relations (#96)
 - Media utilities for encrypted media fetch, decrypt, cache, and revoke flows
 - Unit and integration test coverage for media utilities and image timelines
 - Four-column chat layout with responsive sidebars and mobile overlays

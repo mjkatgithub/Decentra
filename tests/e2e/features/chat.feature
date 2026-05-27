@@ -137,6 +137,25 @@ Feature: Chat
     When I click the reply quote on message body "E2E_REPLY_TO_VALID_EVENT"
     Then message body "E2E_SEED_BASE_MESSAGE" should be visible in the timeline
 
+  Scenario: Send image as reply creates image reply
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    And I click reply on message body "E2E_SEED_BASE_MESSAGE"
+    Then I should see the reply composer with preview "E2E_SEED_BASE_MESSAGE"
+    When I upload image "e2e-upload.png" in the message composer
+    Then I should see image preview for "e2e-upload.png"
+    And the image message "e2e-upload.png" should show reply quote for "E2E_SEED_BASE_MESSAGE"
+
+  Scenario: Send image in thread creates thread image
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    And I open the thread on message body "E2E_SEED_BASE_MESSAGE"
+    Then I should see the thread side panel
+    When I upload image "e2e-upload.png" in the thread composer
+    Then I should see image preview for "e2e-upload.png"
+
   Scenario: Unread indicator for inactive channel
     When I open the login page
     And I sign in with configured credentials
