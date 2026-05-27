@@ -860,6 +860,103 @@ describe('useMatrixClient', () => {
     ;(globalThis as Record<string, unknown>).Image = originalImage
   })
 
+  it('sends image message with reply relation for non-encrypted room', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null)
+        }
+      })),
+      uploadContent: vi.fn(async () => ({
+        content_uri: 'mxc://example.org/plain-image'
+      })),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+    const originalImage = (globalThis as Record<string, unknown>).Image
+    ;(globalThis as Record<string, unknown>).Image = undefined
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendImageMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const imageBlob = new Blob(['img-data'], { type: 'image/png' })
+    await sendImageMessage(
+      '!room:example.org',
+      imageBlob,
+      'photo.png',
+      { replyTo: { eventId: '$reply-target' } },
+    )
+
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload.url).toBe('mxc://example.org/plain-image')
+    expect(sendEventPayload['m.relates_to']).to.deep.equal({
+      'm.in_reply_to': { event_id: '$reply-target' },
+    })
+    ;(globalThis as Record<string, unknown>).Image = originalImage
+  })
+
+  it('sends image message with thread relation for non-encrypted room', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null)
+        }
+      })),
+      uploadContent: vi.fn(async () => ({
+        content_uri: 'mxc://example.org/plain-image'
+      })),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+    const originalImage = (globalThis as Record<string, unknown>).Image
+    ;(globalThis as Record<string, unknown>).Image = undefined
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendImageMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const imageBlob = new Blob(['img-data'], { type: 'image/png' })
+    await sendImageMessage(
+      '!room:example.org',
+      imageBlob,
+      'photo.png',
+      {
+        threadRootEventId: '$thread-root',
+        replyTo: { eventId: '$in-thread' },
+      },
+    )
+
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload.url).toBe('mxc://example.org/plain-image')
+    expect(sendEventPayload['m.relates_to']).to.deep.equal({
+      rel_type: 'm.thread',
+      event_id: '$thread-root',
+      'm.in_reply_to': { event_id: '$in-thread' },
+    })
+    ;(globalThis as Record<string, unknown>).Image = originalImage
+  })
+
   it('sends plain audio message with voice marker and duration', async () => {
     const authClient = {
       loginRequest: vi.fn(async () => ({
@@ -1175,6 +1272,54 @@ describe('useMatrixClient', () => {
     expect(sendEventPayload.file.key.alg).toBe('A256CTR')
     expect(sendEventPayload.file.iv.includes('=')).toBe(false)
     expect(sendEventPayload.file.hashes.sha256.includes('=')).toBe(false)
+    ;(globalThis as Record<string, unknown>).Image = originalImage
+  })
+
+  it('sends encrypted image message with reply relation for E2EE room', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getCrypto: vi.fn(() => ({})),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => ({ type: 'm.room.encryption' }))
+        }
+      })),
+      uploadContent: vi.fn(async () => 'mxc://example.org/encrypted-image'),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const originalImage = (globalThis as Record<string, unknown>).Image
+    ;(globalThis as Record<string, unknown>).Image = undefined
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendImageMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const imageBlob = new Blob(['img-data'], { type: 'image/png' })
+    await sendImageMessage(
+      '!room:example.org',
+      imageBlob,
+      'secure.png',
+      { replyTo: { eventId: '$reply-target' } },
+    )
+
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload.msgtype).toBe('m.image')
+    expect(sendEventPayload.body).toBe('secure.png')
+    expect(sendEventPayload['m.relates_to']).to.deep.equal({
+      'm.in_reply_to': { event_id: '$reply-target' },
+    })
+    expect(sendEventPayload.file.url).toBe('mxc://example.org/encrypted-image')
     ;(globalThis as Record<string, unknown>).Image = originalImage
   })
 

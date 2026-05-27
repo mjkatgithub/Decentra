@@ -308,6 +308,11 @@ export interface SendAudioMessageOptions {
   threadRootEventId?: string
 }
 
+export interface SendImageMessageOptions {
+  replyTo?: MessageReplyOptions
+  threadRootEventId?: string
+}
+
 function normalizeSendTextOptions(
   options?: MessageReplyOptions | SendTextMessageOptions,
 ): SendTextMessageOptions {
@@ -1219,7 +1224,8 @@ export function useMatrixClient() {
   async function sendImageMessage(
     roomId: string,
     imageFile: File | Blob,
-    fileName = 'image'
+    fileName = 'image',
+    options?: SendImageMessageOptions,
   ): Promise<void> {
     const matrixClient = client.value
     if (!matrixClient) {
@@ -1236,6 +1242,17 @@ export function useMatrixClient() {
     const dimensions = await readImageDimensions(imageFile)
     const imageInfo = getImageInfo(imageFile, dimensions)
     const encryptedRoom = isRoomEncrypted(room)
+
+    const relationOptions: SendTextMessageOptions = {
+      replyTo: options?.replyTo,
+      threadRootEventId: options?.threadRootEventId,
+    }
+    const imageContentBase: Record<string, unknown> = {
+      msgtype: MsgType.Image,
+      body: fileName,
+      info: imageInfo,
+    }
+    applyMessageRelations(imageContentBase, relationOptions)
 
     if (encryptedRoom) {
       const cryptoReady = await ensureCryptoReady()
@@ -1258,10 +1275,8 @@ export function useMatrixClient() {
         url: mxcUrl
       }
       await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-        msgtype: MsgType.Image,
-        body: fileName,
-        info: imageInfo,
-        file: encryptedFile
+        ...imageContentBase,
+        file: encryptedFile,
       })
       return
     }
@@ -1272,10 +1287,8 @@ export function useMatrixClient() {
     )
     const mxcUrl = extractMxcUrl(uploadResponse)
     await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-      msgtype: MsgType.Image,
-      body: fileName,
-      info: imageInfo,
-      url: mxcUrl
+      ...imageContentBase,
+      url: mxcUrl,
     })
   }
 
