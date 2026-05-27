@@ -7,23 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Space roles and permissions now use Matrix `m.room.power_levels` and
-  Cinny/Sable `in.cinny.room.power_level_tags` only; the custom
-  `decentra.space.roles` state event was removed. Permissions are edited
-  via power-level dropdowns (invite, kick, ban, etc.) like Sable; deleting
-  a role scrubs its PL from tags and power level content for interop.
-- Space “Publish to directory” uses the Matrix room-directory API
-  (`readDirectoryVisibility` / `setDirectoryVisibility`), not join rule
-  alone; failed saves revert the checkbox state.
-- Home sidebar groups channels into **Personal chats** (1:1 DMs) and
-  **Groups**; the former “Unassigned rooms” bucket is removed.
-- Space channel header: add room, add subspace, and invite-to-space live in
-  the space dropdown (no separate `+` buttons beside it).
-- Channel drag-and-drop: hold briefly on the channel row to reorder; invite
-  and thread controls stay click-only (`decentra-channel-no-drag`).
-
 ### Added
 
 - Voice message recording in chat: microphone capture, preview, upload,
@@ -198,6 +181,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Space roles and permissions now use Matrix `m.room.power_levels` and
+  Cinny/Sable `in.cinny.room.power_level_tags` only; the custom
+  `decentra.space.roles` state event was removed. Permissions are edited
+  via power-level dropdowns (invite, kick, ban, etc.) like Sable; deleting
+  a role scrubs its PL from tags and power level content for interop.
+- Space “Publish to directory” uses the Matrix room-directory API
+  (`readDirectoryVisibility` / `setDirectoryVisibility`), not join rule
+  alone; failed saves revert the checkbox state.
+- Home sidebar groups channels into **Personal chats** (1:1 DMs) and
+  **Groups**; the former “Unassigned rooms” bucket is removed.
+- Space channel header: add room, add subspace, and invite-to-space live in
+  the space dropdown (no separate `+` buttons beside it).
+- Channel drag-and-drop: hold briefly on the channel row to reorder; invite
+  and thread controls stay click-only (`decentra-channel-no-drag`).
 - Space rail (first column) lists only root spaces; nested subspaces appear
   only as categories in the second channel column
 - Room grouping under a selected space no longer uses `/` prefixes in room
