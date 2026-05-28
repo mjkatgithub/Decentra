@@ -38,7 +38,8 @@ const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const videoFileInput = ref<HTMLInputElement | null>(null)
 const uploadError = ref<VideoValidationErrorCode | 'uploadFailed' | null>(null)
-const isVideoUploading = ref(false)
+const uploadingMediaKind = ref<'image' | 'video' | null>(null)
+const uploadErrorMediaKind = ref<'image' | 'video' | null>(null)
 const isMediaDragOver = ref(false)
 const messageInputRef = ref<{ $el: HTMLElement } | null>(null)
 const pickerRoot = ref<HTMLElement | null>(null)
@@ -154,6 +155,25 @@ const showVoiceAction = computed(() => {
 const showSendAction = computed(() => {
   return composerHasText.value && !voiceComposerActive.value
 })
+
+const composerAttachDisabled = computed(() => {
+  return props.disabled || !props.roomId || loading.value || Boolean(props.editTo)
+})
+
+const composerAttachMenuItems = computed(() => [
+  [
+    {
+      label: translateText('chat.sendImage'),
+      icon: 'i-lucide-image-up',
+      onSelect: () => openFilePicker(),
+    },
+    {
+      label: translateText('chat.sendVideo'),
+      icon: 'i-lucide-video',
+      onSelect: () => openVideoFilePicker(),
+    },
+  ],
+])
 
 const composerInlineIconButtonClass =
   'inline-flex shrink-0 items-center justify-center rounded-md ' +
@@ -467,10 +487,15 @@ const maxVideoUploadMb = Math.round(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024))
 
 function clearUploadError() {
   uploadError.value = null
+  uploadErrorMediaKind.value = null
 }
 
-function setUploadError(code: VideoValidationErrorCode | 'uploadFailed') {
+function setUploadError(
+  code: VideoValidationErrorCode | 'uploadFailed',
+  mediaKind?: 'image' | 'video',
+) {
   uploadError.value = code
+  uploadErrorMediaKind.value = mediaKind ?? null
 }
 
 function uploadErrorMessage(): string {
@@ -483,7 +508,9 @@ function uploadErrorMessage(): string {
     })
   }
   if (uploadError.value === 'uploadFailed') {
-    return translateText('chat.videoUploadFailed')
+    return uploadErrorMediaKind.value === 'image'
+      ? translateText('chat.imageUploadFailed')
+      : translateText('chat.videoUploadFailed')
   }
   return ''
 }
@@ -508,6 +535,8 @@ async function handleImageSend(imageFile: File | Blob, fileName: string) {
   if (!props.roomId || props.disabled || loading.value) {
     return
   }
+  clearUploadError()
+  uploadingMediaKind.value = 'image'
   loading.value = true
   try {
     await sendImageMessage(
@@ -519,7 +548,11 @@ async function handleImageSend(imageFile: File | Blob, fileName: string) {
     if (props.replyTo) {
       emit('cancelReply')
     }
+  } catch (thrownError) {
+    console.error('Failed to send image message', thrownError)
+    setUploadError('uploadFailed', 'image')
   } finally {
+    uploadingMediaKind.value = null
     loading.value = false
   }
 }
@@ -537,7 +570,7 @@ async function handleVideoSend(videoFile: File | Blob, fileName: string) {
     return
   }
   clearUploadError()
-  isVideoUploading.value = true
+  uploadingMediaKind.value = 'video'
   loading.value = true
   try {
     await sendVideoMessage(
@@ -551,9 +584,9 @@ async function handleVideoSend(videoFile: File | Blob, fileName: string) {
     }
   } catch (thrownError) {
     console.error('Failed to send video message', thrownError)
-    setUploadError('uploadFailed')
+    setUploadError('uploadFailed', 'video')
   } finally {
-    isVideoUploading.value = false
+    uploadingMediaKind.value = null
     loading.value = false
   }
 }
@@ -875,11 +908,17 @@ async function onPaste(event: ClipboardEvent) {
       </UButton>
     </div>
     <p
-      v-if="isVideoUploading && !uploadError"
+      v-if="uploadingMediaKind && !uploadError"
       class="mb-2 text-xs text-gray-500 dark:text-gray-400"
-      data-testid="composer-video-uploading"
+      :data-testid="uploadingMediaKind === 'video'
+        ? 'composer-video-uploading'
+        : 'composer-image-uploading'"
     >
-      {{ translateText('chat.videoUploading') }}
+      {{
+        uploadingMediaKind === 'video'
+          ? translateText('chat.videoUploading')
+          : translateText('chat.imageUploading')
+      }}
     </p>
     <form
       ref="pickerRoot"
@@ -910,25 +949,20 @@ async function onPaste(event: ClipboardEvent) {
         :disabled="disabled || !roomId || loading || Boolean(editTo)"
         @change="onVideoFileChange"
       >
-      <UButton
-        type="button"
-        icon="i-lucide-image-up"
-        color="neutral"
-        variant="soft"
-        :disabled="disabled || !roomId || loading || Boolean(editTo)"
-        :aria-label="translateText('chat.sendImage')"
-        @click="openFilePicker"
-      />
-      <UButton
-        type="button"
-        icon="i-lucide-video"
-        color="neutral"
-        variant="soft"
-        :disabled="disabled || !roomId || loading || Boolean(editTo)"
-        :aria-label="translateText('chat.sendVideo')"
-        data-testid="composer-video-button"
-        @click="openVideoFilePicker"
-      />
+      <UDropdownMenu
+        :items="composerAttachMenuItems"
+        :disabled="composerAttachDisabled"
+      >
+        <UButton
+          type="button"
+          icon="i-lucide-plus"
+          color="neutral"
+          variant="soft"
+          :disabled="composerAttachDisabled"
+          :aria-label="translateText('chat.attachMedia')"
+          data-testid="composer-attach-button"
+        />
+      </UDropdownMenu>
       <div class="relative min-w-0 flex-1">
         <ul
           v-if="autocompleteOpen"
