@@ -126,6 +126,33 @@ describe('MessageList', () => {
     img.attributes('alt').should.equal('photo.jpg')
   })
 
+  it('resolves audio playback via blob url', async () => {
+    const resolveMediaBlobUrl = vi.fn(async () => 'blob:resolved-audio')
+    const wrapper = mountMessageList({
+      messages: [
+        {
+          id: 'evt_audio',
+          kind: 'message',
+          senderId: '@alice:example.org',
+          senderName: 'Alice',
+          body: 'track.mp3',
+          media: {
+            url: '',
+            mxcUrl: 'mxc://example.org/audio',
+            mimetype: 'audio/mpeg',
+          },
+        },
+      ],
+      resolveMediaBlobUrl,
+    })
+
+    await flushPromises()
+
+    resolveMediaBlobUrl.mock.calls.length.should.equal(1)
+    wrapper.find('[data-testid="voice-play-button"]').exists().should.equal(true)
+    wrapper.find('audio').attributes('src').should.equal('blob:resolved-audio')
+  })
+
   it('renders video player for video media messages', async () => {
     const wrapper = mountMessageList({
       messages: [

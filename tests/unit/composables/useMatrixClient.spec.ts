@@ -1213,7 +1213,56 @@ describe('useMatrixClient', () => {
 
     await expect(
       sendAudioMessage('!room:example.org', imageBlob, 'photo.png'),
-    ).rejects.toThrow('Only audio uploads are supported')
+    ).rejects.toThrow('Only supported audio uploads are allowed')
+  })
+
+  it('sends audio file without voice marker when isVoiceMessage is false', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123'
+      }))
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null)
+        }
+      })),
+      uploadContent: vi.fn(async () => ({
+        content_uri: 'mxc://example.org/file-audio'
+      })),
+      sendEvent: vi.fn(async () => undefined)
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendAudioMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const audioBlob = new Blob(['audio-data'], { type: 'audio/mpeg' })
+    await sendAudioMessage('!room:example.org', audioBlob, 'track.mp3', {
+      isVoiceMessage: false,
+    })
+
+    expect(matrixClient.sendEvent).toHaveBeenCalledWith(
+      '!room:example.org',
+      'm.room.message',
+      expect.objectContaining({
+        msgtype: 'm.audio',
+        body: 'track.mp3',
+        url: 'mxc://example.org/file-audio',
+        info: expect.objectContaining({
+          mimetype: 'audio/mpeg',
+        }),
+      }),
+    )
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload['org.matrix.msc3245.voice']).toBeUndefined()
   })
 
   it('sends encrypted audio message for E2EE room', async () => {

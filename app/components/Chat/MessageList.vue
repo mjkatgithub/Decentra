@@ -200,7 +200,8 @@ function needsBlobFetch(media: MediaInfo): boolean {
     !media.url ||
     media.isEncrypted === true ||
     media.mimetype === "image/svg+xml" ||
-    media.mimetype === "image/gif"
+    media.mimetype === "image/gif" ||
+    media.mimetype?.startsWith("audio/") === true
   );
 }
 

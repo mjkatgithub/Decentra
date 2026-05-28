@@ -232,6 +232,38 @@ When(
   }
 )
 
+function composerAudioInput(page) {
+  return page.getByTestId('composer-audio-input').last()
+}
+
+When(
+  'I upload audio {string} in the message composer',
+  async function (audioFileName) {
+    const filePath = path.resolve(
+      process.cwd(),
+      'tests/e2e/fixtures',
+      audioFileName,
+    )
+    const fileInput = composerAudioInput(this.page)
+    await expect(fileInput).toBeAttached({ timeout: 15000 })
+    await fileInput.setInputFiles(filePath)
+  }
+)
+
+When(
+  'I upload invalid audio {string} in the message composer',
+  async function (audioFileName) {
+    const filePath = path.resolve(
+      process.cwd(),
+      'tests/e2e/fixtures',
+      audioFileName,
+    )
+    const fileInput = composerAudioInput(this.page)
+    await expect(fileInput).toBeAttached({ timeout: 15000 })
+    await fileInput.setInputFiles(filePath)
+  }
+)
+
 Then(
   'I should see video message player for {string}',
   async function (videoLabel) {

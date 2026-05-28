@@ -222,7 +222,7 @@ describe('MessageInput', () => {
       .should.equal(false)
   })
 
-  it('opens attach menu with image and video actions', () => {
+  it('opens attach menu with image, video, and audio actions', () => {
     const wrapper = mountInput()
     wrapper.find('[data-testid="composer-attach-button"]').exists()
       .should.equal(true)
@@ -230,6 +230,8 @@ describe('MessageInput', () => {
       .should.include('Send image')
     wrapper.find('[data-testid="composer-attach-option-1"]').text()
       .should.include('Send video')
+    wrapper.find('[data-testid="composer-attach-option-2"]').text()
+      .should.include('Send audio')
   })
 
   it('sends video from video file picker', async () => {
@@ -251,6 +253,118 @@ describe('MessageInput', () => {
 
     sendVideoMessage.mock.calls.length.should.equal(1)
     sendVideoMessage.mock.calls[0]?.[2].should.equal('clip.mp4')
+  })
+
+  it('sends audio from audio file picker', async () => {
+    const sendAudioMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendAudioMessage })
+
+    const wrapper = mountInput()
+    const audioFile = new File(['audio-data'], 'track.mp3', {
+      type: 'audio/mpeg',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-audio-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [audioFile],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+
+    sendAudioMessage.mock.calls.length.should.equal(1)
+    sendAudioMessage.mock.calls[0]?.[2].should.equal('track.mp3')
+    sendAudioMessage.mock.calls[0]?.[3].should.deep.equal({
+      isVoiceMessage: false,
+    })
+  })
+
+  it('shows uploading status while audio is sending', async () => {
+    let resolveUpload: (() => void) | undefined
+    const sendAudioMessage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveUpload = resolve
+    }))
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendAudioMessage })
+
+    const wrapper = mountInput()
+    const audioFile = new File(['audio-data'], 'track.mp3', {
+      type: 'audio/mpeg',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-audio-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [audioFile],
+      configurable: true,
+    })
+
+    const changePromise = fileInput.trigger('change')
+    await wrapper.vm.$nextTick()
+    wrapper.find('[data-testid="composer-audio-uploading"]').exists()
+      .should.equal(true)
+    wrapper.text().should.include('Uploading audio')
+
+    resolveUpload!()
+    await changePromise
+    await flushPromises()
+    wrapper.find('[data-testid="composer-audio-uploading"]').exists()
+      .should.equal(false)
+  })
+
+  it('shows validation error for unsupported audio type', async () => {
+    const sendAudioMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendAudioMessage })
+
+    const wrapper = mountInput()
+    const audioFile = new File(['audio-data'], 'track.aac', {
+      type: 'audio/aac',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-audio-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [audioFile],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+
+    sendAudioMessage.mock.calls.length.should.equal(0)
+    wrapper.find('[data-testid="composer-upload-error"]').exists()
+      .should.equal(true)
+    wrapper.text().should.include('MP3')
+  })
+
+  it('sends audio with reply relation from file picker', async () => {
+    const sendAudioMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendAudioMessage })
+
+    const wrapper = mountInput({
+      replyTo: {
+        eventId: 'evt-original',
+        senderName: 'Alice',
+        body: 'Original message',
+      },
+    })
+
+    const audioFile = new File(['audio-data'], 'track.webm', {
+      type: 'audio/webm',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-audio-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [audioFile],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+
+    sendAudioMessage.mock.calls.length.should.equal(1)
+    sendAudioMessage.mock.calls[0]?.[3].should.deep.equal({
+      isVoiceMessage: false,
+      replyTo: { eventId: 'evt-original' },
+    })
+
+    const cancelReplyEvents = wrapper.emitted('cancelReply') || []
+    cancelReplyEvents.length.should.equal(1)
   })
 
   it('shows validation error for unsupported video type', async () => {

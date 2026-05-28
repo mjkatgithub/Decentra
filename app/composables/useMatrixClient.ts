@@ -20,7 +20,11 @@ import {
   setRoomTopic,
   uploadRoomAvatarFile,
 } from '~/utils/matrixRoomMetadata'
-import { validateVideoFile } from '~/utils/mediaUploadValidation'
+import {
+  validateAudioFile,
+  validateVideoFile,
+} from '~/utils/mediaUploadValidation'
+import { readAudioDurationMs } from '~/utils/voiceRecorder'
 import {
   captureVideoThumbnail,
   readVideoMetadata,
@@ -320,6 +324,8 @@ export interface SendTextMessageOptions {
 /** Options for {@link sendAudioMessage} */
 export interface SendAudioMessageOptions {
   durationMs?: number
+  /** When false, omits MSC3245 voice marker (file attachment). */
+  isVoiceMessage?: boolean
   replyTo?: MessageReplyOptions
   threadRootEventId?: string
 }
@@ -1391,26 +1397,43 @@ export function useMatrixClient() {
     if (!matrixClient) {
       throw new Error('Not logged in')
     }
-    const mimetype = audioFile.type || ''
-    if (!mimetype.startsWith('audio/')) {
-      throw new Error('Only audio uploads are supported')
+    const validation = validateAudioFile(
+      audioFile,
+      audioFile instanceof File ? audioFile.name : fileName,
+    )
+    if (!validation.ok) {
+      if (validation.code === 'tooLarge') {
+        throw new Error('Audio file exceeds maximum upload size')
+      }
+      throw new Error('Only supported audio uploads are allowed')
     }
+    const mimetype = validation.mimetype
     const room = matrixClient.getRoom(roomId)
     if (!room) {
       throw new Error('Room not found')
     }
-    const audioInfo = getAudioInfo(audioFile, options?.durationMs)
+    let durationMs = options?.durationMs
+    if (typeof durationMs !== 'number' || durationMs <= 0) {
+      durationMs = await readAudioDurationMs(audioFile)
+    }
+    const audioInfo = getAudioInfo(
+      new Blob([audioFile], { type: mimetype }),
+      durationMs,
+    )
     const encryptedRoom = isRoomEncrypted(room)
     const relationOptions: SendTextMessageOptions = {
       replyTo: options?.replyTo,
       threadRootEventId: options?.threadRootEventId,
     }
+    const isVoiceMessage = options?.isVoiceMessage !== false
 
     const voiceContentBase: Record<string, unknown> = {
       msgtype: MsgType.Audio,
       body: fileName,
       info: audioInfo,
-      'org.matrix.msc3245.voice': {},
+    }
+    if (isVoiceMessage) {
+      voiceContentBase['org.matrix.msc3245.voice'] = {}
     }
     applyMessageRelations(voiceContentBase, relationOptions)
 

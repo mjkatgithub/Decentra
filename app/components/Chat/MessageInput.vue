@@ -28,8 +28,11 @@ import {
 import { createComposerTypingNotifier } from '~/utils/composerTypingNotifier'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
 import {
+  MAX_AUDIO_UPLOAD_BYTES,
   MAX_VIDEO_UPLOAD_BYTES,
+  validateAudioFile,
   validateVideoFile,
+  type AudioValidationErrorCode,
   type VideoValidationErrorCode,
 } from '~/utils/mediaUploadValidation'
 
@@ -37,9 +40,12 @@ const message = ref('')
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 const videoFileInput = ref<HTMLInputElement | null>(null)
-const uploadError = ref<VideoValidationErrorCode | 'uploadFailed' | null>(null)
-const uploadingMediaKind = ref<'image' | 'video' | null>(null)
-const uploadErrorMediaKind = ref<'image' | 'video' | null>(null)
+const audioFileInput = ref<HTMLInputElement | null>(null)
+const uploadError = ref<
+  VideoValidationErrorCode | AudioValidationErrorCode | 'uploadFailed' | null
+>(null)
+const uploadingMediaKind = ref<'image' | 'video' | 'audio' | null>(null)
+const uploadErrorMediaKind = ref<'image' | 'video' | 'audio' | null>(null)
 const isMediaDragOver = ref(false)
 const messageInputRef = ref<{ $el: HTMLElement } | null>(null)
 const pickerRoot = ref<HTMLElement | null>(null)
@@ -171,6 +177,11 @@ const composerAttachMenuItems = computed(() => [
       label: translateText('chat.sendVideo'),
       icon: 'i-lucide-video',
       onSelect: () => openVideoFilePicker(),
+    },
+    {
+      label: translateText('chat.sendAudio'),
+      icon: 'i-lucide-file-audio',
+      onSelect: () => openAudioFilePicker(),
     },
   ],
 ])
@@ -484,6 +495,7 @@ async function handleSend() {
 }
 
 const maxVideoUploadMb = Math.round(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024))
+const maxAudioUploadMb = Math.round(MAX_AUDIO_UPLOAD_BYTES / (1024 * 1024))
 
 function clearUploadError() {
   uploadError.value = null
@@ -491,26 +503,39 @@ function clearUploadError() {
 }
 
 function setUploadError(
-  code: VideoValidationErrorCode | 'uploadFailed',
-  mediaKind?: 'image' | 'video',
+  code: VideoValidationErrorCode | AudioValidationErrorCode | 'uploadFailed',
+  mediaKind?: 'image' | 'video' | 'audio',
 ) {
   uploadError.value = code
   uploadErrorMediaKind.value = mediaKind ?? null
 }
 
 function uploadErrorMessage(): string {
+  const mediaKind = uploadErrorMediaKind.value
   if (uploadError.value === 'invalidType') {
+    if (mediaKind === 'audio') {
+      return translateText('chat.audioInvalidType')
+    }
     return translateText('chat.videoInvalidType')
   }
   if (uploadError.value === 'tooLarge') {
+    if (mediaKind === 'audio') {
+      return translateText('chat.audioTooLarge', {
+        maxMb: String(maxAudioUploadMb),
+      })
+    }
     return translateText('chat.videoTooLarge', {
       maxMb: String(maxVideoUploadMb),
     })
   }
   if (uploadError.value === 'uploadFailed') {
-    return uploadErrorMediaKind.value === 'image'
-      ? translateText('chat.imageUploadFailed')
-      : translateText('chat.videoUploadFailed')
+    if (mediaKind === 'image') {
+      return translateText('chat.imageUploadFailed')
+    }
+    if (mediaKind === 'audio') {
+      return translateText('chat.audioUploadFailed')
+    }
+    return translateText('chat.videoUploadFailed')
   }
   return ''
 }
@@ -529,6 +554,14 @@ function openVideoFilePicker() {
   }
   clearUploadError()
   videoFileInput.value?.click()
+}
+
+function openAudioFilePicker() {
+  if (!props.roomId || props.disabled || loading.value || props.editTo) {
+    return
+  }
+  clearUploadError()
+  audioFileInput.value?.click()
 }
 
 async function handleImageSend(imageFile: File | Blob, fileName: string) {
@@ -566,7 +599,7 @@ async function handleVideoSend(videoFile: File | Blob, fileName: string) {
     videoFile instanceof File ? videoFile.name : fileName,
   )
   if (!validation.ok) {
-    setUploadError(validation.code)
+    setUploadError(validation.code, 'video')
     return
   }
   clearUploadError()
@@ -585,6 +618,43 @@ async function handleVideoSend(videoFile: File | Blob, fileName: string) {
   } catch (thrownError) {
     console.error('Failed to send video message', thrownError)
     setUploadError('uploadFailed', 'video')
+  } finally {
+    uploadingMediaKind.value = null
+    loading.value = false
+  }
+}
+
+async function handleAudioSend(audioFile: File | Blob, fileName: string) {
+  if (!props.roomId || props.disabled || loading.value) {
+    return
+  }
+  const validation = validateAudioFile(
+    audioFile,
+    audioFile instanceof File ? audioFile.name : fileName,
+  )
+  if (!validation.ok) {
+    setUploadError(validation.code, 'audio')
+    return
+  }
+  clearUploadError()
+  uploadingMediaKind.value = 'audio'
+  loading.value = true
+  try {
+    await sendAudioMessage(
+      props.roomId,
+      audioFile,
+      fileName,
+      {
+        ...buildMessageRelationOptions(),
+        isVoiceMessage: false,
+      },
+    )
+    if (props.replyTo) {
+      emit('cancelReply')
+    }
+  } catch (thrownError) {
+    console.error('Failed to send audio message', thrownError)
+    setUploadError('uploadFailed', 'audio')
   } finally {
     uploadingMediaKind.value = null
     loading.value = false
@@ -651,6 +721,16 @@ async function onVideoFileChange(event: Event) {
     return
   }
   await handleVideoSend(selectedFile, selectedFile.name || 'video')
+  target.value = ''
+}
+
+async function onAudioFileChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  const selectedFile = target.files?.[0]
+  if (!selectedFile) {
+    return
+  }
+  await handleAudioSend(selectedFile, selectedFile.name || 'audio')
   target.value = ''
 }
 
@@ -912,12 +992,16 @@ async function onPaste(event: ClipboardEvent) {
       class="mb-2 text-xs text-gray-500 dark:text-gray-400"
       :data-testid="uploadingMediaKind === 'video'
         ? 'composer-video-uploading'
-        : 'composer-image-uploading'"
+        : uploadingMediaKind === 'audio'
+          ? 'composer-audio-uploading'
+          : 'composer-image-uploading'"
     >
       {{
         uploadingMediaKind === 'video'
           ? translateText('chat.videoUploading')
-          : translateText('chat.imageUploading')
+          : uploadingMediaKind === 'audio'
+            ? translateText('chat.audioUploading')
+            : translateText('chat.imageUploading')
       }}
     </p>
     <form
@@ -948,6 +1032,15 @@ async function onPaste(event: ClipboardEvent) {
         class="hidden"
         :disabled="disabled || !roomId || loading || Boolean(editTo)"
         @change="onVideoFileChange"
+      >
+      <input
+        ref="audioFileInput"
+        type="file"
+        accept="audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,.mp3,.m4a,.ogg,.wav,.webm"
+        data-testid="composer-audio-input"
+        class="hidden"
+        :disabled="disabled || !roomId || loading || Boolean(editTo)"
+        @change="onAudioFileChange"
       >
       <UDropdownMenu
         :items="composerAttachMenuItems"

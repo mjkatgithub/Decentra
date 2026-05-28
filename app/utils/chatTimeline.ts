@@ -1103,10 +1103,10 @@ export function buildTimelineMediaFromContent(input: {
   }
 
   if (msgtype === 'm.audio' && mxcUrl) {
+    // Playback uses blob URLs (fetch + Authorization), not direct MXC/HTTP
+    // links — the HTML audio element cannot play authenticated media URLs.
     return {
-      url: isEncryptedMedia
-        ? ''
-        : (getMediaUrl(mxcUrl, mimetype, body) || mxcUrl),
+      url: '',
       mxcUrl,
       mimetype,
       isEncrypted: isEncryptedMedia,
