@@ -181,7 +181,7 @@ export function useChatMedia(client: Ref<Record<string, any> | null>) {
         media.mimetype,
       );
     }
-    return fetchMediaBlob(httpUrl, accessToken);
+    return fetchMediaBlob(httpUrl, accessToken, media.mimetype);
   }
 
   return {

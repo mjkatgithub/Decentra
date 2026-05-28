@@ -14,7 +14,12 @@ vi.mock('matrix-js-sdk', () => {
       RoomJoinRules: 'm.room.join_rules',
       RoomHistoryVisibility: 'm.room.history_visibility'
     },
-    MsgType: { Text: 'm.text', Image: 'm.image', Audio: 'm.audio' },
+    MsgType: {
+      Text: 'm.text',
+      Image: 'm.image',
+      Audio: 'm.audio',
+      Video: 'm.video',
+    },
     ClientEvent: {},
     Preset: { PrivateChat: 'private_chat', PublicChat: 'public_chat' },
     JoinRule: { Invite: 'invite', Public: 'public' },
@@ -27,6 +32,17 @@ vi.mock('@matrix-org/matrix-sdk-crypto-wasm', () => {
     initAsync: initCryptoWasm
   }
 })
+
+vi.mock('~/utils/videoMetadata', () => ({
+  readVideoMetadata: vi.fn(async () => ({
+    durationMs: 5000,
+    w: 640,
+    h: 360,
+  })),
+  captureVideoThumbnail: vi.fn(async () => (
+    new Blob(['thumb'], { type: 'image/jpeg' })
+  )),
+}))
 
 describe('useMatrixClient', () => {
   beforeEach(() => {
@@ -1088,6 +1104,83 @@ describe('useMatrixClient', () => {
       event_id: '$thread-root',
       'm.in_reply_to': { event_id: '$in-thread' },
     })
+  })
+
+  it('sends plain video message with thumbnail for non-encrypted room', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123',
+      })),
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null),
+        },
+      })),
+      uploadContent: vi.fn(async () => ({
+        content_uri: 'mxc://example.org/uploaded',
+      })),
+      sendEvent: vi.fn(async () => undefined),
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+    const originalImage = (globalThis as Record<string, unknown>).Image
+    ;(globalThis as Record<string, unknown>).Image = undefined
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendVideoMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const videoBlob = new Blob(['video-data'], { type: 'video/mp4' })
+    await sendVideoMessage('!room:example.org', videoBlob, 'clip.mp4')
+
+    expect(matrixClient.uploadContent).toHaveBeenCalledTimes(2)
+    const sendEventPayload = (matrixClient.sendEvent as any).mock.calls[0][2]
+    expect(sendEventPayload.msgtype).toBe('m.video')
+    expect(sendEventPayload.url).toBe('mxc://example.org/uploaded')
+    expect(sendEventPayload.info.thumbnail_url).toBe(
+      'mxc://example.org/uploaded',
+    )
+    expect(sendEventPayload.info.duration).to.equal(5000)
+    ;(globalThis as Record<string, unknown>).Image = originalImage
+  })
+
+  it('rejects unsupported video uploads in sendVideoMessage', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123',
+      })),
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+      getRoom: vi.fn(() => ({
+        currentState: {
+          getStateEvents: vi.fn(() => null),
+        },
+      })),
+      uploadContent: vi.fn(async () => undefined),
+      sendEvent: vi.fn(async () => undefined),
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, sendVideoMessage } = useMatrixClient()
+    await login('https://matrix.example.org', 'alice', 'secret')
+    const imageBlob = new Blob(['img'], { type: 'image/png' })
+
+    await expect(
+      sendVideoMessage('!room:example.org', imageBlob, 'photo.png'),
+    ).rejects.toThrow('Only supported video uploads are allowed')
   })
 
   it('rejects non-audio uploads in sendAudioMessage', async () => {

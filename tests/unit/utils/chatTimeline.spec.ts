@@ -184,6 +184,51 @@ describe('chatTimeline helpers', () => {
     media.info?.duration!.should.equal(4200)
   })
 
+  it('maps m.video messages with poster and playback fields', () => {
+    const mockRoom = {
+      getLiveTimeline: () => ({
+        getEvents: () => [
+          {
+            getType: () => 'm.room.message',
+            getSender: () => '@alice:example.org',
+            getId: () => 'evt_video_1',
+            getContent: () => ({
+              body: 'clip.mp4',
+              msgtype: 'm.video',
+              url: 'mxc://example.org/video',
+              info: {
+                mimetype: 'video/mp4',
+                duration: 8000,
+                thumbnail_url: 'mxc://example.org/thumb',
+                thumbnail_info: { mimetype: 'image/jpeg' },
+              },
+            }),
+            isDecryptionFailure: () => false,
+          },
+        ],
+      }),
+      getMembers: () => [],
+      getMember: () => ({ name: 'Alice' }),
+      hasUserReadEvent: () => false,
+    }
+
+    const messages = mapTimelineEventsToMessages({
+      room: mockRoom as any,
+      ownUserId: '@bob:example.org',
+      getMemberAvatarUrl: () => undefined,
+      getMediaUrl: (mxc: string) => `http://server/${mxc.split('//')[1]}`,
+      buildDeletedMessageText,
+      buildNoticeText: () => '',
+    })
+
+    messages.length.should.equal(1)
+    const media = messages[0]!.media!
+    media.mxcUrl.should.equal('mxc://example.org/thumb')
+    media.playbackMxcUrl!.should.equal('mxc://example.org/video')
+    ;(media.playbackUrl === undefined).should.equal(true)
+    media.info!.duration!.should.equal(8000)
+  })
+
   it('keeps image url empty for gif media to force blob fetch', () => {
     const mockRoom = {
       getLiveTimeline: () => ({

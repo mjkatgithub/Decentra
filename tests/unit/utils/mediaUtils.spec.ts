@@ -10,6 +10,31 @@ describe('mediaUtils', () => {
     vi.restoreAllMocks()
   })
 
+  it('applies explicit mimetype when response type is generic', async () => {
+    const blob = new Blob(['video-data'], { type: 'application/octet-stream' })
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      headers: { get: () => null },
+      blob: async () => blob,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const createObjectUrlMock = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockImplementation((value) => {
+        const typedBlob = value as Blob
+        typedBlob.type.should.equal('video/mp4')
+        return 'blob:typed-video'
+      })
+
+    const blobUrl = await fetchMediaBlob(
+      'http://media.example.org/video',
+      'token-1',
+      'video/mp4',
+    )
+    blobUrl.should.equal('blob:typed-video')
+    createObjectUrlMock.mock.calls.length.should.equal(1)
+  })
+
   it('fetches media blob and caches by url', async () => {
     const blob = new Blob(['image-data'], { type: 'image/png' })
     const fetchMock = vi.fn(async () => ({

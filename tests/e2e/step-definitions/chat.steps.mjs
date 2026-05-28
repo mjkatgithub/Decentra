@@ -200,6 +200,57 @@ When(
   }
 )
 
+function composerVideoInput(page) {
+  return page.getByTestId('composer-video-input').last()
+}
+
+When(
+  'I upload video {string} in the message composer',
+  async function (videoFileName) {
+    const filePath = path.resolve(
+      process.cwd(),
+      'tests/e2e/fixtures',
+      videoFileName,
+    )
+    const fileInput = composerVideoInput(this.page)
+    await expect(fileInput).toBeAttached({ timeout: 15000 })
+    await fileInput.setInputFiles(filePath)
+  }
+)
+
+When(
+  'I upload invalid video {string} in the message composer',
+  async function (videoFileName) {
+    const filePath = path.resolve(
+      process.cwd(),
+      'tests/e2e/fixtures',
+      videoFileName,
+    )
+    const fileInput = composerVideoInput(this.page)
+    await expect(fileInput).toBeAttached({ timeout: 15000 })
+    await fileInput.setInputFiles(filePath)
+  }
+)
+
+Then(
+  'I should see video message player for {string}',
+  async function (videoLabel) {
+    const videoPlayer = this.page
+      .locator('[data-testid="video-message-player"]')
+      .filter({ hasText: videoLabel })
+      .last()
+    await expect(videoPlayer).toBeVisible({ timeout: 30000 })
+    await expect(
+      videoPlayer.locator('[data-testid="video-message-element"]'),
+    ).toBeVisible({ timeout: 30000 })
+  }
+)
+
+Then('I should see composer upload error feedback', async function () {
+  await expect(this.page.getByTestId('composer-upload-error').last())
+    .toBeVisible({ timeout: 15000 })
+})
+
 function composerInput(page) {
   return page.getByPlaceholder(/Write a message|Nachricht eingeben/i).last()
 }

@@ -125,6 +125,7 @@ function defaultMatrixClientStub(
     sendMessage: vi.fn(async () => undefined),
     sendEditMessage: vi.fn(async () => undefined),
     sendImageMessage: vi.fn(async () => undefined),
+    sendVideoMessage: vi.fn(async () => undefined),
     sendAudioMessage: vi.fn(async () => undefined),
     sendRoomTyping: vi.fn(async () => undefined),
     ...overrides,
@@ -156,7 +157,7 @@ describe('MessageInput', () => {
     const imageFile = new File(['img-data'], 'picked.png', {
       type: 'image/png'
     })
-    const fileInput = wrapper.find('input[type="file"]')
+    const fileInput = wrapper.find('[data-testid="composer-file-input"]')
     Object.defineProperty(fileInput.element, 'files', {
       value: [imageFile],
       configurable: true
@@ -167,6 +168,49 @@ describe('MessageInput', () => {
     sendImageMessage.mock.calls.length.should.equal(1)
     sendImageMessage.mock.calls[0]?.[0].should.equal('!room:example.org')
     sendImageMessage.mock.calls[0]?.[2].should.equal('picked.png')
+  })
+
+  it('sends video from video file picker', async () => {
+    const sendVideoMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendVideoMessage })
+
+    const wrapper = mountInput()
+    const videoFile = new File(['video-data'], 'clip.mp4', {
+      type: 'video/mp4',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-video-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [videoFile],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+
+    sendVideoMessage.mock.calls.length.should.equal(1)
+    sendVideoMessage.mock.calls[0]?.[2].should.equal('clip.mp4')
+  })
+
+  it('shows validation error for unsupported video type', async () => {
+    const sendVideoMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendVideoMessage })
+
+    const wrapper = mountInput()
+    const videoFile = new File(['video-data'], 'clip.mov', {
+      type: 'video/quicktime',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-video-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [videoFile],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+
+    sendVideoMessage.mock.calls.length.should.equal(0)
+    wrapper.find('[data-testid="composer-upload-error"]').exists()
+      .should.equal(true)
   })
 
   it('sends image with reply relation from file picker', async () => {

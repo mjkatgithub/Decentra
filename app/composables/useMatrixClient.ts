@@ -20,6 +20,11 @@ import {
   setRoomTopic,
   uploadRoomAvatarFile,
 } from '~/utils/matrixRoomMetadata'
+import { validateVideoFile } from '~/utils/mediaUploadValidation'
+import {
+  captureVideoThumbnail,
+  readVideoMetadata,
+} from '~/utils/videoMetadata'
 import {
   saveSpaceRolesAndSyncPowerLevels,
 } from '~/composables/matrix/spaceRolesStateHelpers'
@@ -291,6 +296,17 @@ interface AudioInfo {
   duration?: number
 }
 
+interface VideoInfo {
+  mimetype: string
+  size: number
+  duration?: number
+  w?: number
+  h?: number
+  thumbnail_url?: string
+  thumbnail_info?: ImageInfo
+  thumbnail_file?: MatrixEncryptedFile
+}
+
 interface MessageReplyOptions {
   eventId: string
 }
@@ -309,6 +325,12 @@ export interface SendAudioMessageOptions {
 }
 
 export interface SendImageMessageOptions {
+  replyTo?: MessageReplyOptions
+  threadRootEventId?: string
+}
+
+/** Options for {@link sendVideoMessage} */
+export interface SendVideoMessageOptions {
   replyTo?: MessageReplyOptions
   threadRootEventId?: string
 }
@@ -689,6 +711,73 @@ function getAudioInfo(
     info.duration = Math.round(durationMs)
   }
   return info
+}
+
+function getVideoInfo(
+  videoFile: Blob,
+  metadata: { durationMs?: number; w?: number; h?: number },
+  mimetype: string,
+  thumbnail?: {
+    mxcUrl?: string
+    encryptedFile?: MatrixEncryptedFile
+    info?: ImageInfo
+  },
+): VideoInfo {
+  const info: VideoInfo = {
+    mimetype,
+    size: videoFile.size,
+    ...(
+      typeof metadata.w === 'number' ? { w: metadata.w } : {}
+    ),
+    ...(
+      typeof metadata.h === 'number' ? { h: metadata.h } : {}
+    ),
+  }
+  if (typeof metadata.durationMs === 'number' && metadata.durationMs > 0) {
+    info.duration = Math.round(metadata.durationMs)
+  }
+  if (thumbnail?.encryptedFile) {
+    info.thumbnail_file = thumbnail.encryptedFile
+  } else if (thumbnail?.mxcUrl) {
+    info.thumbnail_url = thumbnail.mxcUrl
+  }
+  if (thumbnail?.info) {
+    info.thumbnail_info = thumbnail.info
+  }
+  return info
+}
+
+async function uploadPlainAttachment(
+  matrixClient: MatrixClient,
+  blob: Blob,
+  mimetype: string,
+): Promise<string> {
+  const uploadResponse = await matrixClient.uploadContent(blob, {
+    type: mimetype,
+    includeFilename: true,
+  })
+  return extractMxcUrl(uploadResponse)
+}
+
+async function uploadEncryptedAttachment(
+  matrixClient: MatrixClient,
+  blob: Blob,
+): Promise<MatrixEncryptedFile> {
+  const plaintextData = await blob.arrayBuffer()
+  const encryptedResult = await encryptAttachmentData(plaintextData)
+  const encryptedBlob = new Blob(
+    [encryptedResult.encryptedData],
+    { type: 'application/octet-stream' },
+  )
+  const uploadResponse = await matrixClient.uploadContent(encryptedBlob, {
+    type: 'application/octet-stream',
+    includeFilename: true,
+  })
+  const mxcUrl = extractMxcUrl(uploadResponse)
+  return {
+    ...encryptedResult.encryptedFile,
+    url: mxcUrl,
+  }
 }
 
 function isRoomEncrypted(room: sdk.Room): boolean {
@@ -1363,6 +1452,111 @@ export function useMatrixClient() {
     })
   }
 
+  async function sendVideoMessage(
+    roomId: string,
+    videoFile: File | Blob,
+    fileName = 'video',
+    options?: SendVideoMessageOptions,
+  ): Promise<void> {
+    const matrixClient = client.value
+    if (!matrixClient) {
+      throw new Error('Not logged in')
+    }
+    const validation = validateVideoFile(
+      videoFile,
+      videoFile instanceof File ? videoFile.name : fileName,
+    )
+    if (!validation.ok) {
+      if (validation.code === 'tooLarge') {
+        throw new Error('Video file exceeds maximum upload size')
+      }
+      throw new Error('Only supported video uploads are allowed')
+    }
+    const mimetype = validation.mimetype
+    const room = matrixClient.getRoom(roomId)
+    if (!room) {
+      throw new Error('Room not found')
+    }
+    const metadata = await readVideoMetadata(videoFile)
+    const thumbnailBlob = await captureVideoThumbnail(videoFile)
+    const encryptedRoom = isRoomEncrypted(room)
+    const relationOptions: SendTextMessageOptions = {
+      replyTo: options?.replyTo,
+      threadRootEventId: options?.threadRootEventId,
+    }
+
+    let thumbnailAttachment:
+      | { mxcUrl?: string; encryptedFile?: MatrixEncryptedFile; info?: ImageInfo }
+      | undefined
+    if (thumbnailBlob) {
+      const thumbDimensions = await readImageDimensions(thumbnailBlob)
+      const thumbInfo = getImageInfo(thumbnailBlob, thumbDimensions)
+      if (encryptedRoom) {
+        const cryptoReady = await ensureCryptoReady()
+        if (!cryptoReady) {
+          throw new Error('Encryption is not ready for media upload')
+        }
+        const encryptedThumb = await uploadEncryptedAttachment(
+          matrixClient,
+          thumbnailBlob,
+        )
+        thumbnailAttachment = {
+          encryptedFile: encryptedThumb,
+          info: thumbInfo,
+        }
+      } else {
+        const thumbMxcUrl = await uploadPlainAttachment(
+          matrixClient,
+          thumbnailBlob,
+          'image/jpeg',
+        )
+        thumbnailAttachment = {
+          mxcUrl: thumbMxcUrl,
+          info: thumbInfo,
+        }
+      }
+    }
+
+    const videoInfo = getVideoInfo(
+      videoFile,
+      metadata,
+      mimetype,
+      thumbnailAttachment,
+    )
+    const videoContentBase: Record<string, unknown> = {
+      msgtype: MsgType.Video,
+      body: fileName,
+      info: videoInfo,
+    }
+    applyMessageRelations(videoContentBase, relationOptions)
+
+    if (encryptedRoom) {
+      const cryptoReady = await ensureCryptoReady()
+      if (!cryptoReady) {
+        throw new Error('Encryption is not ready for media upload')
+      }
+      const encryptedFile = await uploadEncryptedAttachment(
+        matrixClient,
+        videoFile,
+      )
+      await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
+        ...videoContentBase,
+        file: encryptedFile,
+      })
+      return
+    }
+
+    const mxcUrl = await uploadPlainAttachment(
+      matrixClient,
+      videoFile,
+      mimetype,
+    )
+    await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
+      ...videoContentBase,
+      url: mxcUrl,
+    })
+  }
+
   async function loadOlderMessages(roomId: string): Promise<boolean> {
     const room = client.value?.getRoom(roomId)
     if (!room || !client.value) return false
@@ -1917,6 +2111,7 @@ export function useMatrixClient() {
     sendMessage,
     sendEditMessage,
     sendImageMessage,
+    sendVideoMessage,
     sendAudioMessage,
     sendReaction,
     redactEvent,

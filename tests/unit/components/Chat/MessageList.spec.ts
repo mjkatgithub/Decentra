@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import ChatMessageList from '~/components/Chat/MessageList.vue'
 
@@ -124,6 +124,35 @@ describe('MessageList', () => {
     img.exists().should.equal(true)
     img.attributes('src').should.equal('http://example.org/thumb.jpg')
     img.attributes('alt').should.equal('photo.jpg')
+  })
+
+  it('renders video player for video media messages', async () => {
+    const wrapper = mountMessageList({
+      messages: [
+        {
+          id: 'evt_video',
+          kind: 'message',
+          senderId: '@alice:example.org',
+          senderName: 'Alice',
+          body: 'clip.mp4',
+          media: {
+            url: 'http://example.org/poster.jpg',
+            mxcUrl: 'mxc://example.org/thumb',
+            mimetype: 'image/jpeg',
+            playbackMxcUrl: 'mxc://example.org/video',
+            playbackMimetype: 'video/mp4',
+          },
+        },
+      ],
+      resolveMediaBlobUrl: async () => 'blob:resolved-video',
+    })
+
+    await flushPromises()
+
+    const video = wrapper.find('[data-testid="video-message-element"]')
+    video.exists().should.equal(true)
+    video.attributes('src').should.equal('blob:resolved-video')
+    video.attributes('poster').should.equal('http://example.org/poster.jpg')
   })
 
   it('shows fallback text when media has no display url', () => {

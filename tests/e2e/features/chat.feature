@@ -59,6 +59,26 @@ Feature: Chat
     And I open the seeded test room
     Then I should see voice message player for "E2E_SEED_VOICE"
 
+  Scenario: Video message playback in timeline
+    When I open the login page
+    And I sign in with secondary configured credentials
+    And I open the seeded test room
+    Then I should see video message player for "E2E_SEED_VIDEO"
+
+  Scenario: Upload and send video in chat
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    When I upload video "e2e-upload.webm" in the message composer
+    Then I should see video message player for "e2e-upload.webm"
+
+  Scenario: Invalid video upload shows feedback
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the seeded test room
+    When I upload invalid video "e2e-invalid.mov" in the message composer
+    Then I should see composer upload error feedback
+
   Scenario: Record preview and send voice message
     When voice recording APIs are mocked in the browser
     And I open the login page
