@@ -22,6 +22,12 @@ const englishMessages: Record<string, string> = {
   'chat.sendImage': 'Send image',
   'chat.attachMedia': 'Attach file',
   'chat.sendVideo': 'Send video',
+  'chat.sendAudio': 'Send audio',
+  'chat.audioUploading': 'Uploading audio…',
+  'chat.audioInvalidType':
+    'Only MP3, M4A, OGG, WAV, and WebM audio files are supported.',
+  'chat.audioTooLarge': 'Audio must be {maxMb} MB or smaller.',
+  'chat.audioUploadFailed': 'Failed to upload audio.',
   'chat.imageUploading': 'Uploading image…',
   'chat.videoInvalidType': 'Only MP4 and WebM videos are supported.',
   'chat.videoTooLarge': 'Video must be {maxMb} MB or smaller.',

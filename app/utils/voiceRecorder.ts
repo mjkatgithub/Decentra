@@ -98,6 +98,8 @@ export function buildVoiceMessageBlob(
   return new Blob(chunks, { type: mimeType })
 }
 
+const AUDIO_DURATION_READ_TIMEOUT_MS = 500
+
 export function readAudioDurationMs(blob: Blob): Promise<number | undefined> {
   if (typeof Audio === 'undefined' || typeof URL === 'undefined') {
     return Promise.resolve(undefined)
@@ -106,18 +108,27 @@ export function readAudioDurationMs(blob: Blob): Promise<number | undefined> {
     const objectUrl = URL.createObjectURL(blob)
     const audioElement = new Audio()
     audioElement.preload = 'metadata'
+    let settled = false
+    const finish = (durationMs?: number) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      clearTimeout(timeoutId)
+      URL.revokeObjectURL(objectUrl)
+      resolve(durationMs)
+    }
+    const timeoutId = setTimeout(() => finish(undefined), AUDIO_DURATION_READ_TIMEOUT_MS)
     audioElement.onloadedmetadata = () => {
       const durationSec = audioElement.duration
-      URL.revokeObjectURL(objectUrl)
       if (typeof durationSec === 'number' && Number.isFinite(durationSec)) {
-        resolve(Math.round(durationSec * 1000))
+        finish(Math.round(durationSec * 1000))
       } else {
-        resolve(undefined)
+        finish(undefined)
       }
     }
     audioElement.onerror = () => {
-      URL.revokeObjectURL(objectUrl)
-      resolve(undefined)
+      finish(undefined)
     }
     audioElement.src = objectUrl
   })

@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Chat audio timeline playback: resolve `m.audio` via authenticated blob
+  URLs instead of direct media HTTP links (#28)
+
 ### Added
 
+- Chat audio file attachments: picker for MP3/M4A/OGG/WAV/WebM (50 MB
+  client limit), Matrix `m.audio` send without voice marker, timeline
+  playback, composer upload/error states, and E2E coverage (#28)
 - Chat video attachments: MP4/WebM upload (50 MB client limit), Matrix
   `m.video` send with thumbnail, timeline playback controls, composer
   drag-and-drop, and E2E coverage (#26)

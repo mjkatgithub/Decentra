@@ -178,7 +178,7 @@ describe('chatTimeline helpers', () => {
 
     messages.length.should.equal(1)
     const media = messages[0]!.media!
-    media.url.should.equal('http://server/media/example.org/audio123')
+    media.url.should.equal('')
     media.mxcUrl.should.equal('mxc://example.org/audio123')
     media.mimetype!.should.equal('audio/webm')
     media.info?.duration!.should.equal(4200)
