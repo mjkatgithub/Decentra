@@ -2,9 +2,10 @@ const blobUrlCache = new Map<string, string>()
 
 export async function fetchMediaBlob(
   httpUrl: string,
-  accessToken: string
+  accessToken: string,
+  mimetype?: string,
 ): Promise<string> {
-  const cacheKey = httpUrl
+  const cacheKey = mimetype ? `${httpUrl}:${mimetype}` : httpUrl
   const cached = blobUrlCache.get(cacheKey)
   if (cached) {
     return cached
@@ -20,7 +21,14 @@ export async function fetchMediaBlob(
     throw new Error(`Failed to fetch media: ${response.status}`)
   }
 
-  const blob = await response.blob()
+  let blob = await response.blob()
+  const resolvedType = blob.type || response.headers.get('content-type') || ''
+  if (
+    mimetype &&
+    (!resolvedType || resolvedType === 'application/octet-stream')
+  ) {
+    blob = new Blob([await blob.arrayBuffer()], { type: mimetype })
+  }
   const blobUrl = URL.createObjectURL(blob)
   blobUrlCache.set(cacheKey, blobUrl)
   return blobUrl

@@ -27,10 +27,20 @@ import {
 } from '~/utils/composerEmoji'
 import { createComposerTypingNotifier } from '~/utils/composerTypingNotifier'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
+import {
+  MAX_VIDEO_UPLOAD_BYTES,
+  validateVideoFile,
+  type VideoValidationErrorCode,
+} from '~/utils/mediaUploadValidation'
 
 const message = ref('')
 const loading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const videoFileInput = ref<HTMLInputElement | null>(null)
+const uploadError = ref<VideoValidationErrorCode | 'uploadFailed' | null>(null)
+const uploadingMediaKind = ref<'image' | 'video' | null>(null)
+const uploadErrorMediaKind = ref<'image' | 'video' | null>(null)
+const isMediaDragOver = ref(false)
 const messageInputRef = ref<{ $el: HTMLElement } | null>(null)
 const pickerRoot = ref<HTMLElement | null>(null)
 const pickerOpen = ref(false)
@@ -65,6 +75,7 @@ const {
   sendMessage,
   sendEditMessage,
   sendImageMessage,
+  sendVideoMessage,
   sendAudioMessage,
   sendRoomTyping,
 } = useMatrixClient()
@@ -144,6 +155,25 @@ const showVoiceAction = computed(() => {
 const showSendAction = computed(() => {
   return composerHasText.value && !voiceComposerActive.value
 })
+
+const composerAttachDisabled = computed(() => {
+  return props.disabled || !props.roomId || loading.value || Boolean(props.editTo)
+})
+
+const composerAttachMenuItems = computed(() => [
+  [
+    {
+      label: translateText('chat.sendImage'),
+      icon: 'i-lucide-image-up',
+      onSelect: () => openFilePicker(),
+    },
+    {
+      label: translateText('chat.sendVideo'),
+      icon: 'i-lucide-video',
+      onSelect: () => openVideoFilePicker(),
+    },
+  ],
+])
 
 const composerInlineIconButtonClass =
   'inline-flex shrink-0 items-center justify-center rounded-md ' +
@@ -453,17 +483,60 @@ async function handleSend() {
   }
 }
 
+const maxVideoUploadMb = Math.round(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024))
+
+function clearUploadError() {
+  uploadError.value = null
+  uploadErrorMediaKind.value = null
+}
+
+function setUploadError(
+  code: VideoValidationErrorCode | 'uploadFailed',
+  mediaKind?: 'image' | 'video',
+) {
+  uploadError.value = code
+  uploadErrorMediaKind.value = mediaKind ?? null
+}
+
+function uploadErrorMessage(): string {
+  if (uploadError.value === 'invalidType') {
+    return translateText('chat.videoInvalidType')
+  }
+  if (uploadError.value === 'tooLarge') {
+    return translateText('chat.videoTooLarge', {
+      maxMb: String(maxVideoUploadMb),
+    })
+  }
+  if (uploadError.value === 'uploadFailed') {
+    return uploadErrorMediaKind.value === 'image'
+      ? translateText('chat.imageUploadFailed')
+      : translateText('chat.videoUploadFailed')
+  }
+  return ''
+}
+
 function openFilePicker() {
   if (!props.roomId || props.disabled || loading.value || props.editTo) {
     return
   }
+  clearUploadError()
   fileInput.value?.click()
+}
+
+function openVideoFilePicker() {
+  if (!props.roomId || props.disabled || loading.value || props.editTo) {
+    return
+  }
+  clearUploadError()
+  videoFileInput.value?.click()
 }
 
 async function handleImageSend(imageFile: File | Blob, fileName: string) {
   if (!props.roomId || props.disabled || loading.value) {
     return
   }
+  clearUploadError()
+  uploadingMediaKind.value = 'image'
   loading.value = true
   try {
     await sendImageMessage(
@@ -475,7 +548,45 @@ async function handleImageSend(imageFile: File | Blob, fileName: string) {
     if (props.replyTo) {
       emit('cancelReply')
     }
+  } catch (thrownError) {
+    console.error('Failed to send image message', thrownError)
+    setUploadError('uploadFailed', 'image')
   } finally {
+    uploadingMediaKind.value = null
+    loading.value = false
+  }
+}
+
+async function handleVideoSend(videoFile: File | Blob, fileName: string) {
+  if (!props.roomId || props.disabled || loading.value) {
+    return
+  }
+  const validation = validateVideoFile(
+    videoFile,
+    videoFile instanceof File ? videoFile.name : fileName,
+  )
+  if (!validation.ok) {
+    setUploadError(validation.code)
+    return
+  }
+  clearUploadError()
+  uploadingMediaKind.value = 'video'
+  loading.value = true
+  try {
+    await sendVideoMessage(
+      props.roomId,
+      videoFile,
+      fileName,
+      buildMessageRelationOptions(),
+    )
+    if (props.replyTo) {
+      emit('cancelReply')
+    }
+  } catch (thrownError) {
+    console.error('Failed to send video message', thrownError)
+    setUploadError('uploadFailed', 'video')
+  } finally {
+    uploadingMediaKind.value = null
     loading.value = false
   }
 }
@@ -531,6 +642,64 @@ async function onFileChange(event: Event) {
   }
   await handleImageSend(selectedFile, selectedFile.name || 'image')
   target.value = ''
+}
+
+async function onVideoFileChange(event: Event) {
+  const target = event.target as HTMLInputElement
+  const selectedFile = target.files?.[0]
+  if (!selectedFile) {
+    return
+  }
+  await handleVideoSend(selectedFile, selectedFile.name || 'video')
+  target.value = ''
+}
+
+function readDroppedFile(
+  dataTransfer: DataTransfer | null,
+): File | undefined {
+  const droppedFile = dataTransfer?.files?.[0]
+  return droppedFile ?? undefined
+}
+
+async function onComposerDrop(event: DragEvent) {
+  isMediaDragOver.value = false
+  if (!props.roomId || props.disabled || loading.value || props.editTo) {
+    return
+  }
+  const droppedFile = readDroppedFile(event.dataTransfer)
+  if (!droppedFile) {
+    return
+  }
+  event.preventDefault()
+  if (droppedFile.type.startsWith('video/')) {
+    await handleVideoSend(droppedFile, droppedFile.name || 'video')
+    return
+  }
+  if (droppedFile.type.startsWith('image/')) {
+    await handleImageSend(droppedFile, droppedFile.name || 'image')
+  }
+}
+
+function onComposerDragOver(event: DragEvent) {
+  if (!props.roomId || props.disabled || loading.value || props.editTo) {
+    return
+  }
+  const draggedFile = readDroppedFile(event.dataTransfer)
+  if (
+    !draggedFile ||
+    (
+      !draggedFile.type.startsWith('video/') &&
+      !draggedFile.type.startsWith('image/')
+    )
+  ) {
+    return
+  }
+  event.preventDefault()
+  isMediaDragOver.value = true
+}
+
+function onComposerDragLeave() {
+  isMediaDragOver.value = false
 }
 
 async function onPaste(event: ClipboardEvent) {
@@ -718,10 +887,49 @@ async function onPaste(event: ClipboardEvent) {
         </UButton>
       </div>
     </div>
+    <div
+      v-if="uploadError"
+      class="mb-3 flex items-start justify-between gap-2 rounded-md
+             border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800
+             dark:border-red-800 dark:bg-red-950/40 dark:text-red-200"
+      data-testid="composer-upload-error"
+      role="alert"
+    >
+      <span>{{ uploadErrorMessage() }}</span>
+      <UButton
+        type="button"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        data-testid="composer-upload-error-dismiss"
+        @click="clearUploadError"
+      >
+        {{ translateText('chat.dismissUploadError') }}
+      </UButton>
+    </div>
+    <p
+      v-if="uploadingMediaKind && !uploadError"
+      class="mb-2 text-xs text-gray-500 dark:text-gray-400"
+      :data-testid="uploadingMediaKind === 'video'
+        ? 'composer-video-uploading'
+        : 'composer-image-uploading'"
+    >
+      {{
+        uploadingMediaKind === 'video'
+          ? translateText('chat.videoUploading')
+          : translateText('chat.imageUploading')
+      }}
+    </p>
     <form
       ref="pickerRoot"
       class="relative flex gap-2"
+      :class="isMediaDragOver
+        ? 'rounded-md ring-2 ring-primary-400 dark:ring-primary-500'
+        : ''"
       @submit.prevent="handleSend"
+      @dragover="onComposerDragOver"
+      @dragleave="onComposerDragLeave"
+      @drop="onComposerDrop"
     >
       <input
         ref="fileInput"
@@ -732,15 +940,29 @@ async function onPaste(event: ClipboardEvent) {
         :disabled="disabled || !roomId || loading || Boolean(editTo)"
         @change="onFileChange"
       >
-      <UButton
-        type="button"
-        icon="i-lucide-image-up"
-        color="neutral"
-        variant="soft"
+      <input
+        ref="videoFileInput"
+        type="file"
+        accept="video/mp4,video/webm"
+        data-testid="composer-video-input"
+        class="hidden"
         :disabled="disabled || !roomId || loading || Boolean(editTo)"
-        :aria-label="translateText('chat.sendImage')"
-        @click="openFilePicker"
-      />
+        @change="onVideoFileChange"
+      >
+      <UDropdownMenu
+        :items="composerAttachMenuItems"
+        :disabled="composerAttachDisabled"
+      >
+        <UButton
+          type="button"
+          icon="i-lucide-plus"
+          color="neutral"
+          variant="soft"
+          :disabled="composerAttachDisabled"
+          :aria-label="translateText('chat.attachMedia')"
+          data-testid="composer-attach-button"
+        />
+      </UDropdownMenu>
       <div class="relative min-w-0 flex-1">
         <ul
           v-if="autocompleteOpen"

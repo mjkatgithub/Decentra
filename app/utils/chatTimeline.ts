@@ -10,6 +10,11 @@ export interface ChatTimelineMedia {
   mimetype?: string
   isEncrypted?: boolean
   encryptionInfo?: Record<string, any>
+  playbackUrl?: string
+  playbackMxcUrl?: string
+  playbackMimetype?: string
+  playbackIsEncrypted?: boolean
+  playbackEncryptionInfo?: Record<string, any>
   info?: {
     w?: number
     h?: number
@@ -1079,11 +1084,21 @@ export function buildTimelineMediaFromContent(input: {
       url: resolvedThumb,
       mxcUrl: thumbUrl || mxcUrl,
       mimetype: thumbMimetype || mimetype,
-      isEncrypted: thumbEncrypted || isEncryptedMedia,
+      isEncrypted: thumbEncrypted,
       encryptionInfo: thumbEncrypted
         ? content.info?.thumbnail_file
-        : (isEncryptedMedia ? content.file : undefined),
-      info: content.info?.thumbnail_info ?? content.info,
+        : undefined,
+      playbackMxcUrl: mxcUrl,
+      playbackMimetype: mimetype,
+      playbackIsEncrypted: isEncryptedMedia,
+      playbackEncryptionInfo: isEncryptedMedia ? content.file : undefined,
+      info: {
+        ...(content.info?.thumbnail_info ?? {}),
+        duration: content.info?.duration,
+        w: content.info?.w,
+        h: content.info?.h,
+        size: content.info?.size,
+      },
     }
   }
 

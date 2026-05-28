@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Chat video attachments: MP4/WebM upload (50 MB client limit), Matrix
+  `m.video` send with thumbnail, timeline playback controls, composer
+  drag-and-drop, and E2E coverage (#26)
 - Matrix space creation from the UI: `/spaces/new` form, space-rail entry,
   `createMatrixSpace` API wiring, navigation to the new space in chat,
   and subspace create via `/rooms/new?kind=space` (#22)

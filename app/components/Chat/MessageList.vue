@@ -20,6 +20,11 @@ interface MediaInfo {
   mimetype?: string;
   isEncrypted?: boolean;
   encryptionInfo?: Record<string, any>;
+  playbackUrl?: string;
+  playbackMxcUrl?: string;
+  playbackMimetype?: string;
+  playbackIsEncrypted?: boolean;
+  playbackEncryptionInfo?: Record<string, any>;
   info?: {
     w?: number;
     h?: number;
@@ -119,6 +124,18 @@ function replyMediaCacheKey(messageId: string): string {
   return `reply:${messageId}`;
 }
 
+function playbackMediaCacheKey(messageId: string): string {
+  return `playback:${messageId}`;
+}
+
+function isVideoMessage(msg: MessageItem): boolean {
+  if (msg.media?.playbackMxcUrl) {
+    return true;
+  }
+  return msg.media?.playbackMimetype?.startsWith("video/") === true
+    || msg.media?.mimetype?.startsWith("video/") === true;
+}
+
 function inferMessageMsgtype(msg: MessageItem): ChatTimelineReplyMsgtype {
   if (!msg.media) {
     return "m.text";
@@ -187,11 +204,23 @@ function needsBlobFetch(media: MediaInfo): boolean {
   );
 }
 
+function needsPlaybackBlobFetch(media: MediaInfo): boolean {
+  return Boolean(media.playbackMxcUrl);
+}
+
 function getDisplayUrl(msg: MessageItem): string | undefined {
   if (!msg.media) return undefined;
   if (resolvedBlobUrls.value[msg.id]) return resolvedBlobUrls.value[msg.id];
   if (msg.media.url) return msg.media.url;
   return undefined;
+}
+
+function getPlaybackDisplayUrl(msg: MessageItem): string | undefined {
+  if (!msg.media?.playbackMxcUrl) {
+    return undefined;
+  }
+  const cacheKey = playbackMediaCacheKey(msg.id);
+  return resolvedBlobUrls.value[cacheKey];
 }
 
 async function resolveMediaForKey(
@@ -229,6 +258,20 @@ async function resolveMedia(msg: MessageItem) {
     return;
   }
   await resolveMediaForKey(msg.id, msg.media);
+}
+
+async function resolvePlaybackMedia(msg: MessageItem) {
+  const media = msg.media;
+  if (!media?.playbackMxcUrl) {
+    return;
+  }
+  await resolveMediaForKey(playbackMediaCacheKey(msg.id), {
+    url: "",
+    mxcUrl: media.playbackMxcUrl,
+    mimetype: media.playbackMimetype,
+    isEncrypted: media.playbackIsEncrypted,
+    encryptionInfo: media.playbackEncryptionInfo,
+  });
 }
 
 function getReplyDisplayUrl(msg: MessageItem): string | undefined {
@@ -423,6 +466,13 @@ watch(
       if (msg.media && needsBlobFetch(msg.media)) {
         resolveMedia(msg);
       }
+      if (
+        isVideoMessage(msg) &&
+        msg.media &&
+        needsPlaybackBlobFetch(msg.media)
+      ) {
+        resolvePlaybackMedia(msg);
+      }
       const replyMedia = msg.replyTo?.media;
       if (replyMedia && needsBlobFetch(replyMedia)) {
         resolveReplyMedia(msg);
@@ -536,8 +586,12 @@ watch(
         <ChatMessageItem
           :message="msg"
           :display-url="getDisplayUrl(msg)"
+          :playback-display-url="getPlaybackDisplayUrl(msg)"
           :reply-display-url="getReplyDisplayUrl(msg)"
           :loading-media="Boolean(loadingMedia[msg.id])"
+          :loading-playback-media="
+            Boolean(loadingMedia[playbackMediaCacheKey(msg.id)])
+          "
           :loading-reply-media="
             Boolean(loadingMedia[replyMediaCacheKey(msg.id)])
           "

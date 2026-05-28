@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { ref } from 'vue'
 import ChatMessageInput from '~/components/Chat/MessageInput.vue'
 
@@ -88,6 +88,26 @@ const UButtonStub = {
   `
 }
 
+const UDropdownMenuStub = {
+  props: ['items', 'disabled'],
+  template: `
+    <div data-testid="composer-attach-menu-stub">
+      <slot />
+      <template v-for="(group, groupIndex) in items" :key="groupIndex">
+        <button
+          v-for="(item, itemIndex) in group"
+          :key="itemIndex"
+          type="button"
+          :data-testid="'composer-attach-option-' + itemIndex"
+          @click="item.onSelect()"
+        >
+          {{ item.label }}
+        </button>
+      </template>
+    </div>
+  `,
+}
+
 function mountInput(
   overrideProps: Partial<{
     roomId: string | null
@@ -110,6 +130,7 @@ function mountInput(
       stubs: {
         UInput: UInputStub,
         UButton: UButtonStub,
+        UDropdownMenu: UDropdownMenuStub,
         UIcon: true,
         ChatReactionEmojiPicker: ChatReactionEmojiPickerStub,
       },
@@ -125,6 +146,7 @@ function defaultMatrixClientStub(
     sendMessage: vi.fn(async () => undefined),
     sendEditMessage: vi.fn(async () => undefined),
     sendImageMessage: vi.fn(async () => undefined),
+    sendVideoMessage: vi.fn(async () => undefined),
     sendAudioMessage: vi.fn(async () => undefined),
     sendRoomTyping: vi.fn(async () => undefined),
     ...overrides,
@@ -156,7 +178,7 @@ describe('MessageInput', () => {
     const imageFile = new File(['img-data'], 'picked.png', {
       type: 'image/png'
     })
-    const fileInput = wrapper.find('input[type="file"]')
+    const fileInput = wrapper.find('[data-testid="composer-file-input"]')
     Object.defineProperty(fileInput.element, 'files', {
       value: [imageFile],
       configurable: true
@@ -167,6 +189,90 @@ describe('MessageInput', () => {
     sendImageMessage.mock.calls.length.should.equal(1)
     sendImageMessage.mock.calls[0]?.[0].should.equal('!room:example.org')
     sendImageMessage.mock.calls[0]?.[2].should.equal('picked.png')
+  })
+
+  it('shows uploading status while image is sending', async () => {
+    let resolveUpload: (() => void) | undefined
+    const sendImageMessage = vi.fn(() => new Promise<void>((resolve) => {
+      resolveUpload = resolve
+    }))
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendImageMessage })
+
+    const wrapper = mountInput()
+    const imageFile = new File(['img-data'], 'picked.png', {
+      type: 'image/png',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-file-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [imageFile],
+      configurable: true,
+    })
+
+    const changePromise = fileInput.trigger('change')
+    await wrapper.vm.$nextTick()
+    wrapper.find('[data-testid="composer-image-uploading"]').exists()
+      .should.equal(true)
+    wrapper.text().should.include('Uploading image')
+
+    resolveUpload!()
+    await changePromise
+    await flushPromises()
+    wrapper.find('[data-testid="composer-image-uploading"]').exists()
+      .should.equal(false)
+  })
+
+  it('opens attach menu with image and video actions', () => {
+    const wrapper = mountInput()
+    wrapper.find('[data-testid="composer-attach-button"]').exists()
+      .should.equal(true)
+    wrapper.find('[data-testid="composer-attach-option-0"]').text()
+      .should.include('Send image')
+    wrapper.find('[data-testid="composer-attach-option-1"]').text()
+      .should.include('Send video')
+  })
+
+  it('sends video from video file picker', async () => {
+    const sendVideoMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendVideoMessage })
+
+    const wrapper = mountInput()
+    const videoFile = new File(['video-data'], 'clip.mp4', {
+      type: 'video/mp4',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-video-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [videoFile],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+
+    sendVideoMessage.mock.calls.length.should.equal(1)
+    sendVideoMessage.mock.calls[0]?.[2].should.equal('clip.mp4')
+  })
+
+  it('shows validation error for unsupported video type', async () => {
+    const sendVideoMessage = vi.fn(async () => undefined)
+    ;(globalThis as Record<string, unknown>).useMatrixClient = () =>
+      defaultMatrixClientStub({ sendVideoMessage })
+
+    const wrapper = mountInput()
+    const videoFile = new File(['video-data'], 'clip.mov', {
+      type: 'video/quicktime',
+    })
+    const fileInput = wrapper.find('[data-testid="composer-video-input"]')
+    Object.defineProperty(fileInput.element, 'files', {
+      value: [videoFile],
+      configurable: true,
+    })
+
+    await fileInput.trigger('change')
+
+    sendVideoMessage.mock.calls.length.should.equal(0)
+    wrapper.find('[data-testid="composer-upload-error"]').exists()
+      .should.equal(true)
   })
 
   it('sends image with reply relation from file picker', async () => {

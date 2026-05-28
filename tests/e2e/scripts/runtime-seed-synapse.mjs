@@ -119,6 +119,30 @@ async function uploadImage(accessToken) {
   return body.content_uri
 }
 
+async function uploadVideo(accessToken) {
+  const videoBytes = Buffer.from(
+    'GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQRChYECGFOAZwEAAAAAAAEHTEU2bdLuTQu1cTLT7p2MhsNUhpWTu5SAzv1ogZ1HiS3AaFtfnqrAv19fF7WikREY24+E1cFJHF6WJByQx1qxs6SI2NQjA==',
+    'base64'
+  )
+  const uploadResponse = await fetch(
+    apiUrl('/_matrix/media/v3/upload?filename=e2e-seeded-video.webm'),
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'video/webm'
+      },
+      body: videoBytes
+    }
+  )
+  const bodyText = await uploadResponse.text()
+  const body = bodyText ? JSON.parse(bodyText) : {}
+  if (!uploadResponse.ok || !body?.content_uri) {
+    throw new Error('Failed to upload seeded video')
+  }
+  return body.content_uri
+}
+
 async function uploadAudio(accessToken) {
   const audioBytes = Buffer.from('mock-audio-bytes-for-e2e', 'utf8')
   const uploadResponse = await fetch(
@@ -244,6 +268,19 @@ async function main() {
     info: { mimetype: 'audio/webm', duration: 1000, size: 28 },
     'org.matrix.msc3245.voice': {},
     url: uploadedAudioMxcUrl
+  })
+  const uploadedVideoMxcUrl = await uploadVideo(primarySession.access_token)
+  await sendMessage(primarySession.access_token, roomId, 'seed-video-1', {
+    msgtype: 'm.video',
+    body: 'E2E_SEED_VIDEO',
+    info: {
+      mimetype: 'video/webm',
+      duration: 1000,
+      size: 117,
+      w: 1,
+      h: 1,
+    },
+    url: uploadedVideoMxcUrl,
   })
   await sendMessage(primarySession.access_token, roomId, 'seed-reply-to-image', {
     msgtype: 'm.text',

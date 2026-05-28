@@ -6,6 +6,7 @@ import type {
 import ChatThreadPreview from "~/components/Chat/ChatThreadPreview.vue";
 import ReplyQuotePreview from "~/components/Chat/ReplyQuotePreview.vue";
 import VoiceMessagePlayer from "~/components/Chat/VoiceMessagePlayer.vue";
+import VideoMessagePlayer from "~/components/Chat/VideoMessagePlayer.vue";
 import { useHoverCapable } from "~/composables/useHoverCapable";
 import {
   isInteractiveMessageRowTarget,
@@ -20,6 +21,11 @@ interface MediaInfo {
   mimetype?: string;
   isEncrypted?: boolean;
   encryptionInfo?: Record<string, any>;
+  playbackUrl?: string;
+  playbackMxcUrl?: string;
+  playbackMimetype?: string;
+  playbackIsEncrypted?: boolean;
+  playbackEncryptionInfo?: Record<string, any>;
   info?: {
     w?: number;
     h?: number;
@@ -58,8 +64,10 @@ interface MessageItem {
 const props = defineProps<{
   message: MessageItem;
   displayUrl?: string;
+  playbackDisplayUrl?: string;
   replyDisplayUrl?: string;
   loadingMedia?: boolean;
+  loadingPlaybackMedia?: boolean;
   loadingReplyMedia?: boolean;
   isHighlighted?: boolean;
   currentUserId?: string;
@@ -93,6 +101,14 @@ const emit = defineEmits<{
 
 const isAudioMedia = computed(() => {
   return props.message.media?.mimetype?.startsWith("audio/") === true;
+});
+
+const isVideoMedia = computed(() => {
+  if (props.message.media?.playbackMxcUrl) {
+    return true;
+  }
+  return props.message.media?.playbackMimetype?.startsWith("video/") === true
+    || props.message.media?.mimetype?.startsWith("video/") === true;
 });
 
 const showEditButton = computed(() => {
@@ -276,6 +292,14 @@ function onMessageRowPointerUp(pointerEvent: PointerEvent) {
             :duration-ms="message.media.info?.duration"
             :label="message.body"
             :loading="loadingMedia"
+          />
+          <VideoMessagePlayer
+            v-else-if="isVideoMedia"
+            :src="playbackDisplayUrl"
+            :poster="displayUrl"
+            :duration-ms="message.media.info?.duration"
+            :label="message.body"
+            :loading="loadingPlaybackMedia || loadingMedia"
           />
           <template v-else>
             <div
