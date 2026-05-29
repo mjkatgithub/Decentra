@@ -16,6 +16,8 @@ describe('SpaceList', () => {
             name: 'Team',
             hasUnread: true,
             hasMentionUnread: true,
+            totalCount: 3,
+            highlightCount: 1,
           },
         ],
         selectedSpaceId: null,
@@ -33,11 +35,12 @@ describe('SpaceList', () => {
     )
     spaceButton.attributes('data-mention-unread').should.equal('true')
     spaceButton.attributes('aria-label')
-      ?.should.include('Mentioned in space Team')
+      ?.should.include('3 mentions in space Team')
+    wrapper.find('[data-space-unread-count="3"]').text().should.equal('3')
     wrapper.find('span.rounded-full.bg-red-500').exists().should.equal(true)
   })
 
-  it('shows normal unread on expanded space label button', () => {
+  it('shows normal unread count on expanded space label button', () => {
     const wrapper = mount(ChatSpaceList, {
       props: {
         spaces: [
@@ -46,6 +49,7 @@ describe('SpaceList', () => {
             name: 'Team',
             hasUnread: true,
             hasMentionUnread: false,
+            totalCount: 12,
           },
         ],
         selectedSpaceId: null,
@@ -65,6 +69,7 @@ describe('SpaceList', () => {
     const labelButton = expandedButtons[1]!
     labelButton.attributes('data-unread').should.equal('true')
     labelButton.attributes('data-mention-unread').should.equal('false')
+    labelButton.find('[data-space-unread-count="12"]').text().should.equal('12')
     labelButton.find('span.rounded-full.bg-primary-500').exists()
       .should.equal(true)
   })

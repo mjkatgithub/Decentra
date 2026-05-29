@@ -9,14 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Per-room and per-space notification settings via Matrix push rules:
-  per-channel bell menu (default / all / mentions only / mute) with a
-  persistent mute icon, space-header menu to apply a level or mute a
-  whole space across its rooms, and a notifications section on the room
-  settings page
 - Mention-priority unread: red channel/space/thread indicators from
-  Matrix highlight counts, space-rail rollup, tab title prefix, and
-  optional browser notifications when the tab is hidden (#35)
+  Matrix highlight counts, space-rail rollup with unread counts
+  (Discord-style badges), tab title prefix, and optional browser
+  notifications when the tab is hidden; per-room bell menu and
+  per-space notification/mute via Matrix push rules (#35)
 
 ### Fixed
 

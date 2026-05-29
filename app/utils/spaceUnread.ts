@@ -1,4 +1,6 @@
-import { isRoomUnderAncestorSpace } from '~/utils/spaceRoomCategories'
+import {
+  collectRoomIdsInSpaceSubtree,
+} from '~/utils/spaceRoomCategories'
 import type { RoomUnreadState } from '~/utils/roomUnread'
 
 export const HOME_SPACE_ID = '__home__'
@@ -6,11 +8,15 @@ export const HOME_SPACE_ID = '__home__'
 export interface SpaceUnreadState {
   hasUnread: boolean
   hasMentionUnread: boolean
+  totalCount: number
+  highlightCount: number
 }
 
 const EMPTY_SPACE_UNREAD: SpaceUnreadState = {
   hasUnread: false,
   hasMentionUnread: false,
+  totalCount: 0,
+  highlightCount: 0,
 }
 
 export interface SidebarRoomRef {
@@ -25,6 +31,8 @@ export interface BuildSpaceUnreadByIdOptions {
   matrixRoomsById: Map<string, unknown>
   getRoomType: (room: unknown) => string | undefined
   getParentSpaceIds: (room: unknown) => string[]
+  /** Rooms shown on Home (DMs + non-space groups); excludes space channels. */
+  homeRoomIds?: string[]
 }
 
 function aggregateRoomUnreadStates(
@@ -33,11 +41,15 @@ function aggregateRoomUnreadStates(
 ): SpaceUnreadState {
   let hasUnread = false
   let hasMentionUnread = false
+  let totalCount = 0
+  let highlightCount = 0
   for (const roomId of roomIds) {
     const state = unreadByRoomId[roomId]
     if (!state) {
       continue
     }
+    totalCount += state.totalCount
+    highlightCount += state.highlightCount
     if (state.hasMentionUnread) {
       hasMentionUnread = true
       hasUnread = true
@@ -47,7 +59,7 @@ function aggregateRoomUnreadStates(
       hasUnread = true
     }
   }
-  return { hasUnread, hasMentionUnread }
+  return { hasUnread, hasMentionUnread, totalCount, highlightCount }
 }
 
 export interface CollectSpaceChildRoomIdsOptions {
@@ -55,41 +67,49 @@ export interface CollectSpaceChildRoomIdsOptions {
   matrixRoomsById: Map<string, unknown>
   getRoomType: (room: unknown) => string | undefined
   getParentSpaceIds: (room: unknown) => string[]
+  homeRoomIds?: string[]
 }
 
-/** All joined non-space room ids that resolve under `spaceId` (or all on Home). */
+/** All joined non-space room ids under `spaceId` (or Home sidebar rooms). */
 export function collectSpaceChildRoomIds(
   spaceId: string,
   options: CollectSpaceChildRoomIdsOptions,
 ): string[] {
   if (spaceId === HOME_SPACE_ID) {
-    return options.sidebarRooms.map((room) => room.roomId)
+    if (options.homeRoomIds) {
+      return options.homeRoomIds
+    }
+    return options.sidebarRooms
+      .filter((room) => room.parentSpaceIds.length === 0)
+      .map((room) => room.roomId)
   }
 
-  const roomIds: string[] = []
-  for (const sidebarRoom of options.sidebarRooms) {
-    if (sidebarRoom.parentSpaceIds.length === 0) {
-      continue
-    }
-    const underSpace = isRoomUnderAncestorSpace({
-      roomParentIds: sidebarRoom.parentSpaceIds,
-      ancestorSpaceId: spaceId,
-      roomsById: options.matrixRoomsById,
-      getRoomType: options.getRoomType,
-      getParentSpaceIds: options.getParentSpaceIds,
-    })
-    if (underSpace) {
-      roomIds.push(sidebarRoom.roomId)
-    }
-  }
-  return roomIds
+  return Array.from(
+    collectRoomIdsInSpaceSubtree(
+      spaceId,
+      options.matrixRoomsById,
+      options.getRoomType,
+      (room) =>
+        String(
+          (room as { name?: string; roomId?: string }).name ??
+            (room as { roomId?: string }).roomId ??
+            '',
+        ),
+    ),
+  )
 }
 
 function roomIdsForSpace(
   spaceId: string,
   options: BuildSpaceUnreadByIdOptions,
 ): string[] {
-  return collectSpaceChildRoomIds(spaceId, options)
+  return collectSpaceChildRoomIds(spaceId, {
+    sidebarRooms: options.sidebarRooms,
+    matrixRoomsById: options.matrixRoomsById,
+    getRoomType: options.getRoomType,
+    getParentSpaceIds: options.getParentSpaceIds,
+    homeRoomIds: options.homeRoomIds,
+  })
 }
 
 export function buildSpaceUnreadById(
