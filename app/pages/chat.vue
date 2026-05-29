@@ -8,17 +8,6 @@ import {
 import { useAppI18n } from "~/composables/useAppI18n";
 import { useChatMedia } from "~/composables/useChatMedia";
 import { useRoomTyping } from "~/composables/useRoomTyping";
-import { useGlobalMentionNotify } from "~/composables/useGlobalMentionNotify";
-import { useNotificationSettings } from "~/composables/useNotificationSettings";
-import { getThreadUnreadState } from "~/utils/roomUnread";
-import {
-  buildSpaceUnreadById,
-  collectSpaceChildRoomIds,
-  HOME_SPACE_ID,
-} from "~/utils/spaceUnread";
-import type {
-  RoomNotificationLevel,
-} from "~/utils/matrixNotificationRules";
 import ChatOnboardingPanel from "~/components/Chat/Onboarding/ChatOnboardingPanel.vue";
 import ChatDmStartPanel from "~/components/Chat/Onboarding/ChatDmStartPanel.vue";
 import ChatPublicRoomsPanel from "~/components/Chat/Onboarding/ChatPublicRoomsPanel.vue";
@@ -125,8 +114,6 @@ interface SpaceItem {
   id: string;
   name: string;
   avatarUrl?: string;
-  hasUnread?: boolean;
-  hasMentionUnread?: boolean;
 }
 
 interface RoomItem {
@@ -145,12 +132,7 @@ interface RoomCategoryGroup {
   rootChildAnchorIds: string[];
   /** Power-level: may send m.space.child on the parent of these rooms */
   canReorderRooms: boolean;
-  rooms: Array<{
-    roomId: string;
-    name: string;
-    hasUnread?: boolean;
-    hasMentionUnread?: boolean;
-  }>;
+  rooms: Array<{ roomId: string; name: string; hasUnread?: boolean }>;
 }
 
 interface MemberItem {
@@ -161,6 +143,7 @@ interface MemberItem {
 }
 
 const MOBILE_BREAKPOINT = 1024;
+const HOME_SPACE_ID = "__home__";
 const INITIAL_TIMELINE_WINDOW_SIZE = 80;
 const SCROLL_WINDOW_EXPAND_STEP = 40;
 const JUMP_TO_MESSAGE_MAX_PAGINATIONS = 20;
@@ -177,7 +160,6 @@ const {
   pinRoomEvent,
   unpinRoomEvent,
   markRoomAsRead,
-  markThreadAsRead,
 } = useMatrixClient();
 const { translateText } = useAppI18n();
 const {
@@ -273,46 +255,11 @@ function refreshRooms() {
 }
 
 function toCategoryRoomItem(room: { roomId: string; name: string }) {
-  const unreadState = unreadByRoomId.value[room.roomId];
   return {
     roomId: room.roomId,
     name: room.name,
-    hasUnread: unreadState?.hasUnread ?? false,
-    hasMentionUnread: unreadState?.hasMentionUnread ?? false,
+    hasUnread: unreadByRoomId.value[room.roomId]?.hasUnread ?? false,
   };
-}
-
-function enrichThreadNavEntry(
-  room: Record<string, unknown>,
-  entry: ThreadNavEntry,
-): ThreadNavEntry {
-  const threadUnread = getThreadUnreadState(room, entry.rootEventId, {
-    activeRoomId: selectedRoomId.value,
-    activeThreadRootId: activeThread.value?.rootEventId ?? null,
-  });
-  return {
-    ...entry,
-    hasUnread: threadUnread.hasUnread,
-    hasMentionUnread: threadUnread.hasMentionUnread,
-  };
-}
-
-async function markActiveThreadRead(): Promise<void> {
-  const threadState = activeThread.value;
-  if (!threadState) {
-    return;
-  }
-  await markThreadAsRead(threadState.roomId, threadState.rootEventId);
-  refreshUnread();
-  scheduleThreadNavRefresh();
-}
-
-function scheduleMarkActiveThreadRead(): void {
-  if (!import.meta.client) {
-    void markActiveThreadRead();
-    return;
-  }
-  void markActiveThreadRead();
 }
 
 function scheduleThreadNavRefresh() {
@@ -346,7 +293,7 @@ const joinedSpaceIdsListedAsChild = computed(() =>
   ),
 );
 
-const baseSpaceItems = computed<SpaceItem[]>(() => {
+const spaceItems = computed<SpaceItem[]>(() => {
   const spaces = matrixRooms.value
     .filter((room) => getRoomType(room) === "m.space")
     .filter((room) =>
@@ -367,95 +314,6 @@ const baseSpaceItems = computed<SpaceItem[]>(() => {
     ...spaces,
   ];
 });
-
-const spaceUnreadById = computed(() => {
-  unreadByRoomId.value;
-  const matrixRoomsById = new Map<string, unknown>(
-    matrixRooms.value.map((room) => [room.roomId, room]),
-  );
-  return buildSpaceUnreadById({
-    spaceIds: baseSpaceItems.value.map((space) => space.id),
-    sidebarRooms: roomItems.value,
-    unreadByRoomId: unreadByRoomId.value,
-    matrixRoomsById,
-    getRoomType,
-    getParentSpaceIds,
-  });
-});
-
-const spaceItems = computed<SpaceItem[]>(() => {
-  const unreadBySpace = spaceUnreadById.value;
-  return baseSpaceItems.value.map((space) => {
-    const unreadState = unreadBySpace[space.id];
-    return {
-      ...space,
-      hasUnread: unreadState?.hasUnread ?? false,
-      hasMentionUnread: unreadState?.hasMentionUnread ?? false,
-    };
-  });
-});
-
-useGlobalMentionNotify({
-  client,
-  unreadByRoomId,
-  selectedRoomId,
-  getRoomDisplayName: (roomId) => {
-    const room = roomItems.value.find((item) => item.roomId === roomId);
-    return room?.name ?? translateText("layout.roomFallback");
-  },
-});
-
-const {
-  getRoomLevel: getRoomNotificationLevel,
-  getSpaceLevel: getSpaceNotificationLevel,
-  setRoomLevel: setRoomNotificationLevel,
-  setSpaceLevel: setSpaceNotificationLevel,
-} = useNotificationSettings({ client });
-
-const notificationLevelByRoomId = computed(() => {
-  const map: Record<string, RoomNotificationLevel> = {};
-  for (const room of roomItems.value) {
-    map[room.roomId] = getRoomNotificationLevel(room.roomId);
-  }
-  return map;
-});
-
-function spaceChildRoomIds(spaceId: string): string[] {
-  const matrixRoomsById = new Map<string, unknown>(
-    matrixRooms.value.map((room) => [room.roomId, room]),
-  );
-  return collectSpaceChildRoomIds(spaceId, {
-    sidebarRooms: roomItems.value,
-    matrixRoomsById,
-    getRoomType,
-    getParentSpaceIds,
-  });
-}
-
-const selectedSpaceNotificationLevel = computed(() => {
-  const spaceId = selectedSpaceId.value;
-  if (!spaceId) {
-    return "default" as const;
-  }
-  return getSpaceNotificationLevel(spaceChildRoomIds(spaceId));
-});
-
-async function onSetRoomNotification(payload: {
-  roomId: string;
-  level: RoomNotificationLevel;
-}) {
-  await setRoomNotificationLevel(payload.roomId, payload.level);
-  refreshUnread();
-}
-
-async function onSetSpaceNotification(level: RoomNotificationLevel) {
-  const spaceId = selectedSpaceId.value;
-  if (!spaceId) {
-    return;
-  }
-  await setSpaceNotificationLevel(spaceChildRoomIds(spaceId), level);
-  refreshUnread();
-}
 
 function resolveSidebarRoomName(room: Record<string, unknown>): string {
   const rawName = String((room as { name?: string }).name ?? "").trim();
@@ -853,7 +711,6 @@ const memberItems = computed<MemberItem[]>(() => {
 
 const threadNavByRoomId = computed<Record<string, ThreadNavEntry[]>>(() => {
   void threadNavVersion.value;
-  unreadByRoomId.value;
   const matrixClient = client.value;
   if (!matrixClient) {
     return {};
@@ -867,9 +724,7 @@ const threadNavByRoomId = computed<Record<string, ThreadNavEntry[]>>(() => {
     if (!joinedRoom) {
       continue;
     }
-    const entries = buildRoomThreadNavEntries(joinedRoom).map((entry) =>
-      enrichThreadNavEntry(joinedRoom, entry),
-    );
+    const entries = buildRoomThreadNavEntries(joinedRoom);
     if (entries.length > 0) {
       out[room.roomId] = entries;
     }
@@ -879,7 +734,6 @@ const threadNavByRoomId = computed<Record<string, ThreadNavEntry[]>>(() => {
 
 const selectedRoomThreadEntries = computed<ThreadNavEntry[]>(() => {
   void threadNavVersion.value;
-  unreadByRoomId.value;
   const roomId = selectedRoomId.value;
   const matrixClient = client.value;
   if (!roomId || !matrixClient) {
@@ -889,9 +743,7 @@ const selectedRoomThreadEntries = computed<ThreadNavEntry[]>(() => {
   if (!room) {
     return [];
   }
-  return buildRoomThreadNavEntries(room, { maxAgeDays: null }).map((entry) =>
-    enrichThreadNavEntry(room, entry),
-  );
+  return buildRoomThreadNavEntries(room, { maxAgeDays: null });
 });
 
 const roomThreadsPanelActive = computed(() => {
@@ -1129,7 +981,6 @@ function openThreadInSidebar(target: {
     presentation: "sidebar",
   };
   loadThreadPanelMessages();
-  scheduleMarkActiveThreadRead();
 }
 
 function openThreadFromRoomNav(payload: {
@@ -1148,7 +999,6 @@ function openThreadFromRoomNav(payload: {
   };
   nextTick(() => {
     loadThreadPanelMessages();
-    scheduleMarkActiveThreadRead();
   });
 }
 
@@ -1317,7 +1167,6 @@ function openThreadFromRoomThreadList(rootEventId: string) {
     presentation: "sidebar",
   };
   loadThreadPanelMessages();
-  scheduleMarkActiveThreadRead();
 }
 
 function setActiveThreadReplyTarget(replyTarget: ChatTimelineReply) {
@@ -2343,10 +2192,6 @@ watch(
           @persist-room-order="onPersistRoomOrder"
           @move-room-between-categories="onMoveRoomBetweenCategories"
           @reorder-root-categories="onReorderRootCategories"
-          :room-notification-levels="notificationLevelByRoomId"
-          :space-notification-level="selectedSpaceNotificationLevel"
-          @set-room-notification="onSetRoomNotification"
-          @set-space-notification="onSetSpaceNotification"
         />
       </div>
     </aside>

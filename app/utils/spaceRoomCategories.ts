@@ -219,7 +219,7 @@ export function getJoinedSpaceIdsListedAsChild(
   return listedAsChild;
 }
 
-/** Top-level space for the left rail (not a child of another joined space). */
+/** Top-level space for the left rail (not nested under another joined space). */
 export function isTopLevelSpaceForRail(
   spaceRoomId: string,
   joinedSpaceIds: Set<string>,
