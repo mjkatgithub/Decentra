@@ -2,11 +2,15 @@
 import { VueDraggable } from 'vue-draggable-plus'
 import { useAppI18n } from '~/composables/useAppI18n'
 import type { ThreadNavEntry } from '~/utils/chatTimeline'
-
+import type {
+  RoomNotificationLevel,
+  SpaceNotificationLevel,
+} from '~/utils/matrixNotificationRules'
 interface RoomItem {
   roomId: string
   name: string
   hasUnread?: boolean
+  hasMentionUnread?: boolean
 }
 
 interface RoomSectionItem {
@@ -42,6 +46,10 @@ const props = defineProps<{
   activeThreadRootId?: string | null
   /** Room id when a thread is open in the main pane (exclusive nav selection) */
   activeMainThreadRoomId?: string | null
+  /** Per-room notification level (Matrix push rules) for indicators/menu */
+  roomNotificationLevels?: Record<string, RoomNotificationLevel>
+  /** Aggregate notification level for the selected space */
+  spaceNotificationLevel?: SpaceNotificationLevel
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +61,8 @@ const emit = defineEmits<{
   inviteSpace: []
   inviteRoom: [roomId: string]
   openRoomSettings: [roomId: string]
+  setRoomNotification: [payload: { roomId: string; level: RoomNotificationLevel }]
+  setSpaceNotification: [level: RoomNotificationLevel]
   openHomeStartDm: []
   openHomeCreateRoom: []
   openHomeExplorePublic: []
@@ -184,11 +194,42 @@ function selectThread(roomId: string, rootEventId: string) {
   emit('selectThread', { roomId, rootEventId })
 }
 
+function channelShowsUnread(room: RoomItem): boolean {
+  return Boolean(room.hasUnread || room.hasMentionUnread)
+}
+
+function unreadDotClass(mentionUnread: boolean): string {
+  return mentionUnread
+    ? 'size-2 shrink-0 rounded-full bg-red-500'
+    : 'size-2 shrink-0 rounded-full bg-primary-500'
+}
+
 function roomNavAriaLabel(room: RoomItem): string {
+  if (room.hasMentionUnread) {
+    return translateText('layout.channelMentionUnreadAria', {
+      name: room.name,
+    })
+  }
   if (room.hasUnread) {
     return translateText('layout.channelUnreadAria', { name: room.name })
   }
   return room.name
+}
+
+function threadNavAriaLabel(thread: ThreadNavEntry): string {
+  if (thread.hasMentionUnread) {
+    return translateText('layout.threadMentionUnreadAria', {
+      title: thread.title,
+    })
+  }
+  if (thread.hasUnread) {
+    return translateText('layout.threadUnreadAria', { title: thread.title })
+  }
+  return thread.title
+}
+
+function threadShowsUnread(thread: ThreadNavEntry): boolean {
+  return Boolean(thread.hasUnread || thread.hasMentionUnread)
 }
 
 function isRoomNavSelected(roomId: string): boolean {
@@ -313,8 +354,54 @@ const spaceHeaderMenuItems = computed(() => {
     icon: 'i-lucide-settings-2',
     onSelect: () => emit('openSpaceSettings'),
   })
+  if (props.selectedRootSpaceId) {
+    return [items, spaceNotificationItems()]
+  }
   return [items]
 })
+
+const NOTIFICATION_LEVEL_ICONS: Record<RoomNotificationLevel, string> = {
+  default: 'i-lucide-settings-2',
+  all: 'i-lucide-bell',
+  mentions: 'i-lucide-at-sign',
+  mute: 'i-lucide-bell-off',
+}
+
+function roomNotificationLevel(roomId: string): RoomNotificationLevel {
+  return props.roomNotificationLevels?.[roomId] ?? 'default'
+}
+
+function roomNotificationMenuItems(roomId: string) {
+  const current = roomNotificationLevel(roomId)
+  const makeItem = (level: RoomNotificationLevel, labelKey: string) => ({
+    label: translateText(labelKey),
+    icon: current === level ? 'i-lucide-check' : NOTIFICATION_LEVEL_ICONS[level],
+    onSelect: () => emit('setRoomNotification', { roomId, level }),
+  })
+  return [
+    [
+      makeItem('default', 'notifications.level.default'),
+      makeItem('all', 'notifications.level.all'),
+      makeItem('mentions', 'notifications.level.mentions'),
+      makeItem('mute', 'notifications.level.mute'),
+    ],
+  ]
+}
+
+function spaceNotificationItems() {
+  const current = props.spaceNotificationLevel ?? 'default'
+  const makeItem = (level: RoomNotificationLevel, labelKey: string) => ({
+    label: translateText(labelKey),
+    icon: current === level ? 'i-lucide-check' : NOTIFICATION_LEVEL_ICONS[level],
+    onSelect: () => emit('setSpaceNotification', level),
+  })
+  return [
+    makeItem('default', 'notifications.space.default'),
+    makeItem('all', 'notifications.space.all'),
+    makeItem('mentions', 'notifications.space.mentions'),
+    makeItem('mute', 'notifications.space.mute'),
+  ]
+}
 
 const homeHeaderMenuItems = computed(() => [
   [
@@ -569,27 +656,52 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                     class="flex min-w-0 flex-1 items-center justify-between
                            gap-2 py-1 pl-2 text-left text-sm"
                     :data-room-id="room.roomId"
-                    :data-unread="room.hasUnread ? 'true' : 'false'"
+                    :data-unread="channelShowsUnread(room) ? 'true' : 'false'"
+                    :data-mention-unread="
+                      room.hasMentionUnread ? 'true' : 'false'
+                    "
                     :aria-label="roomNavAriaLabel(room)"
                     @click="selectRoom(room.roomId)"
                   >
                     <span
                       class="min-w-0 truncate"
-                      :class="room.hasUnread ? 'font-semibold' : ''"
+                      :class="channelShowsUnread(room) ? 'font-semibold' : ''"
                     >
                       # {{ room.name }}
                     </span>
-                    <span
-                      v-if="room.hasUnread"
-                      class="size-2 shrink-0 rounded-full bg-primary-500"
-                      aria-hidden="true"
-                    />
+                    <span class="flex shrink-0 items-center gap-1">
+                      <UIcon
+                        v-if="roomNotificationLevel(room.roomId) === 'mute'"
+                        name="i-lucide-bell-off"
+                        class="size-3.5 text-gray-400 dark:text-gray-500"
+                        :data-room-muted="room.roomId"
+                        aria-hidden="true"
+                      />
+                      <span
+                        v-if="channelShowsUnread(room)"
+                        :class="unreadDotClass(Boolean(room.hasMentionUnread))"
+                        aria-hidden="true"
+                      />
+                    </span>
                   </button>
                   <div
                     class="decentra-channel-no-drag flex shrink-0 items-center
                            gap-0.5 opacity-0 transition group-hover:opacity-100
                            focus-within:opacity-100"
                   >
+                    <UDropdownMenu :items="roomNotificationMenuItems(room.roomId)">
+                      <UButton
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        :icon="roomNotificationLevel(room.roomId) === 'mute'
+                          ? 'i-lucide-bell-off'
+                          : 'i-lucide-bell'"
+                        :data-room-notification="room.roomId"
+                        :aria-label="translateText('notifications.menuLabel')"
+                        @click.stop
+                      />
+                    </UDropdownMenu>
                     <UButton
                       v-if="canInviteToRoom?.(room.roomId)"
                       size="xs"
@@ -616,18 +728,38 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                   )"
                   :key="thread.rootEventId"
                   type="button"
-                  class="decentra-channel-no-drag flex w-full items-center gap-2
-                         rounded-lg py-1.5 pr-2 pl-6 text-left text-sm transition"
+                  class="decentra-channel-no-drag flex w-full items-center
+                         justify-between gap-2 rounded-lg py-1.5 pr-2 pl-6
+                         text-left text-sm transition"
                   :class="isThreadNavSelected(thread.rootEventId, room.roomId)
                     ? 'bg-primary-500/15 text-primary-500'
                     : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'"
+                  :data-thread-root-id="thread.rootEventId"
+                  :data-room-id="room.roomId"
+                  :data-unread="threadShowsUnread(thread) ? 'true' : 'false'"
+                  :data-mention-unread="
+                    thread.hasMentionUnread ? 'true' : 'false'
+                  "
+                  :aria-label="threadNavAriaLabel(thread)"
                   @click.stop="selectThread(room.roomId, thread.rootEventId)"
                 >
-                  <UIcon
-                    name="i-lucide-messages-square"
-                    class="size-4 shrink-0 opacity-80"
+                  <span class="flex min-w-0 items-center gap-2">
+                    <UIcon
+                      name="i-lucide-messages-square"
+                      class="size-4 shrink-0 opacity-80"
+                    />
+                    <span
+                      class="min-w-0 truncate"
+                      :class="threadShowsUnread(thread) ? 'font-semibold' : ''"
+                    >
+                      {{ thread.title }}
+                    </span>
+                  </span>
+                  <span
+                    v-if="threadShowsUnread(thread)"
+                    :class="unreadDotClass(Boolean(thread.hasMentionUnread))"
+                    aria-hidden="true"
                   />
-                  <span class="min-w-0 truncate">{{ thread.title }}</span>
                 </button>
               </div>
               <div

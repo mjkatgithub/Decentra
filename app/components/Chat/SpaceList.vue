@@ -5,6 +5,8 @@ interface SpaceItem {
   id: string
   name: string
   avatarUrl?: string
+  hasUnread?: boolean
+  hasMentionUnread?: boolean
 }
 
 defineProps<{
@@ -38,6 +40,28 @@ function markAvatarAsFailed(spaceId: string) {
   if (!failedAvatarSpaceIds.value.includes(spaceId)) {
     failedAvatarSpaceIds.value.push(spaceId)
   }
+}
+
+function spaceShowsUnread(space: SpaceItem): boolean {
+  return Boolean(space.hasUnread || space.hasMentionUnread)
+}
+
+function unreadDotClass(mentionUnread: boolean): string {
+  return mentionUnread
+    ? 'size-2 shrink-0 rounded-full bg-red-500'
+    : 'size-2 shrink-0 rounded-full bg-primary-500'
+}
+
+function spaceNavAriaLabel(space: SpaceItem): string {
+  if (space.hasMentionUnread) {
+    return translateText('layout.spaceMentionUnreadAria', {
+      name: space.name,
+    })
+  }
+  if (space.hasUnread) {
+    return translateText('layout.spaceUnreadAria', { name: space.name })
+  }
+  return space.name
 }
 </script>
 
@@ -75,11 +99,15 @@ function markAvatarAsFailed(spaceId: string) {
       >
         <button
           type="button"
-          class="group flex h-12 min-h-12 w-12 min-w-12 items-center justify-center
-                 rounded-2xl border transition hover:-translate-y-px"
+          class="group relative flex h-12 min-h-12 w-12 min-w-12 items-center
+                 justify-center rounded-2xl border transition hover:-translate-y-px"
           :class="selectedSpaceId === space.id
             ? 'border-primary-500 bg-primary-500/20 text-primary-500'
             : 'border-gray-200 bg-white/90 text-gray-700 hover:border-primary-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-primary-500/60'"
+          :data-space-id="space.id"
+          :data-unread="spaceShowsUnread(space) ? 'true' : 'false'"
+          :data-mention-unread="space.hasMentionUnread ? 'true' : 'false'"
+          :aria-label="spaceNavAriaLabel(space)"
           @click="selectSpace(space.id)"
         >
           <img
@@ -97,19 +125,42 @@ function markAvatarAsFailed(spaceId: string) {
           >
             {{ getInitial(space.name) }}
           </span>
+          <span
+            v-if="spaceShowsUnread(space)"
+            :class="[
+              unreadDotClass(Boolean(space.hasMentionUnread)),
+              'absolute -right-0.5 -top-0.5 ring-2 ring-gray-50 dark:ring-gray-950',
+            ]"
+            aria-hidden="true"
+          />
         </button>
 
         <button
           v-if="expanded"
           type="button"
-          class="min-w-0 flex-1 rounded-xl px-3 py-2 text-left text-sm font-medium
-                 transition hover:bg-gray-100 dark:hover:bg-gray-800"
+          class="flex min-w-0 flex-1 items-center justify-between gap-2
+                 rounded-xl px-3 py-2 text-left text-sm font-medium transition
+                 hover:bg-gray-100 dark:hover:bg-gray-800"
           :class="selectedSpaceId === space.id
             ? 'bg-primary-500/15 text-primary-500'
             : 'text-gray-700 dark:text-gray-200'"
+          :data-space-id="space.id"
+          :data-unread="spaceShowsUnread(space) ? 'true' : 'false'"
+          :data-mention-unread="space.hasMentionUnread ? 'true' : 'false'"
+          :aria-label="spaceNavAriaLabel(space)"
           @click="selectSpace(space.id)"
         >
-          <span class="block truncate">{{ space.name }}</span>
+          <span
+            class="block truncate"
+            :class="spaceShowsUnread(space) ? 'font-semibold' : ''"
+          >
+            {{ space.name }}
+          </span>
+          <span
+            v-if="spaceShowsUnread(space)"
+            :class="unreadDotClass(Boolean(space.hasMentionUnread))"
+            aria-hidden="true"
+          />
         </button>
       </div>
     </div>

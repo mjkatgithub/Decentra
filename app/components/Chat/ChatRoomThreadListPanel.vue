@@ -53,6 +53,28 @@ function lastReplySnippet(body: string | undefined): string {
   }
   return firstLine.length > 96 ? `${firstLine.slice(0, 93)}...` : firstLine;
 }
+
+function threadShowsUnread(thread: ThreadNavEntry): boolean {
+  return Boolean(thread.hasUnread || thread.hasMentionUnread);
+}
+
+function unreadDotClass(mentionUnread: boolean): string {
+  return mentionUnread
+    ? "size-2 shrink-0 rounded-full bg-red-500"
+    : "size-2 shrink-0 rounded-full bg-primary-500";
+}
+
+function threadNavAriaLabel(thread: ThreadNavEntry): string {
+  if (thread.hasMentionUnread) {
+    return translateText("layout.threadMentionUnreadAria", {
+      title: thread.title,
+    });
+  }
+  if (thread.hasUnread) {
+    return translateText("layout.threadUnreadAria", { title: thread.title });
+  }
+  return thread.title;
+}
 </script>
 
 <template>
@@ -100,12 +122,16 @@ function lastReplySnippet(body: string | undefined): string {
           class="flex w-full gap-3 border-b border-gray-200 px-3 py-3
                  text-left transition hover:bg-gray-100
                  dark:border-gray-800 dark:hover:bg-gray-900"
+          :data-thread-root-id="thread.rootEventId"
+          :data-unread="threadShowsUnread(thread) ? 'true' : 'false'"
+          :data-mention-unread="thread.hasMentionUnread ? 'true' : 'false'"
+          :aria-label="threadNavAriaLabel(thread)"
           @click="emit('openThread', thread.rootEventId)"
         >
           <div class="min-w-0 flex-1">
             <p
-              class="truncate text-sm font-medium text-gray-900
-                     dark:text-gray-100"
+              class="truncate text-sm text-gray-900 dark:text-gray-100"
+              :class="threadShowsUnread(thread) ? 'font-semibold' : 'font-medium'"
             >
               {{ thread.title }}
             </p>
@@ -127,12 +153,19 @@ function lastReplySnippet(body: string | undefined): string {
               {{ lastReplySnippet(thread.lastReplyBody) }}
             </p>
           </div>
-          <img
-            v-if="thread.lastReplyAvatarUrl"
-            :src="thread.lastReplyAvatarUrl"
-            alt=""
-            class="mt-0.5 h-8 w-8 shrink-0 rounded-full object-cover"
-          />
+          <div class="flex shrink-0 flex-col items-end gap-2">
+            <span
+              v-if="threadShowsUnread(thread)"
+              :class="unreadDotClass(Boolean(thread.hasMentionUnread))"
+              aria-hidden="true"
+            />
+            <img
+              v-if="thread.lastReplyAvatarUrl"
+              :src="thread.lastReplyAvatarUrl"
+              alt=""
+              class="h-8 w-8 rounded-full object-cover"
+            />
+          </div>
         </button>
       </li>
     </ul>

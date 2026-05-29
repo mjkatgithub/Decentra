@@ -222,7 +222,7 @@ function resolveThreadRootFromEventId(
   return undefined
 }
 
-function collectMessageTimelineEvents(
+export function collectMessageTimelineEvents(
   rawEvents: TimelineEventRecord[],
 ): TimelineEventRecord[] {
   return rawEvents.filter((timelineEvent) => {
@@ -231,7 +231,7 @@ function collectMessageTimelineEvents(
   })
 }
 
-function buildMessageRelationIndex(
+export function buildMessageRelationIndex(
   messageEvents: TimelineEventRecord[],
 ): MessageRelationIndex {
   const threadRootByMessageId = new Map<string, string>()
@@ -377,7 +377,7 @@ function shouldIncludeMessageInMainTimeline(
   return true
 }
 
-function shouldIncludeMessageInThreadView(
+export function shouldIncludeMessageInThreadView(
   timelineEvent: TimelineEventRecord,
   rootEventId: string,
   relationIndex: MessageRelationIndex,
@@ -731,6 +731,8 @@ export interface ThreadNavEntry {
   lastReplySenderName?: string
   lastReplyBody?: string
   lastReplyAvatarUrl?: string
+  hasUnread?: boolean
+  hasMentionUnread?: boolean
 }
 
 export const DEFAULT_THREAD_SIDEBAR_MAX_AGE_DAYS = 2
