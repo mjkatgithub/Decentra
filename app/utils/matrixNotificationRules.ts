@@ -37,6 +37,16 @@ function actionsTriggerNotify(actions: Array<unknown> | undefined): boolean {
   return actions.some((action) => action === 'notify')
 }
 
+/** Empty actions or a lone `dont_notify` squelch notifications (Element). */
+export function isMutePushRuleActions(
+  actions: Array<unknown> | undefined,
+): boolean {
+  if (!actions || actions.length === 0) {
+    return true
+  }
+  return actions.length === 1 && actions[0] === 'dont_notify'
+}
+
 /** Room-specific rule whose id matches the room (push rule kind `room`). */
 export function findRoomPushRule(
   pushRules: PushRulesLike | null | undefined,
@@ -57,7 +67,7 @@ export function findOverrideMuteRule(
   const overrideRules = pushRules?.global?.override ?? []
   return overrideRules.find((rule) => {
     if (rule.rule_id === roomId) {
-      return true
+      return isMutePushRuleActions(rule.actions)
     }
     const conditions = rule.conditions ?? []
     if (conditions.length !== 1) {
@@ -68,7 +78,7 @@ export function findOverrideMuteRule(
       condition?.kind === 'event_match' &&
       condition?.key === 'room_id' &&
       condition?.pattern === roomId &&
-      !actionsTriggerNotify(rule.actions)
+      isMutePushRuleActions(rule.actions)
     )
   })
 }

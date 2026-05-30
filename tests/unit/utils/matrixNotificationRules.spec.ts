@@ -50,6 +50,19 @@ describe('resolveRoomNotificationLevel', () => {
     expect(resolveRoomNotificationLevel(pushRules, ROOM_ID)).toBe('mentions')
   })
 
+  it('returns mentions when the room rule uses dont_notify', () => {
+    const pushRules = pushRulesWith({
+      room: [
+        {
+          rule_id: ROOM_ID,
+          enabled: true,
+          actions: ['dont_notify'],
+        },
+      ],
+    })
+    expect(resolveRoomNotificationLevel(pushRules, ROOM_ID)).toBe('mentions')
+  })
+
   it('treats a disabled room rule as default', () => {
     const pushRules = pushRulesWith({
       room: [{ rule_id: ROOM_ID, enabled: false, actions: [] }],
@@ -66,10 +79,26 @@ describe('resolveRoomNotificationLevel', () => {
           conditions: [
             { kind: 'event_match', key: 'room_id', pattern: ROOM_ID },
           ],
-          actions: [],
+          actions: ['dont_notify'],
         },
       ],
       room: [{ rule_id: ROOM_ID, enabled: true, actions: [] }],
+    })
+    expect(resolveRoomNotificationLevel(pushRules, ROOM_ID)).toBe('mute')
+  })
+
+  it('returns mute for legacy empty-action override mute rules', () => {
+    const pushRules = pushRulesWith({
+      override: [
+        {
+          rule_id: ROOM_ID,
+          enabled: true,
+          conditions: [
+            { kind: 'event_match', key: 'room_id', pattern: ROOM_ID },
+          ],
+          actions: [],
+        },
+      ],
     })
     expect(resolveRoomNotificationLevel(pushRules, ROOM_ID)).toBe('mute')
   })

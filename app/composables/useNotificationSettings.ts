@@ -20,19 +20,20 @@ const PUSH_RULES_SCOPE = 'global'
 export function useNotificationSettings(options: {
   client: Ref<MatrixClient | null>
 }) {
-  const pushRulesVersion = ref(0)
+  const pushRulesVersion = useState('matrixPushRulesVersion', () => 0)
 
   function bumpVersion(): void {
     pushRulesVersion.value += 1
   }
 
+  /** Cached push rules from the Matrix client (not the async HTTP getter). */
   function readPushRules(matrixClient: MatrixClient) {
-    try {
-      return matrixClient.getPushRules?.() ?? null
-    } catch (thrownError) {
-      console.error('getPushRules failed', thrownError)
-      return null
-    }
+    return matrixClient.pushRules ?? null
+  }
+
+  async function refreshPushRules(matrixClient: MatrixClient): Promise<void> {
+    await matrixClient.getPushRules()
+    bumpVersion()
   }
 
   function getRoomLevel(roomId: string): RoomNotificationLevel {
@@ -51,31 +52,37 @@ export function useNotificationSettings(options: {
     )
   }
 
-  async function clearRoomScopedRules(
+  async function deleteOverrideMuteRule(
     matrixClient: MatrixClient,
     roomId: string,
-    ruleOptions: { keepRoomRule?: boolean } = {},
   ): Promise<void> {
-    const pushRules = readPushRules(matrixClient)
-    const overrideMuteRule = findOverrideMuteRule(pushRules, roomId)
-    if (overrideMuteRule?.rule_id) {
-      await matrixClient.deletePushRule(
-        PUSH_RULES_SCOPE,
-        PushRuleKind.Override,
-        overrideMuteRule.rule_id,
-      )
-    }
-    if (ruleOptions.keepRoomRule) {
+    const overrideMuteRule = findOverrideMuteRule(
+      readPushRules(matrixClient),
+      roomId,
+    )
+    if (!overrideMuteRule?.rule_id) {
       return
     }
-    const roomRule = findRoomPushRule(pushRules, roomId)
-    if (roomRule?.rule_id) {
-      await matrixClient.deletePushRule(
-        PUSH_RULES_SCOPE,
-        PushRuleKind.RoomSpecific,
-        roomRule.rule_id,
-      )
+    await matrixClient.deletePushRule(
+      PUSH_RULES_SCOPE,
+      PushRuleKind.Override,
+      overrideMuteRule.rule_id,
+    )
+  }
+
+  async function deleteRoomPushRule(
+    matrixClient: MatrixClient,
+    roomId: string,
+  ): Promise<void> {
+    const roomRule = findRoomPushRule(readPushRules(matrixClient), roomId)
+    if (!roomRule?.rule_id) {
+      return
     }
+    await matrixClient.deletePushRule(
+      PUSH_RULES_SCOPE,
+      PushRuleKind.RoomSpecific,
+      roomRule.rule_id,
+    )
   }
 
   async function setRoomLevel(
@@ -88,8 +95,9 @@ export function useNotificationSettings(options: {
     }
     try {
       if (level === 'mute') {
-        // Drop any room rule, then squelch the room via an override rule.
-        await clearRoomScopedRules(matrixClient, roomId)
+        // Match Element Web: drop the room rule, then squelch via override.
+        await deleteRoomPushRule(matrixClient, roomId)
+        await deleteOverrideMuteRule(matrixClient, roomId)
         await matrixClient.addPushRule(
           PUSH_RULES_SCOPE,
           PushRuleKind.Override,
@@ -102,25 +110,17 @@ export function useNotificationSettings(options: {
                 pattern: roomId,
               },
             ],
-            actions: [],
+            actions: [PushRuleActionName.DontNotify],
           },
         )
-        bumpVersion()
+        await refreshPushRules(matrixClient)
         return
       }
 
-      // Non-mute levels: make sure the override mute rule is gone first.
-      await clearRoomScopedRules(matrixClient, roomId, { keepRoomRule: true })
+      await deleteOverrideMuteRule(matrixClient, roomId)
 
       if (level === 'default') {
-        const roomRule = findRoomPushRule(readPushRules(matrixClient), roomId)
-        if (roomRule?.rule_id) {
-          await matrixClient.deletePushRule(
-            PUSH_RULES_SCOPE,
-            PushRuleKind.RoomSpecific,
-            roomRule.rule_id,
-          )
-        }
+        await deleteRoomPushRule(matrixClient, roomId)
       } else if (level === 'all') {
         await matrixClient.addPushRule(
           PUSH_RULES_SCOPE,
@@ -139,11 +139,11 @@ export function useNotificationSettings(options: {
           PushRuleKind.RoomSpecific,
           roomId,
           {
-            actions: [],
+            actions: [PushRuleActionName.DontNotify],
           },
         )
       }
-      bumpVersion()
+      await refreshPushRules(matrixClient)
     } catch (thrownError) {
       console.error('setRoomLevel failed', thrownError)
     }
