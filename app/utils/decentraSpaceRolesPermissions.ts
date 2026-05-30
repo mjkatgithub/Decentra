@@ -20,14 +20,6 @@ export type SpaceRoleAction =
   | 'manageRoles'
   | 'viewRoom'
 
-export {
-  canAssignUserToRolePowerLevel,
-  canManageRolePowerLevel,
-  canManageSpaceRoles,
-  canPerformSpaceMatrixAction,
-  getActorPowerLevelInSpace,
-} from '~/utils/matrixSpaceRolePermissions'
-
 export function getSpaceRolesContent(
   matrixClient: MatrixClient | null,
   spaceRoomId: string | null,

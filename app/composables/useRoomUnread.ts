@@ -3,6 +3,7 @@ import type { MatrixClient } from 'matrix-js-sdk'
 import { buildUnreadByRoomId } from '~/utils/roomUnread'
 
 const MARK_ROOM_READ_DEBOUNCE_MS = 300
+const REFRESH_UNREAD_DEBOUNCE_MS = 120
 
 export function useRoomUnread(options: {
   client: Ref<MatrixClient | null>
@@ -12,9 +13,24 @@ export function useRoomUnread(options: {
 }) {
   const unreadVersion = ref(0)
   let markReadTimerId: number | null = null
+  let refreshUnreadTimerId: number | null = null
 
   function refreshUnread(): void {
     unreadVersion.value += 1
+  }
+
+  function scheduleRefreshUnread(): void {
+    if (!import.meta.client) {
+      refreshUnread()
+      return
+    }
+    if (refreshUnreadTimerId !== null) {
+      window.clearTimeout(refreshUnreadTimerId)
+    }
+    refreshUnreadTimerId = window.setTimeout(() => {
+      refreshUnreadTimerId = null
+      refreshUnread()
+    }, REFRESH_UNREAD_DEBOUNCE_MS)
   }
 
   const unreadByRoomId = computed(() => {
@@ -59,11 +75,11 @@ export function useRoomUnread(options: {
       }
 
       const receiptHandler = (): void => {
-        refreshUnread()
+        scheduleRefreshUnread()
       }
 
       const unreadNotificationsHandler = (): void => {
-        refreshUnread()
+        scheduleRefreshUnread()
       }
 
       const timelineHandler = (
@@ -76,7 +92,7 @@ export function useRoomUnread(options: {
         if (room.roomId === options.selectedRoomId.value) {
           return
         }
-        refreshUnread()
+        scheduleRefreshUnread()
       }
 
       matrixClient.on(RoomEvent.Receipt, receiptHandler)
@@ -96,6 +112,10 @@ export function useRoomUnread(options: {
         if (markReadTimerId !== null) {
           window.clearTimeout(markReadTimerId)
           markReadTimerId = null
+        }
+        if (refreshUnreadTimerId !== null) {
+          window.clearTimeout(refreshUnreadTimerId)
+          refreshUnreadTimerId = null
         }
       })
     },

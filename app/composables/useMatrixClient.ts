@@ -8,7 +8,10 @@ import {
   Preset,
   Visibility
 } from 'matrix-js-sdk'
-import { findLatestReadableRoomMessageEvent } from '~/utils/roomUnread'
+import {
+  findLatestReadableRoomMessageEvent,
+  findLatestReadableThreadMessageEvent,
+} from '~/utils/roomUnread'
 import {
   pinRoomEvent as pinRoomEventState,
   unpinRoomEvent as unpinRoomEventState,
@@ -1264,6 +1267,41 @@ export function useMatrixClient() {
     }
   }
 
+  async function markThreadAsRead(
+    roomId: string,
+    threadRootEventId: string,
+  ): Promise<void> {
+    const matrixClient = client.value
+    if (!matrixClient) {
+      return
+    }
+    const room = matrixClient.getRoom(roomId)
+    if (!room) {
+      return
+    }
+    const latestThreadEvent = findLatestReadableThreadMessageEvent(
+      room,
+      threadRootEventId,
+    )
+    if (!latestThreadEvent) {
+      return
+    }
+    const eventId = latestThreadEvent.getId()
+    if (!eventId) {
+      return
+    }
+    try {
+      await matrixClient.sendReadReceipt(latestThreadEvent)
+      await matrixClient.setRoomReadMarkers(
+        roomId,
+        eventId,
+        latestThreadEvent,
+      )
+    } catch (thrownError) {
+      console.error('markThreadAsRead failed', thrownError)
+    }
+  }
+
   async function sendRoomTyping(
     roomId: string,
     isTyping: boolean,
@@ -2130,6 +2168,7 @@ export function useMatrixClient() {
     getRooms,
     getRoom,
     markRoomAsRead,
+    markThreadAsRead,
     sendRoomTyping,
     sendMessage,
     sendEditMessage,

@@ -1,11 +1,36 @@
 <script setup lang="ts">
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useRoomSettings } from '~/composables/useRoomSettings'
+import { useMatrixClient } from '~/composables/useMatrixClient'
+import { useNotificationSettings } from '~/composables/useNotificationSettings'
+import {
+  ROOM_NOTIFICATION_LEVELS,
+  type RoomNotificationLevel,
+} from '~/utils/matrixNotificationRules'
 
 const route = useRoute()
 const { translateText } = useAppI18n()
+const { client } = useMatrixClient()
 
 const roomId = computed(() => String(route.params.roomId || ''))
+
+const {
+  getRoomLevel,
+  setRoomLevel,
+} = useNotificationSettings({ client })
+
+const currentNotificationLevel = computed(() => getRoomLevel(roomId.value))
+
+const notificationOptions = computed(() =>
+  ROOM_NOTIFICATION_LEVELS.map((level) => ({
+    level,
+    label: translateText(`notifications.level.${level}`),
+  })),
+)
+
+async function selectNotificationLevel(level: RoomNotificationLevel) {
+  await setRoomLevel(roomId.value, level)
+}
 
 const {
   displayName,
@@ -134,6 +159,37 @@ const backToChatLocation = computed(() => {
       >
         {{ translateText('settings.roomReadOnlyHint') }}
       </p>
+
+      <section class="mt-6">
+        <h2 class="text-base font-semibold">
+          {{ translateText('notifications.title') }}
+        </h2>
+        <p class="mb-3 text-sm text-gray-500 dark:text-gray-400">
+          {{ translateText('notifications.description') }}
+        </p>
+        <div class="flex flex-col gap-2">
+          <button
+            v-for="option in notificationOptions"
+            :key="option.level"
+            type="button"
+            class="flex items-center justify-between gap-2 rounded-lg border
+                   px-3 py-2 text-left text-sm transition"
+            :class="currentNotificationLevel === option.level
+              ? 'border-primary-500 bg-primary-500/10 text-primary-600 dark:text-primary-400'
+              : 'border-gray-200 hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800'"
+            :data-notification-level="option.level"
+            :aria-pressed="currentNotificationLevel === option.level"
+            @click="selectNotificationLevel(option.level)"
+          >
+            <span>{{ option.label }}</span>
+            <UIcon
+              v-if="currentNotificationLevel === option.level"
+              name="i-lucide-check"
+              class="size-4 shrink-0"
+            />
+          </button>
+        </div>
+      </section>
 
       <template #footer>
         <UButton color="neutral" variant="soft" :to="backToChatLocation">

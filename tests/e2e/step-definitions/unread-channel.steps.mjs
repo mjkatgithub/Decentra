@@ -13,6 +13,17 @@ function matrixHomeserverUrl() {
   return requireEnv('E2E_MATRIX_HOMESERVER').replace(/\/$/, '')
 }
 
+function primaryMatrixUserId() {
+  return requireEnv('E2E_MATRIX_USERNAME')
+}
+
+function primaryLocalpart() {
+  const userId = primaryMatrixUserId()
+  return userId.startsWith('@')
+    ? userId.slice(1).split(':')[0]
+    : userId
+}
+
 async function fetchSecondaryAccessToken() {
   const homeserver = matrixHomeserverUrl()
   const userId = requireEnv('E2E_SECOND_MATRIX_USERNAME')
@@ -38,7 +49,7 @@ async function fetchSecondaryAccessToken() {
   return body.access_token
 }
 
-async function sendMessageAsSecondary(roomId, messageBody) {
+async function sendRoomMessageAsSecondary(roomId, content) {
   const homeserver = matrixHomeserverUrl()
   const accessToken = await fetchSecondaryAccessToken()
   const transactionId = `e2e-unread-${Date.now()}`
@@ -52,10 +63,7 @@ async function sendMessageAsSecondary(roomId, messageBody) {
         authorization: `Bearer ${accessToken}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({
-        msgtype: 'm.text',
-        body: messageBody,
-      }),
+      body: JSON.stringify(content),
     },
   )
   if (!response.ok) {
@@ -66,9 +74,33 @@ async function sendMessageAsSecondary(roomId, messageBody) {
   }
 }
 
+async function sendMessageAsSecondary(roomId, messageBody) {
+  await sendRoomMessageAsSecondary(roomId, {
+    msgtype: 'm.text',
+    body: messageBody,
+  })
+}
+
+async function sendMentionAsSecondary(roomId, messageBody) {
+  const targetUserId = primaryMatrixUserId()
+  const localpart = primaryLocalpart()
+  await sendRoomMessageAsSecondary(roomId, {
+    msgtype: 'm.text',
+    body: `${messageBody} @${localpart}`,
+    'm.mentions': {
+      user_ids: [targetUserId],
+    },
+  })
+}
+
 function mainTestRoomButton(page) {
   const roomId = requireEnv('E2E_TEST_ROOM_ID')
   return page.locator(`button[data-room-id="${roomId}"]`).first()
+}
+
+function mainTestSpaceButton(page) {
+  const spaceId = requireEnv('E2E_TEST_SPACE_ID')
+  return page.locator(`button[data-space-id="${spaceId}"]`).first()
 }
 
 When('I open the side seeded test room', async function () {
@@ -89,6 +121,22 @@ When(
   },
 )
 
+When(
+  'the secondary user mentions the primary user with {string} in the main test room',
+  async function (messageBody) {
+    const roomId = requireEnv('E2E_TEST_ROOM_ID')
+    await sendMentionAsSecondary(roomId, messageBody)
+  },
+)
+
+When(
+  'the secondary user mentions the primary user with {string} in the seeded space channel',
+  async function (messageBody) {
+    const roomId = requireEnv('E2E_TEST_SPACE_CHANNEL_ID')
+    await sendMentionAsSecondary(roomId, messageBody)
+  },
+)
+
 Then('the main test room should show an unread indicator', async function () {
   const roomButton = mainTestRoomButton(this.page)
   await expect(roomButton).toBeVisible({ timeout: 20000 })
@@ -98,11 +146,47 @@ Then('the main test room should show an unread indicator', async function () {
 })
 
 Then(
+  'the main test room should not show a mention unread indicator',
+  async function () {
+    const roomButton = mainTestRoomButton(this.page)
+    await expect(roomButton).toBeVisible({ timeout: 20000 })
+    await expect(roomButton).toHaveAttribute('data-mention-unread', 'false', {
+      timeout: 20000,
+    })
+  },
+)
+
+Then(
+  'the main test room should show a mention unread indicator',
+  async function () {
+    const roomButton = mainTestRoomButton(this.page)
+    await expect(roomButton).toBeVisible({ timeout: 20000 })
+    await expect(roomButton).toHaveAttribute('data-mention-unread', 'true', {
+      timeout: 20000,
+    })
+  },
+)
+
+Then(
   'the main test room should not show an unread indicator',
   async function () {
     const roomButton = mainTestRoomButton(this.page)
     await expect(roomButton).toBeVisible({ timeout: 20000 })
     await expect(roomButton).toHaveAttribute('data-unread', 'false', {
+      timeout: 20000,
+    })
+    await expect(roomButton).toHaveAttribute('data-mention-unread', 'false', {
+      timeout: 20000,
+    })
+  },
+)
+
+Then(
+  'the seeded test space should show a mention unread indicator on the space rail',
+  async function () {
+    const spaceButton = mainTestSpaceButton(this.page)
+    await expect(spaceButton).toBeVisible({ timeout: 20000 })
+    await expect(spaceButton).toHaveAttribute('data-mention-unread', 'true', {
       timeout: 20000,
     })
   },

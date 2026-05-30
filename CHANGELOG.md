@@ -7,8 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Mention-priority unread: red channel/space/thread indicators from
+  Matrix highlight counts, space-rail rollup with unread counts
+  (Discord-style badges), tab title prefix, and optional browser
+  notifications when the tab is hidden; per-room bell menu and
+  per-space notification/mute via Matrix push rules (#35)
+- Configurable new-message alerts (visual only or sound + visual) in
+  account settings (#35)
+
 ### Fixed
 
+- Unread indicators persist after navigating to space settings and back
+  to chat (`useMatrixSyncPrepared`, session-persisted space/room
+  selection) (#35)
+- Room notification mute/unmute: read cached Matrix push rules, refresh
+  after writes, and use Element-compatible rule actions (#35)
+- Browser tab unread title: simple `(*)` marker when anything is unread,
+  without counts or mention breakdown (#35)
 - Chat audio timeline playback: resolve `m.audio` via authenticated blob
   URLs instead of direct media HTTP links (#28)
 

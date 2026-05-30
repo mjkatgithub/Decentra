@@ -202,6 +202,30 @@ Feature: Chat
     And I open the side seeded test room
     And the secondary user sends "E2E_UNREAD_MARKER_MSG" to the main test room
     Then the main test room should show an unread indicator
+    And the main test room should not show a mention unread indicator
+
+  Scenario: Mention unread indicator for inactive channel
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the side seeded test room
+    And the secondary user mentions the primary user with "E2E_MENTION_UNREAD_MSG" in the main test room
+    Then the main test room should show a mention unread indicator
+
+  Scenario: Opening channel clears mention unread indicator
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the side seeded test room
+    And the secondary user mentions the primary user with "E2E_MENTION_CLEAR_MSG" in the main test room
+    Then the main test room should show a mention unread indicator
+    When I open the seeded test room
+    Then the main test room should not show an unread indicator
+
+  Scenario: Mention unread aggregates on the space rail
+    When I open the login page
+    And I sign in with configured credentials
+    And I open the side seeded test room
+    And the secondary user mentions the primary user with "E2E_SPACE_MENTION_MSG" in the seeded space channel
+    Then the seeded test space should show a mention unread indicator on the space rail
 
   Scenario: Opening channel clears unread indicator
     When I open the login page
