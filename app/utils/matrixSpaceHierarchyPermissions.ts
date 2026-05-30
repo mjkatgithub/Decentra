@@ -38,8 +38,6 @@ export function getRequiredPowerForSpaceChild(
   return 50
 }
 
-export { getUserPowerLevelInRoomFromState }
-
 /**
  * True if the user may send `m.space.child` on this space room (reorder/move
  * children in the hierarchy). This is room state — changes apply for all

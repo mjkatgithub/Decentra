@@ -1467,16 +1467,12 @@ const {
   setSpaceLevel: setSpaceNotificationLevel,
 } = useNotificationSettings({ client });
 
-const notificationLevelByRoomId = computed(() => {
+function roomNotificationLevelForRoom(roomId: string): RoomNotificationLevel {
   if (!matrixSyncPrepared.value) {
-    return {};
+    return "default";
   }
-  const map: Record<string, RoomNotificationLevel> = {};
-  for (const room of roomItems.value) {
-    map[room.roomId] = getRoomNotificationLevel(room.roomId);
-  }
-  return map;
-});
+  return getRoomNotificationLevel(roomId);
+}
 
 function roomIdsUnderSpace(spaceId: string): string[] {
   const matrixRoomsById = new Map<string, unknown>(
@@ -2207,7 +2203,7 @@ watch(
       return;
     }
     const onSpaceStateUpdated = () => {
-      refreshRooms();
+      scheduleSpaceHierarchyRefresh();
     };
     spaceRoom.on(RoomEvent.CurrentStateUpdated, onSpaceStateUpdated);
     onCleanup(() => {
@@ -2247,12 +2243,6 @@ watch(
         ) {
           scheduleThreadNavRefresh();
         }
-        if (
-          room.roomId !== selectedRoomId.value &&
-          eventType === "m.room.message"
-        ) {
-          refreshUnread();
-        }
       }
       if (room?.roomId === selectedRoomId.value) {
         const eventType = timelineEvent?.getType?.() ?? "";
@@ -2272,7 +2262,7 @@ watch(
       }
     };
     const membershipHandler = () => {
-      refreshRooms();
+      scheduleSpaceHierarchyRefresh();
     };
     const decryptedHandler = (event: Record<string, any>) => {
       if (
@@ -2385,7 +2375,7 @@ watch(
           @persist-room-order="onPersistRoomOrder"
           @move-room-between-categories="onMoveRoomBetweenCategories"
           @reorder-root-categories="onReorderRootCategories"
-          :room-notification-levels="notificationLevelByRoomId"
+          :get-room-notification-level="roomNotificationLevelForRoom"
           :space-notification-level="selectedSpaceNotificationLevel"
           @set-room-notification="onSetRoomNotification"
           @set-space-notification="onSetSpaceNotification"

@@ -1,8 +1,8 @@
 import { describe, it } from 'vitest'
+import { getUserPowerLevelInRoomFromState } from '~/utils/matrixPowerLevels'
 import {
   canUserSendSpaceChildState,
   getRequiredPowerForSpaceChild,
-  getUserPowerLevelInRoomFromState,
 } from '~/utils/matrixSpaceHierarchyPermissions'
 
 describe('matrixSpaceHierarchyPermissions', () => {

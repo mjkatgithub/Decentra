@@ -48,6 +48,8 @@ const props = defineProps<{
   activeMainThreadRoomId?: string | null
   /** Per-room notification level (Matrix push rules) for indicators/menu */
   roomNotificationLevels?: Record<string, RoomNotificationLevel>
+  /** Lazy resolver; preferred over building a full level map in the parent */
+  getRoomNotificationLevel?: (roomId: string) => RoomNotificationLevel
   /** Aggregate notification level for the selected space */
   spaceNotificationLevel?: SpaceNotificationLevel
 }>()
@@ -371,6 +373,9 @@ const ROOM_NOTIFICATION_TRIGGER_ICONS: Record<RoomNotificationLevel, string> =
   NOTIFICATION_LEVEL_ICONS
 
 function roomNotificationLevel(roomId: string): RoomNotificationLevel {
+  if (props.getRoomNotificationLevel) {
+    return props.getRoomNotificationLevel(roomId)
+  }
   return props.roomNotificationLevels?.[roomId] ?? 'default'
 }
 

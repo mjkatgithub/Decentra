@@ -35,8 +35,6 @@ export function getRequiredPowerForPinnedEvents(
   return 50
 }
 
-export { getUserPowerLevelInRoomFromState }
-
 export function canUserPinEvents(
   matrixClient: MatrixClient,
   roomId: string,

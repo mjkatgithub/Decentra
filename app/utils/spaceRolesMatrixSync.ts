@@ -320,5 +320,3 @@ export function inferOwnerUserId(
   )
   return ownerEntry?.[0] ?? Object.keys(content.assignments)[0]
 }
-
-export { POWER_LEVEL_TAGS_STATE_TYPE } from '~/utils/matrixPowerLevelTagState'
