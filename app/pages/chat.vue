@@ -1,6 +1,5 @@
 ﻿<script setup lang="ts">
 import {
-  ClientEvent,
   EventType,
   MatrixEventEvent,
   RoomEvent,
@@ -10,6 +9,7 @@ import { useChatMedia } from "~/composables/useChatMedia";
 import { useRoomTyping } from "~/composables/useRoomTyping";
 import { useGlobalMentionNotify } from "~/composables/useGlobalMentionNotify";
 import { useNotificationSettings } from "~/composables/useNotificationSettings";
+import { useMatrixSyncPrepared } from "~/composables/useMatrixSyncPrepared";
 import { getThreadUnreadState } from "~/utils/roomUnread";
 import {
   buildSpaceUnreadById,
@@ -181,6 +181,7 @@ const {
   markRoomAsRead,
   markThreadAsRead,
 } = useMatrixClient();
+const matrixSyncPrepared = useMatrixSyncPrepared(client);
 const { translateText } = useAppI18n();
 const {
   getSpaceAvatarUrl,
@@ -192,8 +193,14 @@ const {
 const route = useRoute();
 const onboardingSubView = ref<null | "dm" | "public">(null);
 
-const selectedRoomId = ref<string | null>(null);
-const selectedSpaceId = ref<string | null>(null);
+const selectedRoomId = useState<string | null>(
+  "chat-selected-room-id",
+  () => null,
+);
+const selectedSpaceId = useState<string | null>(
+  "chat-selected-space-id",
+  () => null,
+);
 /** Keeps root space selected while the space rail list is still syncing. */
 const pendingRootSpaceId = ref<string | null>(null);
 const allMessages = ref<ChatMessage[]>([]);
@@ -1412,7 +1419,11 @@ function resolveHomeRoomIdsForUnread(): string[] {
     .map((room) => room.roomId);
 }
 
-const matrixSyncPrepared = ref(false);
+watch(matrixSyncPrepared, (prepared) => {
+  if (prepared) {
+    refreshRooms();
+  }
+});
 
 const spaceUnreadById = computed(() => {
   if (!matrixSyncPrepared.value) {
@@ -2167,6 +2178,9 @@ watch(
 onMounted(() => {
   syncViewport(true);
   window.addEventListener("resize", resizeHandler);
+  if (client.value) {
+    refreshRooms();
+  }
 });
 
 const resizeHandler = () => syncViewport();
@@ -2217,20 +2231,11 @@ watch(
   () => client.value,
   (matrixClient, _previousClient, onCleanup) => {
     if (!matrixClient) {
-      matrixSyncPrepared.value = false;
+      selectedSpaceId.value = null;
+      selectedRoomId.value = null;
       return;
     }
-    if (matrixClient.getSyncState?.() === "PREPARED") {
-      matrixSyncPrepared.value = true;
-    }
     refreshRooms();
-    const onSyncState = (state: string) => {
-      if (state === "PREPARED") {
-        matrixSyncPrepared.value = true;
-        refreshRooms();
-      }
-    };
-    matrixClient.on(ClientEvent.Sync, onSyncState);
     const timelineHandler = (
       timelineEvent: Record<string, any> | undefined,
       room: Record<string, any> | undefined,
@@ -2286,8 +2291,6 @@ watch(
     matrixClient.on(RoomEvent.MyMembership, membershipHandler);
     matrixClient.on(MatrixEventEvent.Decrypted, decryptedHandler);
     onCleanup(() => {
-      matrixClient.off(ClientEvent.Sync, onSyncState);
-      matrixSyncPrepared.value = false;
       matrixClient.off(RoomEvent.Timeline, timelineHandler);
       matrixClient.off(RoomEvent.MyMembership, membershipHandler);
       matrixClient.off(MatrixEventEvent.Decrypted, decryptedHandler);
