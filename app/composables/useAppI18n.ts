@@ -252,6 +252,11 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'notifications.space.mute': 'Mute space',
     'notifications.space.mixed': 'Mixed',
     'notifications.applied': 'Notification setting saved',
+    'notifications.incomingVisual': 'Visual only (tab title & badges)',
+    'notifications.incomingSound': 'Sound and visual',
+    'notifications.incomingHint':
+      'Sound plays for new messages in unmuted channels while you are in another channel. Browsers may require a click in the app first.',
+    'settings.messageNotify': 'New message alerts',
     'layout.expandCategory': 'Expand category',
     'layout.collapseCategory': 'Collapse category',
     'layout.createSpace': 'Create space',
@@ -791,6 +796,11 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'notifications.space.mute': 'Space stummschalten',
     'notifications.space.mixed': 'Gemischt',
     'notifications.applied': 'Benachrichtigung gespeichert',
+    'notifications.incomingVisual': 'Nur visuell (Tab-Titel & Badges)',
+    'notifications.incomingSound': 'Ton und visuell',
+    'notifications.incomingHint':
+      'Ton bei neuen Nachrichten in nicht stummen Kanälen, solange du in einem anderen Kanal bist. Browser verlangen oft zuerst einen Klick in der App.',
+    'settings.messageNotify': 'Benachrichtigung bei neuen Nachrichten',
     'layout.expandCategory': 'Kategorie aufklappen',
     'layout.collapseCategory': 'Kategorie zuklappen',
     'layout.createSpace': 'Space erstellen',

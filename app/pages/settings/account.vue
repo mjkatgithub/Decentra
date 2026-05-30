@@ -2,6 +2,10 @@
 import AccountVerificationPanel from '~/components/settings/AccountVerificationPanel.vue'
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useMatrixClient } from '~/composables/useMatrixClient'
+import {
+  useMessageNotifyPreference,
+  type MessageNotifyMode,
+} from '~/composables/useMessageNotifyPreference'
 import { useThemePreference } from '~/composables/useThemePreference'
 
 type ThemeMode = 'light' | 'dark' | 'system'
@@ -15,6 +19,11 @@ type PresenceMode =
 const { client, userId, logout } = useMatrixClient()
 const { locale, setLocale, translateText } = useAppI18n()
 const { getThemePreference, setThemePreference } = useThemePreference()
+const {
+  initializeMessageNotifyPreference,
+  getMessageNotifyMode,
+  setMessageNotifyMode,
+} = useMessageNotifyPreference()
 
 const selectedTheme = computed<ThemeMode>({
   get() {
@@ -45,6 +54,33 @@ const localeOptions: Array<{ label: string; value: AppLocale }> = [
   { label: 'Deutsch', value: 'de' }
 ]
 
+const messageNotifyOptions: Array<{
+  label: string
+  value: MessageNotifyMode
+}> = [
+  { label: '', value: 'visual' },
+  { label: '', value: 'sound' },
+]
+
+const selectedMessageNotifyMode = computed<MessageNotifyMode>({
+  get() {
+    return getMessageNotifyMode()
+  },
+  set(value) {
+    setMessageNotifyMode(value)
+  },
+})
+
+const messageNotifySelectOptions = computed(() =>
+  messageNotifyOptions.map((option) => ({
+    ...option,
+    label:
+      option.value === 'visual'
+        ? translateText('notifications.incomingVisual')
+        : translateText('notifications.incomingSound'),
+  })),
+)
+
 const presenceValue = ref<PresenceMode>('online')
 const busyPresenceSupported = ref(false)
 const presenceFeedback = ref('')
@@ -65,6 +101,7 @@ const presenceOptions = computed(() => {
 })
 
 onMounted(async () => {
+  initializeMessageNotifyPreference()
   await detectBusyPresenceSupport()
   syncPresenceFromCurrentUser()
 })
@@ -186,6 +223,28 @@ async function applyPresence() {
               {{ localeOption.label }}
             </option>
           </select>
+        </label>
+
+        <label class="flex flex-col gap-2 text-sm">
+          <span class="font-medium">
+            {{ translateText('settings.messageNotify') }}
+          </span>
+          <select
+            v-model="selectedMessageNotifyMode"
+            class="rounded-lg border border-gray-300 bg-white px-3 py-2
+                   dark:border-gray-700 dark:bg-gray-900"
+          >
+            <option
+              v-for="option in messageNotifySelectOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+          <span class="text-xs text-gray-500 dark:text-gray-400">
+            {{ translateText('notifications.incomingHint') }}
+          </span>
         </label>
 
         <label class="flex flex-col gap-2 text-sm">

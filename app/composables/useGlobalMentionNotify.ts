@@ -1,9 +1,17 @@
 import type { MatrixClient } from 'matrix-js-sdk'
 import { RoomEvent } from 'matrix-js-sdk'
+import {
+  formatDocumentTitle,
+  stripDocumentTitlePrefix,
+} from '~/utils/documentTitle'
+import { shouldNotifyIncomingMessage } from '~/utils/incomingMessageNotify'
+import { playMessageNotifySound } from '~/utils/messageNotifySound'
+import type { RoomNotificationLevel } from '~/utils/matrixNotificationRules'
 import { summarizeGlobalUnread } from '~/utils/roomUnread'
 import type { RoomUnreadState } from '~/utils/roomUnread'
+import { useMessageNotifyPreference } from '~/composables/useMessageNotifyPreference'
 
-const MENTION_NOTIFY_DEBOUNCE_MS = 4000
+const INCOMING_NOTIFY_DEBOUNCE_MS = 4000
 const DEFAULT_DOCUMENT_TITLE = 'Decentra'
 
 export function useGlobalMentionNotify(options: {
@@ -11,26 +19,63 @@ export function useGlobalMentionNotify(options: {
   unreadByRoomId: Ref<Record<string, RoomUnreadState>>
   selectedRoomId: Ref<string | null>
   getRoomDisplayName: (roomId: string) => string
+  getRoomNotificationLevel?: (roomId: string) => RoomNotificationLevel
 }) {
   const baseDocumentTitle = ref(DEFAULT_DOCUMENT_TITLE)
   const lastMentionNotifyAtByRoom = new Map<string, number>()
+  const lastSoundNotifyAtByRoom = new Map<string, number>()
+  const { initializeMessageNotifyPreference, isMessageNotifySoundEnabled } =
+    useMessageNotifyPreference()
 
   function applyDocumentTitle(): void {
     if (!import.meta.client) {
       return
     }
-    const { unreadRoomCount, mentionRoomCount } = summarizeGlobalUnread(
+    const { unreadRoomCount } = summarizeGlobalUnread(
       options.unreadByRoomId.value,
     )
-    if (mentionRoomCount > 0) {
-      document.title = `(${mentionRoomCount} @) ${baseDocumentTitle.value}`
+    document.title = formatDocumentTitle(
+      baseDocumentTitle.value,
+      unreadRoomCount > 0,
+    )
+  }
+
+  function resolveRoomNotificationLevel(roomId: string): RoomNotificationLevel {
+    return options.getRoomNotificationLevel?.(roomId) ?? 'default'
+  }
+
+  function maybePlayIncomingSound(
+    roomId: string,
+    previousUnread?: Record<string, RoomUnreadState>,
+  ): void {
+    if (!import.meta.client) {
       return
     }
-    if (unreadRoomCount > 0) {
-      document.title = `(${unreadRoomCount}) ${baseDocumentTitle.value}`
+    const current = options.unreadByRoomId.value[roomId]
+    if (!current) {
       return
     }
-    document.title = baseDocumentTitle.value
+    const previous = previousUnread?.[roomId]
+    if (
+      !shouldNotifyIncomingMessage({
+        roomId,
+        selectedRoomId: options.selectedRoomId.value,
+        notificationLevel: resolveRoomNotificationLevel(roomId),
+        current,
+        previous,
+        soundEnabled: isMessageNotifySoundEnabled(),
+      })
+    ) {
+      return
+    }
+
+    const nowMs = Date.now()
+    const lastAt = lastSoundNotifyAtByRoom.get(roomId) ?? 0
+    if (nowMs - lastAt < INCOMING_NOTIFY_DEBOUNCE_MS) {
+      return
+    }
+    lastSoundNotifyAtByRoom.set(roomId, nowMs)
+    void playMessageNotifySound()
   }
 
   function maybeShowMentionNotification(roomId: string): void {
@@ -55,7 +100,7 @@ export function useGlobalMentionNotify(options: {
     }
     const nowMs = Date.now()
     const lastAt = lastMentionNotifyAtByRoom.get(roomId) ?? 0
-    if (nowMs - lastAt < MENTION_NOTIFY_DEBOUNCE_MS) {
+    if (nowMs - lastAt < INCOMING_NOTIFY_DEBOUNCE_MS) {
       return
     }
     lastMentionNotifyAtByRoom.set(roomId, nowMs)
@@ -70,26 +115,35 @@ export function useGlobalMentionNotify(options: {
     }
   }
 
+  function handleUnreadChange(
+    nextUnread: Record<string, RoomUnreadState>,
+    previousUnread?: Record<string, RoomUnreadState>,
+  ): void {
+    applyDocumentTitle()
+    if (!previousUnread) {
+      return
+    }
+    for (const [roomId, state] of Object.entries(nextUnread)) {
+      maybePlayIncomingSound(roomId, previousUnread)
+
+      if (!state.hasMentionUnread) {
+        continue
+      }
+      const previousState = previousUnread[roomId]
+      if (
+        previousState?.hasMentionUnread &&
+        previousState.highlightCount >= state.highlightCount
+      ) {
+        continue
+      }
+      maybeShowMentionNotification(roomId)
+    }
+  }
+
   watch(
     () => options.unreadByRoomId.value,
     (nextUnread, previousUnread) => {
-      applyDocumentTitle()
-      if (!previousUnread) {
-        return
-      }
-      for (const [roomId, state] of Object.entries(nextUnread)) {
-        if (!state.hasMentionUnread) {
-          continue
-        }
-        const previousState = previousUnread[roomId]
-        if (
-          previousState?.hasMentionUnread &&
-          previousState.highlightCount >= state.highlightCount
-        ) {
-          continue
-        }
-        maybeShowMentionNotification(roomId)
-      }
+      handleUnreadChange(nextUnread, previousUnread)
     },
     { deep: true },
   )
@@ -126,10 +180,11 @@ export function useGlobalMentionNotify(options: {
     if (!import.meta.client) {
       return
     }
-    const configuredTitle = document.title.trim()
-    if (configuredTitle) {
-      baseDocumentTitle.value = configuredTitle
-    }
+    initializeMessageNotifyPreference()
+    baseDocumentTitle.value = stripDocumentTitlePrefix(
+      document.title,
+      DEFAULT_DOCUMENT_TITLE,
+    )
     applyDocumentTitle()
   })
 

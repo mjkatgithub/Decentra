@@ -1461,6 +1461,13 @@ const spaceRailItems = computed<SpaceItem[]>(() => {
   });
 });
 
+const {
+  getRoomLevel: getRoomNotificationLevel,
+  getSpaceLevel: getSpaceNotificationLevel,
+  setRoomLevel: setRoomNotificationLevel,
+  setSpaceLevel: setSpaceNotificationLevel,
+} = useNotificationSettings({ client });
+
 useGlobalMentionNotify({
   client,
   unreadByRoomId,
@@ -1469,14 +1476,13 @@ useGlobalMentionNotify({
     const room = roomItems.value.find((item) => item.roomId === roomId);
     return room?.name ?? translateText("layout.roomFallback");
   },
+  getRoomNotificationLevel: (roomId) => {
+    if (!matrixSyncPrepared.value) {
+      return "default";
+    }
+    return getRoomNotificationLevel(roomId);
+  },
 });
-
-const {
-  getRoomLevel: getRoomNotificationLevel,
-  getSpaceLevel: getSpaceNotificationLevel,
-  setRoomLevel: setRoomNotificationLevel,
-  setSpaceLevel: setSpaceNotificationLevel,
-} = useNotificationSettings({ client });
 
 function roomNotificationLevelForRoom(roomId: string): RoomNotificationLevel {
   if (!matrixSyncPrepared.value) {
