@@ -361,14 +361,36 @@ const spaceHeaderMenuItems = computed(() => {
 })
 
 const NOTIFICATION_LEVEL_ICONS: Record<RoomNotificationLevel, string> = {
-  default: 'i-lucide-settings-2',
-  all: 'i-lucide-bell',
+  default: 'i-lucide-bell',
+  all: 'i-lucide-bell-ring',
   mentions: 'i-lucide-at-sign',
   mute: 'i-lucide-bell-off',
 }
 
+const ROOM_NOTIFICATION_TRIGGER_ICONS: Record<RoomNotificationLevel, string> =
+  NOTIFICATION_LEVEL_ICONS
+
 function roomNotificationLevel(roomId: string): RoomNotificationLevel {
   return props.roomNotificationLevels?.[roomId] ?? 'default'
+}
+
+function roomNotificationTriggerIcon(roomId: string): string {
+  return ROOM_NOTIFICATION_TRIGGER_ICONS[roomNotificationLevel(roomId)]
+}
+
+function roomNotificationBellAlwaysVisible(roomId: string): boolean {
+  return roomNotificationLevel(roomId) !== 'default'
+}
+
+function roomNotificationTriggerAriaLabel(roomId: string): string {
+  const level = roomNotificationLevel(roomId)
+  const labelKeys: Record<RoomNotificationLevel, string> = {
+    default: 'notifications.roomBell.default',
+    all: 'notifications.roomBell.all',
+    mentions: 'notifications.roomBell.mentions',
+    mute: 'notifications.roomBell.mute',
+  }
+  return translateText(labelKeys[level])
 }
 
 function roomNotificationMenuItems(roomId: string) {
@@ -386,6 +408,39 @@ function roomNotificationMenuItems(roomId: string) {
       makeItem('mute', 'notifications.level.mute'),
     ],
   ]
+}
+
+function showRoomActionMenu(roomId: string): boolean {
+  return Boolean(
+    props.canInviteToRoom?.(roomId) ||
+      props.canOpenRoomSettings?.(roomId),
+  )
+}
+
+function roomActionMenuItems(roomId: string) {
+  const items: Array<{
+    label: string
+    icon: string
+    onSelect: () => void
+  }> = []
+  if (props.canInviteToRoom?.(roomId)) {
+    items.push({
+      label: translateText('invite.roomMenu'),
+      icon: 'i-lucide-user-plus',
+      onSelect: () => emit('inviteRoom', roomId),
+    })
+  }
+  if (props.canOpenRoomSettings?.(roomId)) {
+    items.push({
+      label: translateText('layout.openRoomSettings'),
+      icon: 'i-lucide-settings-2',
+      onSelect: () => emit('openRoomSettings', roomId),
+    })
+  }
+  if (items.length === 0) {
+    return []
+  }
+  return [items]
 }
 
 function spaceNotificationItems() {
@@ -670,13 +725,6 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                       # {{ room.name }}
                     </span>
                     <span class="flex shrink-0 items-center gap-1">
-                      <UIcon
-                        v-if="roomNotificationLevel(room.roomId) === 'mute'"
-                        name="i-lucide-bell-off"
-                        class="size-3.5 text-gray-400 dark:text-gray-500"
-                        :data-room-muted="room.roomId"
-                        aria-hidden="true"
-                      />
                       <span
                         v-if="channelShowsUnread(room)"
                         :class="unreadDotClass(Boolean(room.hasMentionUnread))"
@@ -688,38 +736,42 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
                     class="decentra-channel-no-drag flex shrink-0 items-center
                            gap-0.5 opacity-0 transition group-hover:opacity-100
                            focus-within:opacity-100"
+                    :class="{
+                      'opacity-100': roomNotificationBellAlwaysVisible(
+                        room.roomId,
+                      ),
+                    }"
                   >
                     <UDropdownMenu :items="roomNotificationMenuItems(room.roomId)">
                       <UButton
                         size="xs"
                         color="neutral"
                         variant="ghost"
-                        :icon="roomNotificationLevel(room.roomId) === 'mute'
-                          ? 'i-lucide-bell-off'
-                          : 'i-lucide-bell'"
+                        :icon="roomNotificationTriggerIcon(room.roomId)"
                         :data-room-notification="room.roomId"
-                        :aria-label="translateText('notifications.menuLabel')"
+                        :data-notification-level="
+                          roomNotificationLevel(room.roomId)
+                        "
+                        :aria-label="roomNotificationTriggerAriaLabel(
+                          room.roomId,
+                        )"
                         @click.stop
                       />
                     </UDropdownMenu>
-                    <UButton
-                      v-if="canInviteToRoom?.(room.roomId)"
-                      size="xs"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-user-plus"
-                      :aria-label="translateText('invite.roomButton')"
-                      @click.stop="emit('inviteRoom', room.roomId)"
-                    />
-                    <UButton
-                      v-if="canOpenRoomSettings?.(room.roomId)"
-                      size="xs"
-                      color="neutral"
-                      variant="ghost"
-                      icon="i-lucide-settings-2"
-                      :aria-label="translateText('layout.openRoomSettings')"
-                      @click.stop="emit('openRoomSettings', room.roomId)"
-                    />
+                    <UDropdownMenu
+                      v-if="showRoomActionMenu(room.roomId)"
+                      :items="roomActionMenuItems(room.roomId)"
+                    >
+                      <UButton
+                        size="xs"
+                        color="neutral"
+                        variant="ghost"
+                        icon="i-lucide-ellipsis"
+                        :data-room-actions="room.roomId"
+                        :aria-label="translateText('layout.roomActionsMenu')"
+                        @click.stop
+                      />
+                    </UDropdownMenu>
                   </div>
                 </div>
                 <button

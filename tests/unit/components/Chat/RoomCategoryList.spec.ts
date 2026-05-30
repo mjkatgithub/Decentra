@@ -3,7 +3,10 @@ import { mount } from '@vue/test-utils'
 import ChatRoomCategoryList from '~/components/Chat/RoomCategoryList.vue'
 
 const UButtonStub = {
-  template: '<button type="button"><slot /></button>',
+  props: ['icon', 'ariaLabel'],
+  template:
+    '<button type="button" :data-icon="icon" :aria-label="ariaLabel">' +
+    '<slot /></button>',
 }
 
 const VueDraggableStub = {
@@ -160,5 +163,72 @@ describe('RoomCategoryList', () => {
     )
     threadButton.attributes('data-mention-unread').should.equal('true')
     wrapper.find('span.rounded-full.bg-red-500').exists().should.equal(true)
+  })
+
+  it('uses notification bell icons per room level', () => {
+    const wrapper = mountCategoryList(
+      [
+        {
+          id: 'general',
+          name: 'General',
+          canReorderRooms: false,
+          rooms: [
+            { roomId: '!default:example.org', name: 'Default' },
+            { roomId: '!all:example.org', name: 'All' },
+            { roomId: '!mentions:example.org', name: 'Mentions' },
+            { roomId: '!mute:example.org', name: 'Muted' },
+          ],
+        },
+      ],
+      {
+        roomNotificationLevels: {
+          '!default:example.org': 'default',
+          '!all:example.org': 'all',
+          '!mentions:example.org': 'mentions',
+          '!mute:example.org': 'mute',
+        },
+      },
+    )
+
+    wrapper
+      .find('button[data-room-notification="!default:example.org"]')
+      .attributes('data-icon')
+      .should.equal('i-lucide-bell')
+    wrapper
+      .find('button[data-room-notification="!all:example.org"]')
+      .attributes('data-icon')
+      .should.equal('i-lucide-bell-ring')
+    wrapper
+      .find('button[data-room-notification="!mentions:example.org"]')
+      .attributes('data-icon')
+      .should.equal('i-lucide-at-sign')
+    wrapper
+      .find('button[data-room-notification="!mute:example.org"]')
+      .attributes('data-icon')
+      .should.equal('i-lucide-bell-off')
+  })
+
+  it('shows room actions in an ellipsis menu', () => {
+    const wrapper = mountCategoryList(
+      [
+        {
+          id: 'general',
+          name: 'General',
+          canReorderRooms: false,
+          rooms: [{ roomId: '!room:example.org', name: 'General' }],
+        },
+      ],
+      {
+        canInviteToRoom: () => true,
+        canOpenRoomSettings: () => true,
+      },
+    )
+
+    wrapper.find('button[data-room-actions="!room:example.org"]').exists()
+      .should.equal(true)
+    wrapper.find('button[data-room-notification="!room:example.org"]').exists()
+      .should.equal(true)
+    wrapper.find('button[aria-label="Invite to channel"]').exists()
+      .should.equal(false)
   })
 })

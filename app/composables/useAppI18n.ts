@@ -229,6 +229,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'layout.openAccountSettings': 'Account settings',
     'layout.openSpaceSettings': 'Space settings',
     'layout.openRoomSettings': 'Channel settings',
+    'layout.roomActionsMenu': 'Channel options',
     'layout.roomNotifications': 'Notifications',
     'layout.spaceNotifications': 'Space notifications',
     'notifications.title': 'Notifications',
@@ -237,6 +238,10 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'notifications.spaceDescription':
       'Apply a notification level to every channel in this space.',
     'notifications.menuLabel': 'Notification settings',
+    'notifications.roomBell.default': 'Notifications: match default settings',
+    'notifications.roomBell.all': 'Notifications: all messages',
+    'notifications.roomBell.mentions': 'Notifications: mentions only',
+    'notifications.roomBell.mute': 'Notifications: channel muted',
     'notifications.level.default': 'Match default settings',
     'notifications.level.all': 'All messages',
     'notifications.level.mentions': 'Mentions & keywords only',
@@ -256,6 +261,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'invite.close': 'Close',
     'invite.spaceMenu': 'Invite to space',
     'invite.roomButton': 'Invite to channel',
+    'invite.roomMenu': 'Invite to channel',
     'invite.manualLabel': 'Matrix IDs',
     'invite.manualPlaceholder': '@user:server.org, one per line',
     'invite.searchHint': 'Or search your homeserver directory.',
@@ -759,6 +765,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'layout.openAccountSettings': 'Account-Einstellungen',
     'layout.openSpaceSettings': 'Space-Einstellungen',
     'layout.openRoomSettings': 'Kanal-Einstellungen',
+    'layout.roomActionsMenu': 'Kanaloptionen',
     'layout.roomNotifications': 'Benachrichtigungen',
     'layout.spaceNotifications': 'Space-Benachrichtigungen',
     'notifications.title': 'Benachrichtigungen',
@@ -767,6 +774,13 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'notifications.spaceDescription':
       'Wende eine Benachrichtigungsstufe auf alle Kanäle dieses Space an.',
     'notifications.menuLabel': 'Benachrichtigungseinstellungen',
+    'notifications.roomBell.default':
+      'Benachrichtigungen: Standardeinstellung',
+    'notifications.roomBell.all': 'Benachrichtigungen: alle Nachrichten',
+    'notifications.roomBell.mentions':
+      'Benachrichtigungen: nur Erwähnungen',
+    'notifications.roomBell.mute':
+      'Benachrichtigungen: Kanal stummgeschaltet',
     'notifications.level.default': 'Standardeinstellung verwenden',
     'notifications.level.all': 'Alle Nachrichten',
     'notifications.level.mentions': 'Nur Erwähnungen & Schlüsselwörter',
@@ -786,6 +800,7 @@ const messages: Record<AppLocale, Record<string, string>> = {
     'invite.close': 'Schliessen',
     'invite.spaceMenu': 'In Space einladen',
     'invite.roomButton': 'In Kanal einladen',
+    'invite.roomMenu': 'In Kanal einladen',
     'invite.manualLabel': 'Matrix-IDs',
     'invite.manualPlaceholder': '@user:server.org, je Zeile eine',
     'invite.searchHint': 'Oder im Verzeichnis des Homeservers suchen.',
