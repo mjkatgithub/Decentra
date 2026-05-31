@@ -197,6 +197,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split oversized chat, Matrix client, timeline, signup UIA, i18n locale,
+  and composer modules into focused submodules under the 1000-line limit;
+  add `check:line-limit` script and mirrored unit-test splits (#63)
 - Chat runtime: scope sidebar thread nav to visible rooms, split
   room category structure from unread patches, and incrementally
   update space-rail unread aggregation (#103)
