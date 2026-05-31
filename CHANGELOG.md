@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Chat runtime: scope sidebar thread nav to visible rooms, split
-  room category structure from unread patches, and incrementally
-  update space-rail unread aggregation (#103)
-
 ### Added
 
 - Mention-priority unread: red channel/space/thread indicators from
@@ -22,21 +16,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-space notification/mute via Matrix push rules (#35)
 - Configurable new-message alerts (visual only or sound + visual) in
   account settings (#35)
-
-### Fixed
-
-- Unread indicators persist after navigating to space settings and back
-  to chat (`useMatrixSyncPrepared`, session-persisted space/room
-  selection) (#35)
-- Room notification mute/unmute: read cached Matrix push rules, refresh
-  after writes, and use Element-compatible rule actions (#35)
-- Browser tab unread title: simple `(*)` marker when anything is unread,
-  without counts or mention breakdown (#35)
-- Chat audio timeline playback: resolve `m.audio` via authenticated blob
-  URLs instead of direct media HTTP links (#28)
-
-### Added
-
 - Chat audio file attachments: picker for MP3/M4A/OGG/WAV/WebM (50 MB
   client limit), Matrix `m.audio` send without voice marker, timeline
   playback, composer upload/error states, and E2E coverage (#28)
@@ -218,6 +197,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Chat runtime: scope sidebar thread nav to visible rooms, split
+  room category structure from unread patches, and incrementally
+  update space-rail unread aggregation (#103)
 - Space roles and permissions now use Matrix `m.room.power_levels` and
   Cinny/Sable `in.cinny.room.power_level_tags` only; the custom
   `decentra.space.roles` state event was removed. Permissions are edited
@@ -286,6 +268,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Unread indicators persist after navigating to space settings and back
+  to chat (`useMatrixSyncPrepared`, session-persisted space/room
+  selection) (#35)
+- Room notification mute/unmute: read cached Matrix push rules, refresh
+  after writes, and use Element-compatible rule actions (#35)
+- Browser tab unread title: simple `(*)` marker when anything is unread,
+  without counts or mention breakdown (#35)
+- Chat audio timeline playback: resolve `m.audio` via authenticated blob
+  URLs instead of direct media HTTP links (#28)
 - Sent messages now appear immediately at the bottom of the room timeline
   without manual scrolling by extending the visible window and scroll intent
   when the user was already at the latest events (#76)
