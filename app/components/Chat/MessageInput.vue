@@ -8,6 +8,7 @@ import {
 } from 'vue'
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useChatMedia } from '~/composables/useChatMedia'
+import { useComposerMediaUpload } from '~/composables/useComposerMediaUpload'
 import {
   createShortcodeMap,
   emojiCatalog,
@@ -27,26 +28,9 @@ import {
 } from '~/utils/composerEmoji'
 import { createComposerTypingNotifier } from '~/utils/composerTypingNotifier'
 import { useVoiceRecorder } from '~/composables/useVoiceRecorder'
-import {
-  MAX_AUDIO_UPLOAD_BYTES,
-  MAX_VIDEO_UPLOAD_BYTES,
-  validateAudioFile,
-  validateVideoFile,
-  type AudioValidationErrorCode,
-  type VideoValidationErrorCode,
-} from '~/utils/mediaUploadValidation'
 
 const message = ref('')
 const loading = ref(false)
-const fileInput = ref<HTMLInputElement | null>(null)
-const videoFileInput = ref<HTMLInputElement | null>(null)
-const audioFileInput = ref<HTMLInputElement | null>(null)
-const uploadError = ref<
-  VideoValidationErrorCode | AudioValidationErrorCode | 'uploadFailed' | null
->(null)
-const uploadingMediaKind = ref<'image' | 'video' | 'audio' | null>(null)
-const uploadErrorMediaKind = ref<'image' | 'video' | 'audio' | null>(null)
-const isMediaDragOver = ref(false)
 const messageInputRef = ref<{ $el: HTMLElement } | null>(null)
 const pickerRoot = ref<HTMLElement | null>(null)
 const pickerOpen = ref(false)
@@ -247,6 +231,39 @@ function buildMessageRelationOptions(durationMs?: number) {
   }
   return options
 }
+
+const {
+  fileInput,
+  videoFileInput,
+  audioFileInput,
+  uploadError,
+  uploadingMediaKind,
+  isMediaDragOver,
+  uploadErrorMessage,
+  openFilePicker,
+  openVideoFilePicker,
+  openAudioFilePicker,
+  onFileChange,
+  onVideoFileChange,
+  onAudioFileChange,
+  onComposerDrop,
+  onComposerDragOver,
+  onComposerDragLeave,
+  onPaste,
+  clearUploadError,
+} = useComposerMediaUpload({
+  roomId: computed(() => props.roomId),
+  disabled: computed(() => props.disabled),
+  loading,
+  hasEditTarget: computed(() => Boolean(props.editTo)),
+  hasReplyTarget: computed(() => Boolean(props.replyTo)),
+  buildMessageRelationOptions,
+  translateText,
+  sendImageMessage,
+  sendVideoMessage,
+  sendAudioMessage,
+  onCancelReply: () => emit('cancelReply'),
+})
 
 watch(
   () => props.editTo,
@@ -494,173 +511,6 @@ async function handleSend() {
   }
 }
 
-const maxVideoUploadMb = Math.round(MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024))
-const maxAudioUploadMb = Math.round(MAX_AUDIO_UPLOAD_BYTES / (1024 * 1024))
-
-function clearUploadError() {
-  uploadError.value = null
-  uploadErrorMediaKind.value = null
-}
-
-function setUploadError(
-  code: VideoValidationErrorCode | AudioValidationErrorCode | 'uploadFailed',
-  mediaKind?: 'image' | 'video' | 'audio',
-) {
-  uploadError.value = code
-  uploadErrorMediaKind.value = mediaKind ?? null
-}
-
-function uploadErrorMessage(): string {
-  const mediaKind = uploadErrorMediaKind.value
-  if (uploadError.value === 'invalidType') {
-    if (mediaKind === 'audio') {
-      return translateText('chat.audioInvalidType')
-    }
-    return translateText('chat.videoInvalidType')
-  }
-  if (uploadError.value === 'tooLarge') {
-    if (mediaKind === 'audio') {
-      return translateText('chat.audioTooLarge', {
-        maxMb: String(maxAudioUploadMb),
-      })
-    }
-    return translateText('chat.videoTooLarge', {
-      maxMb: String(maxVideoUploadMb),
-    })
-  }
-  if (uploadError.value === 'uploadFailed') {
-    if (mediaKind === 'image') {
-      return translateText('chat.imageUploadFailed')
-    }
-    if (mediaKind === 'audio') {
-      return translateText('chat.audioUploadFailed')
-    }
-    return translateText('chat.videoUploadFailed')
-  }
-  return ''
-}
-
-function openFilePicker() {
-  if (!props.roomId || props.disabled || loading.value || props.editTo) {
-    return
-  }
-  clearUploadError()
-  fileInput.value?.click()
-}
-
-function openVideoFilePicker() {
-  if (!props.roomId || props.disabled || loading.value || props.editTo) {
-    return
-  }
-  clearUploadError()
-  videoFileInput.value?.click()
-}
-
-function openAudioFilePicker() {
-  if (!props.roomId || props.disabled || loading.value || props.editTo) {
-    return
-  }
-  clearUploadError()
-  audioFileInput.value?.click()
-}
-
-async function handleImageSend(imageFile: File | Blob, fileName: string) {
-  if (!props.roomId || props.disabled || loading.value) {
-    return
-  }
-  clearUploadError()
-  uploadingMediaKind.value = 'image'
-  loading.value = true
-  try {
-    await sendImageMessage(
-      props.roomId,
-      imageFile,
-      fileName,
-      buildMessageRelationOptions(),
-    )
-    if (props.replyTo) {
-      emit('cancelReply')
-    }
-  } catch (thrownError) {
-    console.error('Failed to send image message', thrownError)
-    setUploadError('uploadFailed', 'image')
-  } finally {
-    uploadingMediaKind.value = null
-    loading.value = false
-  }
-}
-
-async function handleVideoSend(videoFile: File | Blob, fileName: string) {
-  if (!props.roomId || props.disabled || loading.value) {
-    return
-  }
-  const validation = validateVideoFile(
-    videoFile,
-    videoFile instanceof File ? videoFile.name : fileName,
-  )
-  if (!validation.ok) {
-    setUploadError(validation.code, 'video')
-    return
-  }
-  clearUploadError()
-  uploadingMediaKind.value = 'video'
-  loading.value = true
-  try {
-    await sendVideoMessage(
-      props.roomId,
-      videoFile,
-      fileName,
-      buildMessageRelationOptions(),
-    )
-    if (props.replyTo) {
-      emit('cancelReply')
-    }
-  } catch (thrownError) {
-    console.error('Failed to send video message', thrownError)
-    setUploadError('uploadFailed', 'video')
-  } finally {
-    uploadingMediaKind.value = null
-    loading.value = false
-  }
-}
-
-async function handleAudioSend(audioFile: File | Blob, fileName: string) {
-  if (!props.roomId || props.disabled || loading.value) {
-    return
-  }
-  const validation = validateAudioFile(
-    audioFile,
-    audioFile instanceof File ? audioFile.name : fileName,
-  )
-  if (!validation.ok) {
-    setUploadError(validation.code, 'audio')
-    return
-  }
-  clearUploadError()
-  uploadingMediaKind.value = 'audio'
-  loading.value = true
-  try {
-    await sendAudioMessage(
-      props.roomId,
-      audioFile,
-      fileName,
-      {
-        ...buildMessageRelationOptions(),
-        isVoiceMessage: false,
-      },
-    )
-    if (props.replyTo) {
-      emit('cancelReply')
-    }
-  } catch (thrownError) {
-    console.error('Failed to send audio message', thrownError)
-    setUploadError('uploadFailed', 'audio')
-  } finally {
-    uploadingMediaKind.value = null
-    loading.value = false
-  }
-}
-
 async function handleVoiceSend() {
   if (!props.roomId || props.disabled || loading.value) {
     return
@@ -702,106 +552,6 @@ async function startVoiceRecording() {
 
 function cancelVoiceRecording() {
   voiceRecorder.cancelRecording()
-}
-
-async function onFileChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  const selectedFile = target.files?.[0]
-  if (!selectedFile) {
-    return
-  }
-  await handleImageSend(selectedFile, selectedFile.name || 'image')
-  target.value = ''
-}
-
-async function onVideoFileChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  const selectedFile = target.files?.[0]
-  if (!selectedFile) {
-    return
-  }
-  await handleVideoSend(selectedFile, selectedFile.name || 'video')
-  target.value = ''
-}
-
-async function onAudioFileChange(event: Event) {
-  const target = event.target as HTMLInputElement
-  const selectedFile = target.files?.[0]
-  if (!selectedFile) {
-    return
-  }
-  await handleAudioSend(selectedFile, selectedFile.name || 'audio')
-  target.value = ''
-}
-
-function readDroppedFile(
-  dataTransfer: DataTransfer | null,
-): File | undefined {
-  const droppedFile = dataTransfer?.files?.[0]
-  return droppedFile ?? undefined
-}
-
-async function onComposerDrop(event: DragEvent) {
-  isMediaDragOver.value = false
-  if (!props.roomId || props.disabled || loading.value || props.editTo) {
-    return
-  }
-  const droppedFile = readDroppedFile(event.dataTransfer)
-  if (!droppedFile) {
-    return
-  }
-  event.preventDefault()
-  if (droppedFile.type.startsWith('video/')) {
-    await handleVideoSend(droppedFile, droppedFile.name || 'video')
-    return
-  }
-  if (droppedFile.type.startsWith('image/')) {
-    await handleImageSend(droppedFile, droppedFile.name || 'image')
-  }
-}
-
-function onComposerDragOver(event: DragEvent) {
-  if (!props.roomId || props.disabled || loading.value || props.editTo) {
-    return
-  }
-  const draggedFile = readDroppedFile(event.dataTransfer)
-  if (
-    !draggedFile ||
-    (
-      !draggedFile.type.startsWith('video/') &&
-      !draggedFile.type.startsWith('image/')
-    )
-  ) {
-    return
-  }
-  event.preventDefault()
-  isMediaDragOver.value = true
-}
-
-function onComposerDragLeave() {
-  isMediaDragOver.value = false
-}
-
-async function onPaste(event: ClipboardEvent) {
-  if (!props.roomId || props.disabled || loading.value || props.editTo) {
-    return
-  }
-  const clipboardItems = event.clipboardData?.items
-  if (!clipboardItems) {
-    return
-  }
-  for (const clipboardItem of clipboardItems) {
-    if (!clipboardItem.type.startsWith('image/')) {
-      continue
-    }
-    const imageFile = clipboardItem.getAsFile()
-    if (!imageFile) {
-      continue
-    }
-    event.preventDefault()
-    await handleImageSend(imageFile, imageFile.name || 'pasted-image')
-    return
-  }
 }
 </script>
 
