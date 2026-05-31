@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Chat runtime: scope sidebar thread nav to visible rooms, split
+  room category structure from unread patches, and incrementally
+  update space-rail unread aggregation (#103)
+
 ### Added
 
 - Mention-priority unread: red channel/space/thread indicators from

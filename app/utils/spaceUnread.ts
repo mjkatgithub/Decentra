@@ -35,6 +35,41 @@ export interface BuildSpaceUnreadByIdOptions {
   homeRoomIds?: string[]
 }
 
+export function unreadStatesEqual(
+  previous: RoomUnreadState | undefined,
+  next: RoomUnreadState | undefined,
+): boolean {
+  if (!previous && !next) {
+    return true
+  }
+  if (!previous || !next) {
+    return false
+  }
+  return (
+    previous.hasUnread === next.hasUnread
+    && previous.hasMentionUnread === next.hasMentionUnread
+    && previous.totalCount === next.totalCount
+    && previous.highlightCount === next.highlightCount
+  )
+}
+
+export function diffUnreadRoomIds(
+  previous: Record<string, RoomUnreadState>,
+  next: Record<string, RoomUnreadState>,
+): string[] {
+  const roomIds = new Set([
+    ...Object.keys(previous),
+    ...Object.keys(next),
+  ])
+  const changed: string[] = []
+  for (const roomId of roomIds) {
+    if (!unreadStatesEqual(previous[roomId], next[roomId])) {
+      changed.push(roomId)
+    }
+  }
+  return changed
+}
+
 function aggregateRoomUnreadStates(
   roomIds: string[],
   unreadByRoomId: Record<string, RoomUnreadState>,
@@ -118,14 +153,72 @@ export function buildSpaceUnreadById(
   const spaceUnreadById: Record<string, SpaceUnreadState> = {}
 
   for (const spaceId of options.spaceIds) {
-    const childRoomIds = roomIdsForSpace(spaceId, options)
-    spaceUnreadById[spaceId] = aggregateRoomUnreadStates(
-      childRoomIds,
-      options.unreadByRoomId,
+    spaceUnreadById[spaceId] = recomputeSpaceUnreadForSpace(
+      spaceId,
+      options,
     )
   }
 
   return spaceUnreadById
+}
+
+export function recomputeSpaceUnreadForSpace(
+  spaceId: string,
+  options: BuildSpaceUnreadByIdOptions,
+): SpaceUnreadState {
+  const childRoomIds = roomIdsForSpace(spaceId, options)
+  return aggregateRoomUnreadStates(
+    childRoomIds,
+    options.unreadByRoomId,
+  )
+}
+
+export function buildRoomIdToSpaceIdsMap(
+  spaceIds: string[],
+  options: BuildSpaceUnreadByIdOptions,
+): Map<string, Set<string>> {
+  const roomIdToSpaceIds = new Map<string, Set<string>>()
+  for (const spaceId of spaceIds) {
+    const childRoomIds = roomIdsForSpace(spaceId, options)
+    for (const roomId of childRoomIds) {
+      let spaceSet = roomIdToSpaceIds.get(roomId)
+      if (!spaceSet) {
+        spaceSet = new Set()
+        roomIdToSpaceIds.set(roomId, spaceSet)
+      }
+      spaceSet.add(spaceId)
+    }
+  }
+  return roomIdToSpaceIds
+}
+
+export function collectSpaceIdsForChangedRooms(
+  changedRoomIds: string[],
+  roomIdToSpaceIds: Map<string, Set<string>>,
+): string[] {
+  const affectedSpaceIds = new Set<string>()
+  for (const roomId of changedRoomIds) {
+    const spaceSet = roomIdToSpaceIds.get(roomId)
+    if (!spaceSet) {
+      continue
+    }
+    for (const spaceId of spaceSet) {
+      affectedSpaceIds.add(spaceId)
+    }
+  }
+  return [...affectedSpaceIds]
+}
+
+export function patchSpaceUnreadById(
+  previous: Record<string, SpaceUnreadState>,
+  spaceIdsToUpdate: string[],
+  options: BuildSpaceUnreadByIdOptions,
+): Record<string, SpaceUnreadState> {
+  const next = { ...previous }
+  for (const spaceId of spaceIdsToUpdate) {
+    next[spaceId] = recomputeSpaceUnreadForSpace(spaceId, options)
+  }
+  return next
 }
 
 export function getSpaceUnreadState(

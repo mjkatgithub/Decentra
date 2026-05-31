@@ -10,12 +10,14 @@ import { useRoomTyping } from "~/composables/useRoomTyping";
 import { useGlobalMentionNotify } from "~/composables/useGlobalMentionNotify";
 import { useNotificationSettings } from "~/composables/useNotificationSettings";
 import { useMatrixSyncPrepared } from "~/composables/useMatrixSyncPrepared";
+import { useSpaceUnreadById } from "~/composables/useSpaceUnreadById";
 import { getThreadUnreadState } from "~/utils/roomUnread";
+import { applyUnreadToRoomCategories } from "~/utils/roomCategoryUnread";
 import {
-  buildSpaceUnreadById,
   collectSpaceChildRoomIds,
   HOME_SPACE_ID,
 } from "~/utils/spaceUnread";
+import { buildSidebarThreadNavByRoomId } from "~/utils/sidebarThreadNav";
 import type {
   RoomNotificationLevel,
 } from "~/utils/matrixNotificationRules";
@@ -281,13 +283,10 @@ function refreshRooms() {
   refreshUnread();
 }
 
-function toCategoryRoomItem(room: { roomId: string; name: string }) {
-  const unreadState = unreadByRoomId.value[room.roomId];
+function toCategoryRoomBase(room: { roomId: string; name: string }) {
   return {
     roomId: room.roomId,
     name: room.name,
-    hasUnread: unreadState?.hasUnread ?? false,
-    hasMentionUnread: unreadState?.hasMentionUnread ?? false,
   };
 }
 
@@ -627,12 +626,20 @@ const hasJoinedNonSpaceRooms = computed(() => {
   });
 });
 
-const roomCategories = computed<RoomCategoryGroup[]>(() => {
-  unreadByRoomId.value;
+const roomCategoryStructure = computed<RoomCategoryGroup[]>(() => {
   if (selectedSpaceId.value === HOME_SPACE_ID) {
     return buildHomeSections();
   }
   return buildSpaceSections();
+});
+
+const roomCategories = computed<RoomCategoryGroup[]>(() => {
+  unreadByRoomId.value;
+  return applyUnreadToRoomCategories(
+    roomCategoryStructure.value,
+    unreadByRoomId.value,
+    matrixSyncPrepared.value,
+  ) as RoomCategoryGroup[];
 });
 
 function canManageChildrenOnSpace(spaceRoomId: string): boolean {
@@ -669,7 +676,7 @@ function buildHomeSections(): RoomCategoryGroup[] {
       kind: "root",
       rootChildAnchorIds: [],
       canReorderRooms: false,
-      rooms: personalRooms.map((room) => toCategoryRoomItem(room)),
+      rooms: personalRooms.map((room) => toCategoryRoomBase(room)),
     });
   }
   if (groupRooms.length > 0) {
@@ -679,7 +686,7 @@ function buildHomeSections(): RoomCategoryGroup[] {
       kind: "root",
       rootChildAnchorIds: [],
       canReorderRooms: false,
-      rooms: groupRooms.map((room) => toCategoryRoomItem(room)),
+      rooms: groupRooms.map((room) => toCategoryRoomBase(room)),
     });
   }
   return categories;
@@ -723,7 +730,7 @@ function buildSpaceSections(): RoomCategoryGroup[] {
           : false;
       const rooms = category.rooms
         .filter((room) => visibleRoomIdSet.has(room.roomId))
-        .map((room) => toCategoryRoomItem(room));
+        .map((room) => toCategoryRoomBase(room));
       return {
         id: category.id,
         name: category.name,
@@ -773,33 +780,23 @@ const memberItems = computed<MemberItem[]>(() => {
 
 const threadNavByRoomId = computed<Record<string, ThreadNavEntry[]>>(() => {
   void threadNavVersion.value;
-  if (matrixSyncPrepared.value) {
-    unreadByRoomId.value;
+  if (!matrixSyncPrepared.value) {
+    return {};
   }
+  unreadByRoomId.value;
   const matrixClient = client.value;
   if (!matrixClient) {
     return {};
   }
-  const out: Record<string, ThreadNavEntry[]> = {};
-  for (const room of matrixRooms.value) {
-    if (getRoomType(room) === "m.space") {
-      continue;
-    }
-    const joinedRoom = matrixClient.getRoom(room.roomId);
-    if (!joinedRoom) {
-      continue;
-    }
-    let entries = buildRoomThreadNavEntries(joinedRoom);
-    if (matrixSyncPrepared.value) {
-      entries = entries.map((entry) =>
-        enrichThreadNavEntry(joinedRoom, entry),
-      );
-    }
-    if (entries.length > 0) {
-      out[room.roomId] = entries;
-    }
-  }
-  return out;
+  const visibleRoomIds = visibleRoomsForSidebar.value.map(
+    (room) => room.roomId,
+  );
+  return buildSidebarThreadNavByRoomId({
+    visibleRoomIds,
+    getJoinedRoom: (roomId) => matrixClient.getRoom(roomId) ?? null,
+    enrichEntry: (joinedRoom, entry) =>
+      enrichThreadNavEntry(joinedRoom, entry),
+  });
 });
 
 const selectedRoomThreadEntries = computed<ThreadNavEntry[]>(() => {
@@ -1425,23 +1422,21 @@ watch(matrixSyncPrepared, (prepared) => {
   }
 });
 
-const spaceUnreadById = computed(() => {
-  if (!matrixSyncPrepared.value) {
-    return {};
-  }
-  unreadByRoomId.value;
-  const matrixRoomsById = new Map<string, unknown>(
-    matrixRooms.value.map((room) => [room.roomId, room]),
-  );
-  return buildSpaceUnreadById({
-    spaceIds: spaceItems.value.map((space) => space.id),
-    sidebarRooms: roomItems.value,
-    unreadByRoomId: unreadByRoomId.value,
-    matrixRoomsById,
-    getRoomType,
-    getParentSpaceIds,
-    homeRoomIds: resolveHomeRoomIdsForUnread(),
-  });
+const spaceIdsForUnread = computed(() =>
+  spaceItems.value.map((space) => space.id),
+);
+
+const homeRoomIdsForUnread = computed(() => resolveHomeRoomIdsForUnread());
+
+const { spaceUnreadById } = useSpaceUnreadById({
+  matrixSyncPrepared,
+  unreadByRoomId,
+  spaceIds: spaceIdsForUnread,
+  sidebarRooms: roomItems,
+  matrixRooms,
+  homeRoomIds: homeRoomIdsForUnread,
+  getRoomType,
+  getParentSpaceIds,
 });
 
 const spaceRailItems = computed<SpaceItem[]>(() => {
