@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project architecture map for developers and agents:
+  `docs/architecture.md`, `docs/README.md`, issue documentation
+  checklist; `AGENTS.md` requires doc updates on structural changes
+  ([#116](https://github.com/mjkatgithub/Decentra/issues/116))
 - Build docs and Vite `manualChunks` for `matrix-js-sdk` and
   `@matrix-org/matrix-sdk-crypto-wasm`; `npm run build:chunks` lists
   client chunk sizes after production build ([#62](https://github.com/mjkatgithub/Decentra/issues/62))
