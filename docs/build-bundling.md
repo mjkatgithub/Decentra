@@ -1,5 +1,7 @@
 # Build bundling and chunk sizes
 
+See also: [architecture.md](architecture.md) (repo map and hot paths).
+
 Decentra is a Matrix web client; `matrix-js-sdk` and Rust crypto WASM
 dominate the production bundle. This document explains what to expect
 from `npm run build`, how chunks are split, and why dev can feel slower

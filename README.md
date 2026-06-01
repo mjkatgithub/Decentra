@@ -132,23 +132,15 @@ its Nuxt runtime helpers were not actively used by our tests.
 We can reintroduce it later when we add dedicated Nuxt runtime integration
 tests (`setupTest()`, plugin/runtime integration, Nitro route tests).
 
-## Project Structure
+## Project structure
 
-```
-app/
-├── composables/useMatrixClient.ts           # Login, crypto, sync, messaging
-├── composables/matrix/matrixRegistrationUia.ts
-│                                              # Email signup UIA loop
-├── pages/
-│   ├── login.vue / signup.vue
-│   ├── signup/verify-email.vue
-│   ├── chat.vue
-│   └── index.vue
-└── components/Chat/
-    ├── RoomList.vue
-    ├── MessageList.vue
-    └── MessageInput.vue
-```
+High-level layout: `app/` (Nuxt pages, composables, components, utils),
+`tests/` (unit, integration, e2e), `.cursor/rules/` (CCD and workflow).
+
+**Architecture and where to change things:**
+[docs/architecture.md](docs/architecture.md) — Matrix client, chat UI,
+unread pipeline, spaces/sidebar, settings, tests, cheat sheet.
+[docs/README.md](docs/README.md) links all project docs.
 
 ## Matrix registration (UIA)
 
