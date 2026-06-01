@@ -1,0 +1,525 @@
+import type { LocaleMessages } from '../types'
+
+const messages: LocaleMessages = {
+    'auth.signIn': 'Sign in',
+    'auth.signUp': 'Sign up',
+    'cancel': 'Cancel',
+    'auth.email': 'Email',
+    'auth.homeserver': 'Homeserver',
+    'auth.username': 'Username',
+    'auth.password': 'Password',
+    'auth.secretShowPassword': 'Show password',
+    'auth.secretHidePassword': 'Hide password',
+    'auth.signInFailed': 'Sign in failed',
+    'auth.signUpFailed': 'Sign up failed',
+    'auth.signUpUnavailable': 'Sign-up is not available on this homeserver',
+    'auth.signUpRegisterApiClosed':
+      'Sign-up through this Decentra page is not available on this ' +
+      'homeserver: registration is restricted to portals or approved ' +
+      'web entry points—the generic Matrix registration API Decentra ' +
+      'uses is blocked or disabled here.\n\n' +
+      'If the operator offers account creation on the web, try their ' +
+      'site starting at:\n{homeserverPortal}\n\n' +
+      'After you have an account, sign in below.',
+    'auth.signUpEmailVerificationRequired': 'Sign-up requires email verification on this homeserver',
+    'auth.signUpSuccess': 'Account created. Please sign in.',
+    'auth.signUpEmailSentTitle': 'Check your email',
+    'auth.signUpEmailSentBody':
+      'We sent a verification link to {email}. Open it to finish ' +
+      'sign-up, then you can return here or sign in.',
+    'auth.signUpEmailKeepTabOpen':
+      'You can keep this tab open. After you use the link, this app ' +
+      'can finish the flow automatically on the next page.',
+    'auth.signUpCancel': 'Start over',
+    'auth.signUpEmailVerifyingTitle': 'Confirming your email…',
+    'auth.signUpEmailNotConfirmedYet':
+      'The link in your email is not valid yet, or the mail was not ' +
+      'opened. Open the link from the message, then try again.',
+    'auth.signUpPendingMissing':
+      'No sign-up in progress. Start from the sign-up form.',
+    'auth.signUpSessionExpired':
+      'The sign-up session expired. Please start again from the form.',
+    'auth.signUpUnsupportedAuthStage':
+      'This homeserver needs an additional sign-up step that Decentra ' +
+      'does not support yet.',
+    'auth.signUpSsoUseWebClient':
+      'This homeserver only accepts SSO for new accounts. Complete ' +
+      'sign-up via your homeserver operator\'s SSO or web registration ' +
+      'page, then sign in here once the account exists.',
+    'auth.signUpMsisdnUnsupported':
+      'This homeserver expects phone-number (SMS) confirmation. Decentra ' +
+      'does not support SMS sign-up yet.',
+    'auth.signUpRegistrationTokenTitle': 'Registration token',
+    'auth.signUpRegistrationTokenPlaceholder':
+      'Paste token from homeserver admins',
+    'auth.signUpRegistrationTokenSubmit': 'Continue',
+    'auth.signUpRegistrationTokenRequired':
+      'Homeserver requires a registration token. Enter it below.',
+    'auth.signUpRegistrationTokenRejected':
+      'This registration token was rejected. Check with your homeserver ' +
+      'and try another token.',
+    'auth.signUpTermsTitle': 'Accept policies',
+    'auth.signUpTermsAcceptCheckbox':
+      'I have read and agree to all policies linked above.',
+    'auth.signUpTermsContinue': 'Continue',
+    'auth.signUpTermsEmptyPolicies':
+      'This homeserver did not send usable policy URLs. Cannot continue.',
+    'auth.signUpRetry': 'Try again',
+    'auth.signUpBackToForm': 'Back to sign-up',
+    'auth.signUpCaptchaTitle': 'Verify you are human',
+    'auth.signUpCaptchaConsentLead':
+      'Google reCAPTCHA loads only after you agree. Google may process ' +
+      'technical data (also outside the EU).',
+    'auth.signUpHomeserverPrivacyNotice':
+      'Your chosen Matrix homeserver operator processes signup data under ' +
+      'their own rules; Decentra cannot describe every homeserver.',
+    'auth.signUpPrivacyPolicyLink': 'Privacy policy',
+    'auth.signUpCookieSettings': 'Cookie settings',
+    'auth.signUpAgreeLoadRecaptcha': 'Agree and load reCAPTCHA',
+    'auth.signUpRunRecaptchaCheck': 'Run automatic check',
+    'auth.signUpRecaptchaMissingSiteKey':
+      'The homeserver did not send a reCAPTCHA site key.',
+    'auth.signUpRecaptchaFailed':
+      'reCAPTCHA verification failed. Please try again.',
+    'auth.signUpRecaptchaRequired':
+      'Complete reCAPTCHA to continue.',
+    'auth.signUpRecaptchaTransferAck':
+      'I understand that loading reCAPTCHA sends data ' +
+      '(including IP-related telemetry if applicable) ' +
+      'to Google.',
+    'auth.signUpClassicRegistrationDivider':
+      'Classic sign-up via homeserver registration API',
+    'auth.matrixOidcSignupIntro':
+      'On this homeserver new accounts use the delegated Matrix login ' +
+      'service (MAS / OAuth), not the classic /register form in this dialog.',
+    'auth.matrixOidcSignupButton': 'Continue Matrix sign-up in browser…',
+    'auth.matrixOidcSignupFinePrint':
+      'After you confirm in the Matrix window, Decentra continues here.',
+    'auth.matrixOidcNeedsHttpsSiteUrl':
+      'Set NUXT_PUBLIC_SITE_URL to your public HTTPS app origin so OAuth ' +
+      'redirects work (e.g. HTTPS preview URL—not plain http localhost).',
+    'auth.matrixOidcCallbackTitle': 'Completing Matrix sign-in',
+    'auth.matrixOidcCallbackBusy': 'Finishing delegated login…',
+    'auth.matrixOidcMissingCodeState':
+      'OAuth callback was missing authorization code or state.',
+    'auth.matrixOidcCallbackInvalid':
+      'Delegated login expired or tampered—start OAuth again.',
+    'auth.matrixOidcCallbackFailedRaw': '{detail}',
+    'auth.matrixOidcBackToLogin': 'Return to login',
+    'auth.homeserverConnectionHint':
+      'Unable to reach the Matrix client API from this page. Use ' +
+      'https:// for public servers (not plain http://). Check your ' +
+      'network. Some operators also limit which browser origins may ' +
+      'call the login API—even when the homeserver URL is correct.',
+    'auth.restoringSession': 'Restoring session...',
+    'chat.loggedInAs': 'Signed in as',
+    'chat.signOut': 'Sign out',
+    'chat.selectRoom': 'Select a room',
+    'chat.loadOlder': 'Load older messages',
+    'chat.noMessages': 'No messages yet. Start the conversation.',
+    'chat.sendMessage': 'Send',
+    'chat.replyAction': 'Reply',
+    'chat.replyingTo': 'Replying to',
+    'chat.replyVideo': 'Video',
+    'chat.replyVoice': 'Voice message',
+    'chat.replyQuoteJump': 'Jump to original message',
+    'chat.cancelReply': 'Cancel reply',
+    'chat.editAction': 'Edit',
+    'chat.editingMessage': 'Editing message',
+    'chat.cancelEdit': 'Cancel edit',
+    'chat.editNotAllowed': 'You cannot edit messages in this room',
+    'chat.threadAction': 'Thread',
+    'chat.threadStartedBy': 'Started by',
+    'chat.threadClosePanel': 'Close thread panel',
+    'chat.threadOneReply': '1 reply',
+    'chat.threadManyReplies': '{count} replies',
+    'chat.threadBackToChannel': 'Back to channel',
+    'chat.messageEdited': 'edited',
+    'chat.messageDeleted': 'Message deleted',
+    'chat.roomThreads': 'Threads',
+    'chat.roomThreadsEmpty': 'No threads in this room yet.',
+    'chat.openRoomThreads': 'Open thread list',
+    'chat.closeRoomThreads': 'Close thread list',
+    'chat.pinnedMessages': 'Pinned messages',
+    'chat.openPinnedMessages': 'Open pinned messages',
+    'chat.closePinnedMessages': 'Close pinned messages',
+    'chat.pinnedMessagesEmpty': 'No pinned messages in this room yet.',
+    'chat.pinAction': 'Pin',
+    'chat.unpinAction': 'Unpin',
+    'chat.pinnedAt': 'Pinned {time}',
+    'chat.pinnedMessageUnavailable': 'Message unavailable',
+    'chat.pinNotAllowed': 'You cannot pin messages in this room',
+    'chat.messagePinnedLabel': 'Pinned message',
+    'chat.noticePinnedMessage': '{name} pinned a message',
+    'chat.noticeUnpinnedMessage': '{name} unpinned a message',
+    'chat.noticeUpdatedPinnedMessages': '{name} updated pinned messages',
+    'chat.sendImage': 'Send image',
+    'chat.attachMedia': 'Attach file',
+    'chat.sendVideo': 'Send video',
+    'chat.sendAudio': 'Send audio',
+    'chat.imageUploading': 'Uploading image…',
+    'chat.imageUploadFailed': 'Failed to upload image.',
+    'chat.videoUploading': 'Uploading video…',
+    'chat.videoUploadFailed': 'Failed to upload video.',
+    'chat.videoInvalidType': 'Only MP4 and WebM videos are supported.',
+    'chat.videoTooLarge': 'Video must be {maxMb} MB or smaller.',
+    'chat.audioUploading': 'Uploading audio…',
+    'chat.audioUploadFailed': 'Failed to upload audio.',
+    'chat.audioInvalidType':
+      'Only MP3, M4A, OGG, WAV, and WebM audio files are supported.',
+    'chat.audioTooLarge': 'Audio must be {maxMb} MB or smaller.',
+    'chat.videoLoading': 'Loading video…',
+    'chat.videoUnavailable': 'Video unavailable',
+    'chat.dropMediaHint': 'Drop an image or video to attach',
+    'chat.dismissUploadError': 'Dismiss',
+    'chat.recordVoice': 'Record voice message',
+    'chat.recording': 'Recording',
+    'chat.pauseRecording': 'Pause',
+    'chat.resumeRecording': 'Resume',
+    'chat.stopRecording': 'Stop',
+    'chat.cancelRecording': 'Cancel',
+    'chat.voicePreview': 'Voice preview',
+    'chat.discardVoice': 'Discard',
+    'chat.sendVoice': 'Send voice',
+    'chat.microphonePermissionDenied':
+      'Microphone access was denied. Allow access to record voice messages.',
+    'chat.recordingFailed': 'Recording failed. Please try again.',
+    'chat.voiceUploadFailed': 'Failed to upload voice message.',
+    'chat.voiceRecordingUnsupported':
+      'Voice recording is not supported in this browser.',
+    'chat.dismissVoiceError': 'Dismiss',
+    'chat.voicePlay': 'Play voice message',
+    'chat.voiceLoading': 'Loading audio…',
+    'chat.insertEmoji': 'Insert emoji',
+    'chat.emojiAutocompleteHint': 'Emoji shortcode suggestions',
+    'chat.messagePlaceholder': 'Write a message...',
+    'chat.typingOne': '{name} is typing…',
+    'chat.typingTwo': '{first} and {second} are typing…',
+    'chat.typingManyOneOther': '{first}, {second} and 1 other are typing…',
+    'chat.typingManyOthers': '{first}, {second} and {count} others are typing…',
+    'chat.noRooms': 'No rooms',
+    'layout.spaces': 'Spaces',
+    'layout.channels': 'Channels',
+    'layout.members': 'Members',
+    'layout.noMembers': 'No members found',
+    'layout.noSpaces': 'No spaces available',
+    'layout.noRoomsInSpace': 'No channels in this space',
+    'layout.generalCategory': 'General',
+    'layout.spaceRoomsCategory': 'Rooms',
+    'layout.spaceRoomsContinued': 'Rooms (continued)',
+    'layout.roomFallback': 'Unnamed room',
+    'layout.spaceFallback': 'Unnamed space',
+    'layout.homeSpace': 'Home',
+    'layout.personalChats': 'Personal chats',
+    'layout.groupChats': 'Groups',
+    'layout.unassignedRooms': 'Unassigned rooms',
+    'layout.channelUnreadAria': 'Unread messages in {name}',
+    'layout.channelMentionUnreadAria': 'Mentioned in {name}',
+    'layout.spaceUnreadAria': '{count} unread messages in space {name}',
+    'layout.spaceMentionUnreadAria': '{count} mentions in space {name}',
+    'layout.threadUnreadAria': 'Unread thread {title}',
+    'layout.threadMentionUnreadAria': 'Mentioned in thread {title}',
+    'layout.toggleNavigation': 'Toggle navigation',
+    'layout.toggleMembers': 'Toggle members',
+    'layout.expandSpaces': 'Expand spaces',
+    'layout.collapseSpaces': 'Collapse spaces',
+    'layout.openAccountSettings': 'Account settings',
+    'layout.openSpaceSettings': 'Space settings',
+    'layout.openRoomSettings': 'Channel settings',
+    'layout.roomActionsMenu': 'Channel options',
+    'layout.roomNotifications': 'Notifications',
+    'layout.spaceNotifications': 'Space notifications',
+    'notifications.title': 'Notifications',
+    'notifications.description':
+      'Choose when this channel notifies you.',
+    'notifications.spaceDescription':
+      'Apply a notification level to every channel in this space.',
+    'notifications.menuLabel': 'Notification settings',
+    'notifications.roomBell.default': 'Notifications: match default settings',
+    'notifications.roomBell.all': 'Notifications: all messages',
+    'notifications.roomBell.mentions': 'Notifications: mentions only',
+    'notifications.roomBell.mute': 'Notifications: channel muted',
+    'notifications.level.default': 'Match default settings',
+    'notifications.level.all': 'All messages',
+    'notifications.level.mentions': 'Mentions & keywords only',
+    'notifications.level.mute': 'Mute channel',
+    'notifications.space.default': 'Match default settings',
+    'notifications.space.all': 'All messages',
+    'notifications.space.mentions': 'Mentions & keywords only',
+    'notifications.space.mute': 'Mute space',
+    'notifications.space.mixed': 'Mixed',
+    'notifications.applied': 'Notification setting saved',
+    'notifications.incomingVisual': 'Visual only (tab title & badges)',
+    'notifications.incomingSound': 'Sound and visual',
+    'notifications.incomingHint':
+      'Sound plays for new messages in unmuted channels while you are in another channel. Browsers may require a click in the app first.',
+    'settings.messageNotify': 'New message alerts',
+    'layout.expandCategory': 'Expand category',
+    'layout.collapseCategory': 'Collapse category',
+    'layout.createSpace': 'Create space',
+    'layout.addRoom': 'Add room',
+    'layout.addSubspace': 'Add subspace',
+    'invite.title': 'Invite people',
+    'invite.close': 'Close',
+    'invite.spaceMenu': 'Invite to space',
+    'invite.roomButton': 'Invite to channel',
+    'invite.roomMenu': 'Invite to channel',
+    'invite.manualLabel': 'Matrix IDs',
+    'invite.manualPlaceholder': '@user:server.org, one per line',
+    'invite.searchHint': 'Or search your homeserver directory.',
+    'invite.searchPlaceholder': 'Name or @user',
+    'invite.searchButton': 'Search',
+    'invite.addUser': 'Add',
+    'invite.submit': 'Send invites',
+    'invite.noUsers': 'Add at least one user.',
+    'invite.success': 'Invited {count} user(s).',
+    'rooms.createInviteLabel': 'Invite members (optional)',
+    'rooms.createInviteHint':
+      'Search or paste Matrix IDs. They are invited when the room is created.',
+    'layout.online': 'Online',
+    'layout.away': 'Away',
+    'layout.busy': 'Do not disturb',
+    'layout.offline': 'Offline',
+    'layout.unknown': 'Unknown',
+    'settings.accountTitle': 'Account settings',
+    'settings.accountDescription': 'Manage your profile preferences.',
+    'settings.theme': 'Theme',
+    'settings.language': 'Language',
+    'settings.presence': 'Presence',
+    'settings.applyPresence': 'Apply presence',
+    'settings.presenceSaved': 'Presence updated',
+    'settings.busyUnsupported': 'Busy presence is not supported by this homeserver',
+    'settings.verificationPanelTitle': 'Verification',
+    'settings.verificationPanelIntro':
+      'You can verify this session in two ways: with another signed-in client ' +
+      '(emoji comparison) or with your recovery / security key.',
+    'settings.verificationEmojiTitle': 'Verification with another client (emoji)',
+    'settings.verificationEmojiDescription':
+      'Verify this session with another client of the same account by comparing emojis.',
+    'settings.verificationDeviceId': 'Device ID',
+    'settings.verificationStart': 'Start verification',
+    'settings.verificationRefresh': 'Refresh status',
+    'settings.verificationConfirm': 'Emojis match',
+    'settings.verificationMismatchAction': 'Emojis differ',
+    'settings.verificationCancel': 'Cancel verification',
+    'settings.verificationPending': 'Verification request is pending on your other client.',
+    'settings.verificationRequestSent': 'Verification request sent. Continue on your other client.',
+    'settings.verificationCompare': 'Compare the emojis with your other client and confirm.',
+    'settings.verificationWaiting': 'Waiting for the other client to finish verification.',
+    'settings.verificationCompleted': 'Verification finished successfully.',
+    'settings.verificationVerified': 'This device is verified.',
+    'settings.verificationNotVerified': 'This device is not verified yet.',
+    'settings.verificationUnavailable': 'Verification is not available for this session.',
+    'settings.verificationFailed': 'Verification failed. Please try again.',
+    'settings.verificationMismatch': 'Verification cancelled because emojis did not match.',
+    'settings.verificationCancelled': 'Verification was cancelled.',
+    'settings.verificationCrossSigningHint': 'Cross-signing might need setup on your other client first.',
+    'settings.verificationNeedCrossSigning':
+      'Cross-signing is not available on this account yet; set it up ' +
+      'in another Matrix client before verifying this device.',
+    'settings.verificationReadyTimeout':
+      'Timed out waiting for the other client. Open your other session, ' +
+      'accept verification, then try again.',
+    'settings.verificationUnknownOtherDevice':
+      'Could not load the other device yet. Confirm the other client is ' +
+      'online and tap Refresh status, then try again.',
+    'settings.verificationProtocolError':
+      'Verification could not continue — try cancelling and starting again.',
+    'settings.verificationRecoveryTitle': 'Verification with recovery key',
+    'settings.verificationRecoveryDescription':
+      'If you cannot verify with another client, enter your Matrix ' +
+      'recovery / security key to restore cross-signing secrets from ' +
+      'secret storage on this device.',
+    'settings.verificationRecoveryHint':
+      'Prefer emoji verification when you have a second trusted client; use ' +
+      'the recovery key only when that is not possible.',
+    'settings.verificationRecoveryKeyLabel': 'Recovery or security key',
+    'settings.secretShowRecoveryKey': 'Show recovery key',
+    'settings.secretHideRecoveryKey': 'Hide recovery key',
+    'settings.verificationRecoverySubmit': 'Restore encryption',
+    'settings.verificationRecoverySuccess':
+      'Encryption secrets were restored and this session is now verified. ' +
+      'Other Matrix clients may need a few minutes ' +
+      'to refresh their device list before they show this session as verified.',
+    'settings.verificationRecoveryErrorInvalidInput': 'Enter your recovery key.',
+    'settings.verificationRecoveryErrorInvalidKey':
+      'That key does not match your secret storage. Check the key and try again.',
+    'settings.verificationRecoveryErrorNoSecretStorage':
+      'This account has no cross-signing keys in secret storage yet. Set up ' +
+      'secret storage in another Matrix client first.',
+    'settings.verificationRecoveryErrorCryptoUnavailable':
+      'Encryption is not ready on this device. Try signing out and in, then retry.',
+    'settings.verificationRecoveryErrorUiaRequired':
+      'The homeserver needs extra authentication to finish this step. Try ' +
+      'again from a session that can complete interactive auth, or use another client.',
+    'settings.verificationRecoveryErrorNetwork':
+      'Network error talking to the homeserver. Check your connection and retry.',
+    'settings.verificationRecoveryErrorUnknown':
+      'Could not restore encryption. Try again or use another client.',
+    'settings.backToChat': 'Back to chat',
+    'settings.roomTitle': 'Channel settings',
+    'settings.roomDescription': 'Name and topic for this channel.',
+    'settings.roomId': 'Room ID',
+    'settings.roomName': 'Channel name',
+    'settings.roomTopic': 'Channel topic',
+    'settings.roomReadOnlyHint':
+      'You can view settings but cannot change name or topic.',
+    'settings.spaceTitle': 'Space settings',
+    'settings.spaceDescription': 'Basic settings for this space.',
+    'settings.spaceId': 'Space ID',
+    'settings.spaceName': 'Space name',
+    'settings.save': 'Save',
+    'settings.cancel': 'Cancel',
+    'settings.saved': 'Settings saved',
+    'settings.spaceTopic': 'Space topic',
+    'settings.spaceAvatar': 'Space icon',
+    'settings.spaceAvatarRemove': 'Remove icon',
+    'settings.spaceNavGeneral': 'General',
+    'settings.spaceNavRoles': 'Roles',
+    'settings.spaceNavPermissions': 'Permissions',
+    'settings.spaceNavMembers': 'Members',
+    'settings.spaceGeneralProfile': 'Profile',
+    'settings.spaceGeneralProfileEdit': 'Edit',
+    'settings.spaceGeneralOptions': 'Options',
+    'settings.spaceAccess': 'Space access',
+    'settings.spaceAccessHint':
+      'Change how people can join the space.',
+    'settings.spaceAccessPublic': 'Public',
+    'settings.spaceAccessInvite': 'Invite only',
+    'settings.spaceAccessKnock': 'Knock & invite',
+    'settings.spacePublishDirectory': 'Publish to directory',
+    'settings.spacePublishDirectoryHint':
+      'List the space in the public directory so others can discover it.',
+    'settings.spaceGeneralAddresses': 'Addresses',
+    'settings.spacePublishedAddresses': 'Published addresses',
+    'settings.spacePublishedAddressesHint':
+      'If access is public, published addresses are used to join.',
+    'settings.spaceMainAlias': 'Main',
+    'settings.spaceNoPublishedAddress': 'No published address yet.',
+    'settings.spaceLocalAddresses': 'Local addresses',
+    'settings.spaceLocalAddressesHint':
+      'Set a local address so users can join through your homeserver.',
+    'settings.spaceExpand': 'Expand',
+    'settings.spaceCollapse': 'Collapse',
+    'settings.spaceGeneralAdvanced': 'Advanced options',
+    'settings.spaceUpgrade': 'Upgrade space',
+    'settings.spaceUpgradeHint': 'Current version: {version}.',
+    'settings.spaceUpgradeAvailable':
+      'Recommended version: {version}.',
+    'settings.spaceUpgradeButton': 'Upgrade',
+    'settings.spaceOldSpace': 'Old space',
+    'settings.spaceRolesHint':
+      'Roles and permissions use Matrix power levels (Cinny/Sable compatible).',
+    'settings.spaceRolesDragHint':
+      'Drag roles to change hierarchy (top = highest).',
+    'settings.spaceRoleCreate': 'Create role',
+    'settings.spaceRoleNamePlaceholder': 'Role name',
+    'settings.spaceRoleNameLabel': 'Role name',
+    'settings.spaceRolePowerLevel': 'Power level',
+    'settings.spaceRoleEdit': 'Edit',
+    'settings.spaceRoleDelete': 'Delete',
+    'settings.spaceRoleFounder': 'Founder',
+    'settings.spaceFoundersTitle': 'Founders',
+    'settings.spaceFoundersHint':
+      'The space creator has full permissions and cannot be reassigned.',
+    'settings.spaceRoleColor': 'Color',
+    'settings.spacePlPermissionsTitle': 'Permissions',
+    'settings.spacePlRoleAndAbove': '{name} & Above',
+    'settings.spacePlGroupUsers': 'Users',
+    'settings.spacePlGroupManage': 'Manage',
+    'settings.spacePlGroupModeration': 'Moderation',
+    'settings.spacePlGroupSpaceOverview': 'Space overview',
+    'settings.spacePlGroupSettings': 'Settings',
+    'settings.spacePlGroupOther': 'Other',
+    'settings.spacePlDefaultPower': 'Default power',
+    'settings.spacePlManageRooms': 'Manage space rooms',
+    'settings.spacePlMessageEvents': 'Message events',
+    'settings.spacePlInvite': 'Invite',
+    'settings.spacePlKick': 'Kick',
+    'settings.spacePlBan': 'Ban',
+    'settings.spacePlSpaceAvatar': 'Space avatar',
+    'settings.spacePlSpaceName': 'Space name',
+    'settings.spacePlSpaceTopic': 'Space topic',
+    'settings.spacePlRedact': 'Redact messages',
+    'settings.spacePlChangeAccess': 'Change space access',
+    'settings.spacePlPublishAddress': 'Publish address',
+    'settings.spacePlChangeAllPermission': 'Change all permission',
+    'settings.spacePlEditPowerLevels': 'Edit power levels',
+    'settings.spacePlUpgradeSpace': 'Upgrade space',
+    'settings.spacePlOtherSettings': 'Other settings',
+    'settings.spacePlManageEmojis': 'Manage emojis & stickers',
+    'settings.spacePlServerAcls': 'Change server ACLs',
+    'settings.spaceVisibleRooms': 'Visible channels',
+    'settings.spaceVisibleRoomsAll': 'All channels',
+    'settings.account': 'Account',
+    'settings.space': 'Space',
+    'layout.spaceMembersCount': '{count} members',
+    'spaces.newTitle': 'Create space',
+    'spaces.newDescription':
+      'Create a Matrix space on your homeserver.',
+    'spaces.name': 'Space name',
+    'spaces.createSubmit': 'Create space',
+    'rooms.createTitle': 'Create room',
+    'rooms.createSpaceTitle': 'Create subspace',
+    'rooms.createSpaceDescription':
+      'Create a nested Matrix space and link it to the parent.',
+    'rooms.createSpaceSubmit': 'Create subspace',
+    'rooms.createInSpaceHint': 'Will be added to the current space.',
+    'rooms.createDescription':
+      'Create a Matrix room (not a Space). You can invite others after.',
+    'rooms.createName': 'Room name',
+    'rooms.createTopic': 'Topic (optional)',
+    'rooms.createVisibility': 'Visibility',
+    'rooms.visibilityPrivate': 'Private (invite only)',
+    'rooms.visibilityPublic': 'Public (listed, open join)',
+    'rooms.createSubmit': 'Create room',
+    'onboarding.title': 'Get started',
+    'onboarding.subtitle':
+      'Start a direct message, create a room, or explore public rooms.',
+    'onboarding.startDm': 'Start direct message',
+    'onboarding.createRoom': 'Create room',
+    'onboarding.explorePublic': 'Explore public rooms',
+    'onboarding.back': 'Back',
+    'onboarding.dmTitle': 'Direct message',
+    'onboarding.dmPeerLabel': 'Matrix user',
+    'onboarding.dmPeerPlaceholder': '@user:server or local name',
+    'onboarding.shareOwnLink': 'Share your Matrix link (others can message you)',
+    'onboarding.sharePeerLink': 'Link to selected user (matrix.to)',
+    'onboarding.copyLink': 'Copy link',
+    'onboarding.copied': 'Copied to clipboard',
+    'onboarding.copyFailed': 'Could not copy to clipboard',
+    'onboarding.dmSearchHint':
+      'Optional: search the homeserver user directory (if enabled).',
+    'onboarding.dmSearchPlaceholder': 'Search by name or id',
+    'onboarding.dmSearchButton': 'Search',
+    'onboarding.dmPickUser': 'Use',
+    'onboarding.dmStart': 'Open conversation',
+    'onboarding.publicTitle': 'Public rooms',
+    'onboarding.publicSearch': 'Search',
+    'onboarding.publicSearchPlaceholder': 'Filter directory…',
+    'onboarding.publicNoResults': 'No rooms matched your search.',
+    'onboarding.publicEmpty': 'No public rooms returned for this homeserver.',
+    'onboarding.publicMembers': 'members',
+    'onboarding.publicJoin': 'Join',
+    'onboarding.publicLoadMore': 'Load more',
+    'landing.kicker': 'OPEN AND FEDERATED TEAM CHAT',
+    'landing.title': 'Own your collaboration with Decentra.',
+    'landing.subtitle': 'Keep communication in your control while staying connected through Matrix.',
+    'landing.loginCta': 'Sign in',
+    'landing.signupCta': 'Sign up',
+    'landing.chatCta': 'Open chat',
+    'landing.featureOneTitle': 'Federated by default',
+    'landing.featureOneText': 'Use Matrix homeservers to connect teams without vendor lock-in.',
+    'landing.featureTwoTitle': 'Focus on productive channels',
+    'landing.featureTwoText': 'Organize spaces, channels and replies in a clean, fast interface.',
+    'landing.featureThreeTitle': 'Built for privacy-minded teams',
+    'landing.featureThreeText': 'Decentra keeps your communication choices transparent and portable.',
+    'landing.downloadTitle': 'Native app download',
+    'landing.downloadPlaceholder': 'Desktop and mobile installers will arrive in a future phase.',
+    'landing.downloadCta': 'Download coming soon',
+    'landing.downloadIos': 'iOS (soon)',
+    'landing.downloadAndroid': 'Android (soon)',
+    'common.loading': 'Loading...'
+}
+
+export default messages

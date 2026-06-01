@@ -22,7 +22,8 @@
     "test:ci:fast": "npm run test:unit && npm run test:integration && npm run test:e2e:smoke",
     "test:ci:full": "npm run test:unit && npm run test:integration && npm run test:coverage && npm run test:e2e",
     "test:e2e:headed": "cross-env HEADLESS=false npm run test:e2e",
-    "prepare:e2e": "playwright install chromium"
+    "prepare:e2e": "playwright install chromium",
+    "check:line-limit": "node scripts/check-file-line-limit.mjs"
   },
   "dependencies": {
     "@nuxt/ui": "^4.4.0",

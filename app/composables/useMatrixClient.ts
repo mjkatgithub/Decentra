@@ -1,65 +1,16 @@
 import type { MatrixClient } from 'matrix-js-sdk'
 import * as sdk from 'matrix-js-sdk'
 import {
-  ClientEvent,
-  EventType,
-  JoinRule,
-  MsgType,
-  Preset,
-  Visibility
-} from 'matrix-js-sdk'
-import {
-  findLatestReadableRoomMessageEvent,
-  findLatestReadableThreadMessageEvent,
-} from '~/utils/roomUnread'
-import {
-  pinRoomEvent as pinRoomEventState,
-  unpinRoomEvent as unpinRoomEventState,
-} from '~/utils/matrixRoomPinnedEvents'
-import {
-  clearRoomAvatar,
-  setRoomAvatarFromMxc,
-  setRoomName,
-  setRoomTopic,
-  uploadRoomAvatarFile,
-} from '~/utils/matrixRoomMetadata'
-import {
-  validateAudioFile,
-  validateVideoFile,
-} from '~/utils/mediaUploadValidation'
-import { readAudioDurationMs } from '~/utils/voiceRecorder'
-import {
-  captureVideoThumbnail,
-  readVideoMetadata,
-} from '~/utils/videoMetadata'
-import {
-  saveSpaceRolesAndSyncPowerLevels,
-} from '~/composables/matrix/spaceRolesStateHelpers'
-import {
-  syncChildRoomPowerLevelsFromSpaceRoles,
-} from '~/composables/matrix/spaceRolesRoomSync'
-import {
-  setSpaceJoinRule,
-  type SpaceAccessRule,
-} from '~/utils/matrixSpaceGeneralSettings'
-import { CryptoEvent } from 'matrix-js-sdk/lib/crypto-api'
-import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
-import { readonly, shallowRef } from 'vue'
-
-import {
-  extractUserLocalpart,
   HOMESERVER_CONNECTION_HINT_ERROR,
-  isTransportFailureWithoutMatrixBody,
   isSameHomeserver,
-  readMatrixErrorCode,
+  isTransportFailureWithoutMatrixBody,
   readMatrixErrorMessage,
-  isSignupUnsupported,
-  resolveHomeserverBaseUrlForClient
+  resolveHomeserverBaseUrlForClient,
 } from './matrix/matrixClientShared'
 export {
   HOMESERVER_CONNECTION_HINT_ERROR,
   isSameHomeserver,
-  resolveHomeserverBaseUrlForClient
+  resolveHomeserverBaseUrlForClient,
 } from './matrix/matrixClientShared'
 import {
   clearSignupPending,
@@ -88,7 +39,7 @@ import {
   SIGNUP_MSISDN_NOT_SUPPORTED,
   SIGNUP_SSO_USE_WEB_CLIENT,
   SIGNUP_SESSION_EXPIRED,
-  SIGNUP_UNAVAILABLE_ERROR
+  SIGNUP_UNAVAILABLE_ERROR,
 } from './matrix/matrixRegistrationUia'
 export {
   clearSignupPending,
@@ -117,7 +68,7 @@ export {
   SIGNUP_MSISDN_NOT_SUPPORTED,
   SIGNUP_SSO_USE_WEB_CLIENT,
   SIGNUP_SESSION_EXPIRED,
-  SIGNUP_UNAVAILABLE_ERROR
+  SIGNUP_UNAVAILABLE_ERROR,
 }
 export type { SignupPendingStateV1 } from './matrix/matrixRegistrationUia'
 export type { SignupTermsPolicyItem } from './matrix/matrixRegistrationUia'
@@ -132,7 +83,7 @@ export {
   REGISTRATION_TOKEN_STAGE,
   TERMS_STAGE,
   isRegistrationTokenStage,
-  isTermsStage
+  isTermsStage,
 } from './matrix/matrixRegistrationUia'
 
 import {
@@ -144,15 +95,8 @@ import {
   redirectToMatrixNativeOidc,
   refreshNativeOidcAccessToken,
   resolveTrustedAppHttpsOrigin,
-  type MatrixOidcIntent
+  type MatrixOidcIntent,
 } from './matrix/matrixOidcNative'
-import {
-  moveRoomBetweenParents,
-  persistSpaceChildOrder
-} from './matrix/spaceStateHelpers'
-import { waitForRoomSpaceParentLink } from '~/utils/waitForRoomSpaceParent'
-import { buildTextEditContent } from '~/utils/matrixMessageEdit'
-import { buildThreadRelatesTo } from '~/utils/matrixThreadRelations'
 
 export {
   MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
@@ -161,654 +105,75 @@ export {
   MATRIX_OIDC_INVALID_CALLBACK_ERROR,
   MATRIX_OIDC_NO_DELEGATED_AUTH_ERROR,
   MATRIX_OIDC_REGISTRATION_REJECTED_ERROR,
-  MATRIX_OIDC_STATE_STORAGE_PREFIX
+  MATRIX_OIDC_STATE_STORAGE_PREFIX,
 } from './matrix/matrixOidcNative'
 
-interface StoredMatrixSession {
-  baseUrl: string
-  accessToken: string
-  userId: string
-  deviceId?: string
-  refreshToken?: string
-  oauthTokenExpiresAtMs?: number
-  oidcTokenEndpoint?: string
-  oidcClientId?: string
-}
+export type {
+  CreateGroupRoomInput,
+  CreateMatrixSpaceInput,
+  InviteUsersToRoomResult,
+  PublicRoomListItem,
+  SearchPublicRoomsResult,
+  SendAudioMessageOptions,
+  SendImageMessageOptions,
+  SendTextMessageOptions,
+  SendVideoMessageOptions,
+  UserDirectoryResultItem,
+} from './matrix/matrixClientTypes'
 
-interface StoredMatrixDevice {
-  baseUrl: string
-  userId: string
-  deviceId: string
-}
+export {
+  buildMatrixToUserLink,
+  normalizeMatrixUserId,
+} from './matrix/matrixClientHelpers'
 
-type SessionRestoreStatus = 'idle' | 'loading' | 'success' | 'failure'
+export {
+  consumeIncomingVerificationFromOtherOwnDeviceBeacon,
+  getIncomingVerificationFromOtherOwnDeviceReadonly,
+  syncMatrixIncomingVerificationRelay,
+} from './matrix/sessionCrypto'
 
-const MATRIX_SESSION_STORAGE_KEY = 'decentra.matrix.session.v1'
-const MATRIX_DEVICE_STORAGE_KEY = 'decentra.matrix.device.v1'
-let cryptoWasmInitialization: Promise<void> | null = null
-
-/** MatrixClient started verification from another own device → open SAS flow */
-const incomingVerificationFromOtherOwnDevice = shallowRef(false)
-
-/** @returns Whether a beacon was consumed (caller may start SAS flow once). */
-export function consumeIncomingVerificationFromOtherOwnDeviceBeacon(): boolean {
-  if (!incomingVerificationFromOtherOwnDevice.value) {
-    return false
-  }
-  incomingVerificationFromOtherOwnDevice.value = false
-  return true
-}
-
-/** Read-only: verification request initiated from another own device/tab */
-export function getIncomingVerificationFromOtherOwnDeviceReadonly() {
-  return readonly(incomingVerificationFromOtherOwnDevice)
-}
-
-let verificationRelayAttachedClient: MatrixClient | null = null
-
-function onMatrixVerificationRelayRequestReceived(
-  request: unknown
-): void {
-  if (!request || typeof request !== 'object') {
-    return
-  }
-  const candidate = request as {
-    isSelfVerification?: boolean
-    pending?: boolean
-    initiatedByMe?: boolean
-  }
-  if (
-    candidate.isSelfVerification &&
-    candidate.pending &&
-    candidate.initiatedByMe === false
-  ) {
-    incomingVerificationFromOtherOwnDevice.value = true
-  }
-}
-
-/**
- * Incoming SAS from another signed-in device (MSC re-emitted onto MatrixClient).
- * Call after initRustCrypto; detach on logout/replace client.
- */
-export function syncMatrixIncomingVerificationRelay(
-  matrixClient: MatrixClient | null
-): void {
-  if (verificationRelayAttachedClient === matrixClient && matrixClient) {
-    return
-  }
-  if (verificationRelayAttachedClient) {
-    if (
-      typeof verificationRelayAttachedClient.removeListener === 'function'
-    ) {
-      verificationRelayAttachedClient.removeListener(
-        CryptoEvent.VerificationRequestReceived,
-        onMatrixVerificationRelayRequestReceived
-      )
-    }
-    verificationRelayAttachedClient = null
-  }
-  if (!matrixClient) {
-    return
-  }
-  if (typeof matrixClient.on !== 'function') {
-    return
-  }
-  verificationRelayAttachedClient = matrixClient
-  matrixClient.on(
-    CryptoEvent.VerificationRequestReceived,
-    onMatrixVerificationRelayRequestReceived
-  )
-}
-
-async function bootstrapRustCrossSigningIfNeeded(
-  matrixClient: MatrixClient
-): Promise<void> {
-  const cryptoApi = matrixClient.getCrypto?.()
-  if (!cryptoApi || typeof cryptoApi.bootstrapCrossSigning !== 'function') {
-    return
-  }
-  try {
-    await cryptoApi.bootstrapCrossSigning({})
-  } catch {
-    // Interactive auth may be required on some homeservers; ignore silently.
-  }
-}
+import type {
+  CreateGroupRoomInput,
+  CreateMatrixSpaceInput,
+  InviteUsersToRoomResult,
+  MessageReplyOptions,
+  ReactionToggleOptions,
+  SearchPublicRoomsResult,
+  SendAudioMessageOptions,
+  SendImageMessageOptions,
+  SendTextMessageOptions,
+  SendVideoMessageOptions,
+  SessionRestoreStatus,
+  UserDirectoryResultItem,
+} from './matrix/matrixClientTypes'
+import {
+  buildMatrixToUserLink,
+  homeserverFromUserId,
+  normalizeMatrixUserId,
+} from './matrix/matrixClientHelpers'
+import {
+  clearStoredSession,
+  consumeIncomingVerificationFromOtherOwnDeviceBeacon,
+  getIncomingVerificationFromOtherOwnDeviceReadonly,
+  initRustCryptoWithRecovery,
+  readStoredDevice,
+  readStoredSession,
+  shouldReuseStoredDeviceId,
+  syncMatrixIncomingVerificationRelay,
+  writeStoredDevice,
+  writeStoredSession,
+} from './matrix/sessionCrypto'
+import * as matrixMessages from './matrix/messages'
+import * as matrixRooms from './matrix/roomsOrDirectory'
+import { MATRIX_TO_BASE } from './matrix/matrixClientHelpers'
 
 let sessionRestorePromise: Promise<void> | null = null
-
-interface MatrixEncryptedFile {
-  key: {
-    k: string
-    kty: string
-    alg: string
-    key_ops: string[]
-    ext: boolean
-  }
-  iv: string
-  hashes: Record<string, string>
-  v: string
-  url: string
-}
-
-interface ImageInfo {
-  mimetype: string
-  size: number
-  w?: number
-  h?: number
-}
-
-interface AudioInfo {
-  mimetype: string
-  size: number
-  duration?: number
-}
-
-interface VideoInfo {
-  mimetype: string
-  size: number
-  duration?: number
-  w?: number
-  h?: number
-  thumbnail_url?: string
-  thumbnail_info?: ImageInfo
-  thumbnail_file?: MatrixEncryptedFile
-}
-
-interface MessageReplyOptions {
-  eventId: string
-}
-
-/** Options for {@link sendMessage}; legacy shape `{ eventId }` is still reply-only */
-export interface SendTextMessageOptions {
-  replyTo?: MessageReplyOptions
-  threadRootEventId?: string
-}
-
-/** Options for {@link sendAudioMessage} */
-export interface SendAudioMessageOptions {
-  durationMs?: number
-  /** When false, omits MSC3245 voice marker (file attachment). */
-  isVoiceMessage?: boolean
-  replyTo?: MessageReplyOptions
-  threadRootEventId?: string
-}
-
-export interface SendImageMessageOptions {
-  replyTo?: MessageReplyOptions
-  threadRootEventId?: string
-}
-
-/** Options for {@link sendVideoMessage} */
-export interface SendVideoMessageOptions {
-  replyTo?: MessageReplyOptions
-  threadRootEventId?: string
-}
-
-function normalizeSendTextOptions(
-  options?: MessageReplyOptions | SendTextMessageOptions,
-): SendTextMessageOptions {
-  if (!options) {
-    return {}
-  }
-  if ('threadRootEventId' in options || 'replyTo' in options) {
-    return options as SendTextMessageOptions
-  }
-  return { replyTo: options as MessageReplyOptions }
-}
-
-function applyMessageRelations(
-  content: Record<string, unknown>,
-  options?: SendTextMessageOptions,
-): void {
-  const normalized = normalizeSendTextOptions(options)
-  const threadRootId = normalized.threadRootEventId
-  const replyEventId = normalized.replyTo?.eventId
-  if (threadRootId) {
-    content['m.relates_to'] = buildThreadRelatesTo({
-      threadRootEventId: threadRootId,
-      inReplyToEventId: replyEventId,
-    })
-  } else if (replyEventId) {
-    content['m.relates_to'] = {
-      'm.in_reply_to': {
-        event_id: replyEventId,
-      },
-    }
-  }
-}
-
-interface ReactionToggleOptions {
-  ownReactionEventIds?: string[]
-}
-
-export interface PublicRoomListItem {
-  roomId: string
-  name?: string
-  topic?: string
-  canonicalAlias?: string
-  aliases?: string[]
-  numJoinedMembers?: number
-}
-
-export interface SearchPublicRoomsResult {
-  rooms: PublicRoomListItem[]
-  nextBatch?: string
-  prevBatch?: string
-  totalRoomCountEstimate?: number
-}
-
-export interface CreateGroupRoomInput {
-  name: string
-  topic?: string
-  /** Private = invite-only; public = joinable and directory-listed */
-  visibility: 'private' | 'public'
-  /** Link new room as m.space.child of this space */
-  parentSpaceId?: string
-  /** Sibling index on parent (default: append) */
-  insertIndex?: number
-  /** Matrix user IDs to invite on create */
-  inviteUserIds?: string[]
-}
-
-export interface InviteUsersToRoomResult {
-  invited: string[]
-  failed: Array<{ userId: string; error: string }>
-}
-
-export interface CreateMatrixSpaceInput {
-  name: string
-  topic?: string
-  visibility: 'private' | 'public'
-  /** Link new space as m.space.child of this parent space */
-  parentSpaceId?: string
-  insertIndex?: number
-  inviteUserIds?: string[]
-}
-
-export interface UserDirectoryResultItem {
-  userId: string
-  displayName?: string
-  avatarUrl?: string
-}
-
-const MATRIX_TO_BASE = 'https://matrix.to/#'
-
-function homeserverFromUserId(matrixUserId: string): string {
-  const colonIndex = matrixUserId.indexOf(':')
-  if (colonIndex < 0) {
-    return ''
-  }
-  return matrixUserId.slice(colonIndex + 1)
-}
-
-export function normalizeMatrixUserId(
-  input: string,
-  defaultDomain: string
-): string {
-  const trimmed = input.trim()
-  if (!trimmed) {
-    throw new Error('Matrix user id is required')
-  }
-  const withAt = trimmed.startsWith('@') ? trimmed : `@${trimmed}`
-  if (withAt.includes(':')) {
-    return withAt
-  }
-  const domain = defaultDomain.trim()
-  if (!domain) {
-    throw new Error('Enter a full Matrix id like @name:server')
-  }
-  return `${withAt}:${domain}`
-}
-
-export function buildMatrixToUserLink(matrixUserId: string): string {
-  const id = matrixUserId.trim()
-  if (!id) {
-    return MATRIX_TO_BASE
-  }
-  return `${MATRIX_TO_BASE}/${encodeURIComponent(id)}`
-}
-
-function mapPublicRoomsChunk(
-  chunk: Array<Record<string, unknown>>
-): PublicRoomListItem[] {
-  return chunk.map((entry) => {
-    const roomId = String(entry.room_id ?? '')
-    return {
-      roomId,
-      name: typeof entry.name === 'string' ? entry.name : undefined,
-      topic: typeof entry.topic === 'string' ? entry.topic : undefined,
-      canonicalAlias:
-        typeof entry.canonical_alias === 'string'
-          ? entry.canonical_alias
-          : undefined,
-      aliases: Array.isArray(entry.aliases)
-        ? entry.aliases.filter((a): a is string => typeof a === 'string')
-        : undefined,
-      numJoinedMembers:
-        typeof entry.num_joined_members === 'number'
-          ? entry.num_joined_members
-          : undefined
-    }
-  })
-}
-
-function throwMappedMatrixError(error: unknown, fallback: string): never {
-  const code = readMatrixErrorCode(error)
-  const message = readMatrixErrorMessage(error)
-  if (code === 'M_FORBIDDEN' || code === 'M_UNAUTHORIZED') {
-    throw new Error(message || 'This action is not allowed on this homeserver')
-  }
-  if (code === 'M_NOT_FOUND') {
-    throw new Error(message || 'Room or user was not found')
-  }
-  if (code === 'M_UNRECOGNIZED' || code === 'M_UNKNOWN') {
-    throw new Error(
-      message || 'This homeserver does not support this operation'
-    )
-  }
-  if (message) {
-    throw new Error(message)
-  }
-  throw new Error(fallback)
-}
-
-function shouldReuseStoredDeviceId(
-  storedSession: StoredMatrixSession | null,
-  storedDevice: StoredMatrixDevice | null,
-  baseUrl: string,
-  username: string
-): boolean {
-  const sessionDevice = storedSession?.deviceId
-  const sessionUserId = storedSession?.userId
-  const sessionBaseUrl = storedSession?.baseUrl
-  const fallbackDevice = storedDevice?.deviceId
-  const fallbackUserId = storedDevice?.userId
-  const fallbackBaseUrl = storedDevice?.baseUrl
-  const candidateDeviceId = sessionDevice || fallbackDevice
-  const candidateUserId = sessionUserId || fallbackUserId
-  const candidateBaseUrl = sessionBaseUrl || fallbackBaseUrl
-
-  if (!candidateDeviceId || !candidateUserId || !candidateBaseUrl) {
-    return false
-  }
-  if (!isSameHomeserver(candidateBaseUrl, baseUrl)) {
-    return false
-  }
-  const normalizedUsername = username.trim().toLowerCase()
-  if (normalizedUsername.startsWith('@')) {
-    return candidateUserId.toLowerCase() === normalizedUsername
-  }
-  return extractUserLocalpart(candidateUserId) ===
-    extractUserLocalpart(normalizedUsername)
-}
-
-function isCryptoStoreAccountMismatch(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false
-  }
-  const message = error.message.toLowerCase()
-  return message.includes('account in the store doesn\'t match') ||
-    message.includes("account in the store doesn't match")
-}
-
-function deleteIndexedDb(databaseName: string): Promise<void> {
-  return new Promise((resolve) => {
-    try {
-      const request = indexedDB.deleteDatabase(databaseName)
-      request.onsuccess = () => resolve()
-      request.onerror = () => resolve()
-      request.onblocked = () => resolve()
-    } catch {
-      resolve()
-    }
-  })
-}
-
-async function clearRustCryptoStores(): Promise<void> {
-  if (typeof window === 'undefined') {
-    return
-  }
-  const databaseNames = new Set<string>([
-    'matrix-js-sdk::matrix-sdk-crypto'
-  ])
-  const indexedDbFactory = window.indexedDB as
-    IDBFactory & { databases?: () => Promise<Array<{ name?: string }>> }
-
-  if (typeof indexedDbFactory.databases === 'function') {
-    try {
-      const databases = await indexedDbFactory.databases()
-      for (const database of databases) {
-        const databaseName = database.name ?? ''
-        if (databaseName.includes('matrix-sdk-crypto')) {
-          databaseNames.add(databaseName)
-        }
-      }
-    } catch {
-      // Continue with known fallback DB names.
-    }
-  }
-
-  for (const databaseName of databaseNames) {
-    await deleteIndexedDb(databaseName)
-  }
-}
-
-async function ensureCryptoWasmInitialized(): Promise<void> {
-  if (!cryptoWasmInitialization) {
-    cryptoWasmInitialization = initCryptoWasm()
-      .catch((error) => {
-        cryptoWasmInitialization = null
-        throw error
-      })
-  }
-  await cryptoWasmInitialization
-}
-
-function base64ToBase64Url(input: string): string {
-  return input.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ''
-  for (const value of bytes) {
-    binary += String.fromCharCode(value)
-  }
-  return btoa(binary)
-}
-
-function toUnpaddedBase64(bytes: Uint8Array): string {
-  return bytesToBase64(bytes).replace(/=+$/g, '')
-}
-
-async function encryptAttachmentData(
-  data: ArrayBuffer
-): Promise<{ encryptedData: ArrayBuffer; encryptedFile: Omit<MatrixEncryptedFile, 'url'> }> {
-  const cryptoKey = await crypto.subtle.generateKey(
-    { name: 'AES-CTR', length: 256 },
-    true,
-    ['encrypt', 'decrypt']
-  )
-  const rawKey = await crypto.subtle.exportKey('raw', cryptoKey)
-  const keyBytes = new Uint8Array(rawKey)
-  const ivBytes = new Uint8Array(16)
-  crypto.getRandomValues(ivBytes)
-  for (let index = 8; index < ivBytes.length; index++) {
-    ivBytes[index] = 0
-  }
-
-  const encryptedData = await crypto.subtle.encrypt(
-    {
-      name: 'AES-CTR',
-      counter: ivBytes,
-      length: 64
-    },
-    cryptoKey,
-    data
-  )
-  const hashBuffer = await crypto.subtle.digest('SHA-256', encryptedData)
-  const hashBase64 = toUnpaddedBase64(new Uint8Array(hashBuffer))
-
-  return {
-    encryptedData,
-    encryptedFile: {
-      key: {
-        k: base64ToBase64Url(bytesToBase64(keyBytes)),
-        kty: 'oct',
-        alg: 'A256CTR',
-        key_ops: ['encrypt', 'decrypt'],
-        ext: true
-      },
-      iv: toUnpaddedBase64(ivBytes),
-      hashes: { sha256: hashBase64 },
-      v: 'v2'
-    }
-  }
-}
-
-function extractMxcUrl(uploadResponse: unknown): string {
-  if (typeof uploadResponse === 'string') {
-    return uploadResponse
-  }
-  if (uploadResponse && typeof uploadResponse === 'object') {
-    const response = uploadResponse as Record<string, unknown>
-    const contentUri = response.content_uri
-    if (typeof contentUri === 'string') {
-      return contentUri
-    }
-  }
-  throw new Error('Media upload did not return an MXC URL')
-}
-
-async function readImageDimensions(
-  imageFile: Blob
-): Promise<{ w?: number; h?: number }> {
-  if (typeof Image === 'undefined' || typeof URL === 'undefined') {
-    return {}
-  }
-  return new Promise((resolve) => {
-    const objectUrl = URL.createObjectURL(imageFile)
-    const image = new Image()
-    image.onload = () => {
-      resolve({ w: image.naturalWidth, h: image.naturalHeight })
-      URL.revokeObjectURL(objectUrl)
-    }
-    image.onerror = () => {
-      resolve({})
-      URL.revokeObjectURL(objectUrl)
-    }
-    image.src = objectUrl
-  })
-}
-
-function getImageInfo(imageFile: Blob, dimensions: { w?: number; h?: number }): ImageInfo {
-  return {
-    mimetype: imageFile.type || 'application/octet-stream',
-    size: imageFile.size,
-    ...dimensions
-  }
-}
-
-function getAudioInfo(
-  audioFile: Blob,
-  durationMs?: number,
-): AudioInfo {
-  const info: AudioInfo = {
-    mimetype: audioFile.type || 'application/octet-stream',
-    size: audioFile.size,
-  }
-  if (typeof durationMs === 'number' && durationMs > 0) {
-    info.duration = Math.round(durationMs)
-  }
-  return info
-}
-
-function getVideoInfo(
-  videoFile: Blob,
-  metadata: { durationMs?: number; w?: number; h?: number },
-  mimetype: string,
-  thumbnail?: {
-    mxcUrl?: string
-    encryptedFile?: MatrixEncryptedFile
-    info?: ImageInfo
-  },
-): VideoInfo {
-  const info: VideoInfo = {
-    mimetype,
-    size: videoFile.size,
-    ...(
-      typeof metadata.w === 'number' ? { w: metadata.w } : {}
-    ),
-    ...(
-      typeof metadata.h === 'number' ? { h: metadata.h } : {}
-    ),
-  }
-  if (typeof metadata.durationMs === 'number' && metadata.durationMs > 0) {
-    info.duration = Math.round(metadata.durationMs)
-  }
-  if (thumbnail?.encryptedFile) {
-    info.thumbnail_file = thumbnail.encryptedFile
-  } else if (thumbnail?.mxcUrl) {
-    info.thumbnail_url = thumbnail.mxcUrl
-  }
-  if (thumbnail?.info) {
-    info.thumbnail_info = thumbnail.info
-  }
-  return info
-}
-
-async function uploadPlainAttachment(
-  matrixClient: MatrixClient,
-  blob: Blob,
-  mimetype: string,
-): Promise<string> {
-  const uploadResponse = await matrixClient.uploadContent(blob, {
-    type: mimetype,
-    includeFilename: true,
-  })
-  return extractMxcUrl(uploadResponse)
-}
-
-async function uploadEncryptedAttachment(
-  matrixClient: MatrixClient,
-  blob: Blob,
-): Promise<MatrixEncryptedFile> {
-  const plaintextData = await blob.arrayBuffer()
-  const encryptedResult = await encryptAttachmentData(plaintextData)
-  const encryptedBlob = new Blob(
-    [encryptedResult.encryptedData],
-    { type: 'application/octet-stream' },
-  )
-  const uploadResponse = await matrixClient.uploadContent(encryptedBlob, {
-    type: 'application/octet-stream',
-    includeFilename: true,
-  })
-  const mxcUrl = extractMxcUrl(uploadResponse)
-  return {
-    ...encryptedResult.encryptedFile,
-    url: mxcUrl,
-  }
-}
-
-function isRoomEncrypted(room: sdk.Room): boolean {
-  const hasEncryptionStateEvent = (room as sdk.Room & {
-    hasEncryptionStateEvent?: () => boolean
-  }).hasEncryptionStateEvent
-  if (typeof hasEncryptionStateEvent === 'function') {
-    return hasEncryptionStateEvent.call(room)
-  }
-  const encryptionStateEvent = room.currentState
-    ?.getStateEvents?.('m.room.encryption', '')
-  if (Array.isArray(encryptionStateEvent)) {
-    return encryptionStateEvent.length > 0
-  }
-  return Boolean(encryptionStateEvent)
-}
 
 export function useMatrixClient() {
   const client = useState<MatrixClient | null>('matrix-client', () => null)
   const sessionRestoreStatus = useState<SessionRestoreStatus>(
     'matrix-client-restore-status',
-    () => 'idle'
+    () => 'idle',
   )
   const isLoggedIn = computed(() => client.value !== null)
   const userId = computed(() => client.value?.getUserId() ?? null)
@@ -821,115 +186,6 @@ export function useMatrixClient() {
       sessionRestoreStatus.value === 'failure'
     )
   })
-
-  async function initRustCryptoWithRecovery(
-    matrixClient: MatrixClient,
-    context: string
-  ): Promise<boolean> {
-    try {
-      await ensureCryptoWasmInitialized()
-      await matrixClient.initRustCrypto()
-      await bootstrapRustCrossSigningIfNeeded(matrixClient)
-      return true
-    } catch (error) {
-      if (!isCryptoStoreAccountMismatch(error)) {
-        console.error(`Failed to initialize Rust crypto ${context}`, error)
-        return false
-      }
-      console.warn('Crypto store mismatch detected; resetting local crypto stores')
-      try {
-        await matrixClient.clearStores()
-      } catch {
-        // clearStores can fail if store does not exist yet.
-      }
-      await clearRustCryptoStores()
-      try {
-        await ensureCryptoWasmInitialized()
-        await matrixClient.initRustCrypto()
-        await bootstrapRustCrossSigningIfNeeded(matrixClient)
-        return true
-      } catch (retryError) {
-        console.error(
-          `Failed to initialize Rust crypto ${context} after store reset`,
-          retryError
-        )
-        return false
-      }
-    }
-  }
-
-  function readStoredSession(): StoredMatrixSession | null {
-    if (typeof window === 'undefined') {
-      return null
-    }
-    const rawSession = localStorage.getItem(MATRIX_SESSION_STORAGE_KEY)
-    if (!rawSession) {
-      return null
-    }
-    try {
-      const parsedSession = JSON.parse(rawSession) as StoredMatrixSession
-      if (
-        !parsedSession.baseUrl ||
-        !parsedSession.accessToken ||
-        !parsedSession.userId
-      ) {
-        return null
-      }
-      return parsedSession
-    } catch {
-      return null
-    }
-  }
-
-  function writeStoredSession(session: StoredMatrixSession): void {
-    if (typeof window === 'undefined') {
-      return
-    }
-    localStorage.setItem(
-      MATRIX_SESSION_STORAGE_KEY,
-      JSON.stringify(session)
-    )
-  }
-
-  function clearStoredSession(): void {
-    if (typeof window === 'undefined') {
-      return
-    }
-    localStorage.removeItem(MATRIX_SESSION_STORAGE_KEY)
-  }
-
-  function readStoredDevice(): StoredMatrixDevice | null {
-    if (typeof window === 'undefined') {
-      return null
-    }
-    const rawStoredDevice = localStorage.getItem(MATRIX_DEVICE_STORAGE_KEY)
-    if (!rawStoredDevice) {
-      return null
-    }
-    try {
-      const parsedStoredDevice = JSON.parse(rawStoredDevice) as StoredMatrixDevice
-      if (
-        !parsedStoredDevice.baseUrl ||
-        !parsedStoredDevice.userId ||
-        !parsedStoredDevice.deviceId
-      ) {
-        return null
-      }
-      return parsedStoredDevice
-    } catch {
-      return null
-    }
-  }
-
-  function writeStoredDevice(device: StoredMatrixDevice): void {
-    if (typeof window === 'undefined') {
-      return
-    }
-    localStorage.setItem(
-      MATRIX_DEVICE_STORAGE_KEY,
-      JSON.stringify(device)
-    )
-  }
 
   async function initializeClientFromStoredSession(): Promise<void> {
     if (client.value) {
@@ -952,7 +208,7 @@ export function useMatrixClient() {
           const renewed = await refreshNativeOidcAccessToken({
             refreshToken: session.refreshToken,
             tokenEndpoint: session.oidcTokenEndpoint,
-            clientId: session.oidcClientId
+            clientId: session.oidcClientId,
           })
           let expiresMs = session.oauthTokenExpiresAtMs
           if (renewed.expiresInSeconds != null) {
@@ -963,7 +219,7 @@ export function useMatrixClient() {
             ...session,
             accessToken: renewed.accessToken,
             refreshToken: renewed.refreshToken || session.refreshToken,
-            oauthTokenExpiresAtMs: expiresMs
+            oauthTokenExpiresAtMs: expiresMs,
           }
           writeStoredSession(session)
         } catch {
@@ -975,7 +231,7 @@ export function useMatrixClient() {
       baseUrl: session.baseUrl,
       accessToken: session.accessToken,
       userId: session.userId,
-      deviceId: session.deviceId
+      deviceId: session.deviceId,
     })
     if (session.deviceId) {
       await initRustCryptoWithRecovery(restoredClient, 'for restored session')
@@ -1026,7 +282,7 @@ export function useMatrixClient() {
   async function login(
     baseUrl: string,
     username: string,
-    password: string
+    password: string,
   ): Promise<void> {
     const resolvedBaseUrl = resolveHomeserverBaseUrlForClient(baseUrl)
     try {
@@ -1037,7 +293,7 @@ export function useMatrixClient() {
         storedSession,
         storedDevice,
         resolvedBaseUrl,
-        username
+        username,
       )
       const preferredDeviceId = shouldReuseDeviceId
         ? storedSession?.deviceId || storedDevice?.deviceId
@@ -1046,10 +302,10 @@ export function useMatrixClient() {
         type: 'm.login.password',
         identifier: {
           type: 'm.id.user',
-          user: username
+          user: username,
         },
         password,
-        device_id: preferredDeviceId
+        device_id: preferredDeviceId,
       })
       const deviceId = authData.device_id
 
@@ -1057,12 +313,12 @@ export function useMatrixClient() {
         baseUrl: resolvedBaseUrl,
         accessToken: authData.access_token,
         userId: authData.user_id,
-        deviceId
+        deviceId,
       })
 
       if (!deviceId) {
         console.warn(
-          'Missing device_id in login response; skipping Rust crypto init'
+          'Missing device_id in login response; skipping Rust crypto init',
         )
       } else {
         await initRustCryptoWithRecovery(newClient, 'during login')
@@ -1075,13 +331,13 @@ export function useMatrixClient() {
         baseUrl: resolvedBaseUrl,
         accessToken: authData.access_token,
         userId: authData.user_id,
-        deviceId
+        deviceId,
       })
       if (deviceId) {
         writeStoredDevice({
           baseUrl: resolvedBaseUrl,
           userId: authData.user_id,
-          deviceId
+          deviceId,
         })
       }
     } catch (error) {
@@ -1100,7 +356,7 @@ export function useMatrixClient() {
     baseUrl: string,
     username: string,
     password: string,
-    email?: string
+    email?: string,
   ): Promise<void> {
     const trimmedEmail = email?.trim() || ''
     if (trimmedEmail) {
@@ -1108,7 +364,7 @@ export function useMatrixClient() {
         baseUrl,
         username,
         password,
-        trimmedEmail
+        trimmedEmail,
       )
       return
     }
@@ -1127,7 +383,7 @@ export function useMatrixClient() {
   function resolveConfiguredTrustedSiteOrigin(): string {
     const runtimeCfg = useRuntimeConfig()
     return resolveTrustedAppHttpsOrigin(
-      String(runtimeCfg.public.siteUrl || '').trim()
+      String(runtimeCfg.public.siteUrl || '').trim(),
     )
   }
 
@@ -1144,26 +400,26 @@ export function useMatrixClient() {
       homeserverUrlInput: payload.homeserverUrlInput,
       trustedAppHttpsOrigin: siteOriginHttps,
       runtimeClientIdConfigured: String(
-        runtimeCfg.public.matrixOidcClientId || ''
+        runtimeCfg.public.matrixOidcClientId || '',
       ).trim(),
       callbackPath: MATRIX_DELEGATED_OIDC_CALLBACK_RELATIVE_PATH,
-      intent: payload.intent
+      intent: payload.intent,
     })
   }
 
   async function finalizeDelegatedMatrixOidcFromRedirectPayload(
-    payload: { code: string; state: string }
+    payload: { code: string; state: string },
   ): Promise<void> {
     if (typeof window === 'undefined') {
       throw new Error(MATRIX_OIDC_INVALID_CALLBACK_ERROR)
     }
     const exchanged = await exchangeNativeOidcAuthorizationCode({
       code: payload.code,
-      state: payload.state
+      state: payload.state,
     })
     const identity = await fetchMatrixWhoAmI(
       exchanged.pending.matrixClientApiBaseUrl,
-      exchanged.tokens.accessToken
+      exchanged.tokens.accessToken,
     )
     const ttlSeconds = exchanged.tokens.expiresInSeconds ?? 300
     const oauthExpiresAtMs = Date.now() + ttlSeconds * 1000
@@ -1173,11 +429,11 @@ export function useMatrixClient() {
       baseUrl: matrixApiBase,
       accessToken: exchanged.tokens.accessToken,
       userId: identity.userId,
-      deviceId: deviceLit
+      deviceId: deviceLit,
     })
     await initRustCryptoWithRecovery(
       delegatedClient,
-      'during delegated OIDC'
+      'during delegated OIDC',
     )
     delegatedClient.startClient({ initialSyncLimit: 50 })
     if (client.value) {
@@ -1194,12 +450,12 @@ export function useMatrixClient() {
       refreshToken: maybeRefresh,
       oauthTokenExpiresAtMs: oauthExpiresAtMs,
       oidcTokenEndpoint: exchanged.pending.tokenEndpoint,
-      oidcClientId: exchanged.pending.oauthClientId
+      oidcClientId: exchanged.pending.oauthClientId,
     })
     writeStoredDevice({
       baseUrl: matrixApiBase,
       userId: identity.userId,
-      deviceId: deviceLit
+      deviceId: deviceLit,
     })
   }
 
@@ -1218,7 +474,7 @@ export function useMatrixClient() {
     try {
       const initialized = await initRustCryptoWithRecovery(
         matrixClient,
-        'on demand'
+        'on demand',
       )
       if (!initialized) {
         return false
@@ -1229,8 +485,18 @@ export function useMatrixClient() {
     return Boolean(matrixClient.getCrypto?.())
   }
 
+  function requireClient(): MatrixClient {
+    const matrixClient = client.value
+    if (!matrixClient) {
+      throw new Error('Not logged in')
+    }
+    return matrixClient
+  }
+
   function getRooms(): sdk.Room[] {
-    if (!client.value) return []
+    if (!client.value) {
+      return []
+    }
     return client.value.getRooms()
   }
 
@@ -1243,28 +509,7 @@ export function useMatrixClient() {
     if (!matrixClient) {
       return
     }
-    const room = matrixClient.getRoom(roomId)
-    if (!room) {
-      return
-    }
-    const latestMessageEvent = findLatestReadableRoomMessageEvent(room)
-    if (!latestMessageEvent) {
-      return
-    }
-    const eventId = latestMessageEvent.getId()
-    if (!eventId) {
-      return
-    }
-    try {
-      await matrixClient.sendReadReceipt(latestMessageEvent)
-      await matrixClient.setRoomReadMarkers(
-        roomId,
-        eventId,
-        latestMessageEvent,
-      )
-    } catch (thrownError) {
-      console.error('markRoomAsRead failed', thrownError)
-    }
+    return matrixMessages.markRoomAsRead(matrixClient, roomId)
   }
 
   async function markThreadAsRead(
@@ -1275,31 +520,11 @@ export function useMatrixClient() {
     if (!matrixClient) {
       return
     }
-    const room = matrixClient.getRoom(roomId)
-    if (!room) {
-      return
-    }
-    const latestThreadEvent = findLatestReadableThreadMessageEvent(
-      room,
+    return matrixMessages.markThreadAsRead(
+      matrixClient,
+      roomId,
       threadRootEventId,
     )
-    if (!latestThreadEvent) {
-      return
-    }
-    const eventId = latestThreadEvent.getId()
-    if (!eventId) {
-      return
-    }
-    try {
-      await matrixClient.sendReadReceipt(latestThreadEvent)
-      await matrixClient.setRoomReadMarkers(
-        roomId,
-        eventId,
-        latestThreadEvent,
-      )
-    } catch (thrownError) {
-      console.error('markThreadAsRead failed', thrownError)
-    }
   }
 
   async function sendRoomTyping(
@@ -1310,7 +535,12 @@ export function useMatrixClient() {
     if (!client.value) {
       return
     }
-    await client.value.sendTyping(roomId, isTyping, timeoutMs)
+    return matrixMessages.sendRoomTyping(
+      client.value,
+      roomId,
+      isTyping,
+      timeoutMs,
+    )
   }
 
   async function sendMessage(
@@ -1318,19 +548,14 @@ export function useMatrixClient() {
     body: string,
     options?: MessageReplyOptions | SendTextMessageOptions,
   ): Promise<void> {
-    if (!client.value) throw new Error('Not logged in')
-    const normalized = normalizeSendTextOptions(options)
-    const content: Record<string, any> = {
-      msgtype: MsgType.Text,
-      body,
+    if (!client.value) {
+      throw new Error('Not logged in')
     }
-
-    applyMessageRelations(content, normalized)
-
-    await client.value.sendEvent(
+    return matrixMessages.sendMessage(
+      client.value,
       roomId,
-      EventType.RoomMessage,
-      content as any,
+      body,
+      options,
     )
   }
 
@@ -1342,15 +567,11 @@ export function useMatrixClient() {
     if (!client.value) {
       throw new Error('Not logged in')
     }
-    const trimmedBody = newBody.trim()
-    if (!trimmedBody) {
-      throw new Error('Edit body cannot be empty')
-    }
-    const content = buildTextEditContent(trimmedBody, targetEventId)
-    await client.value.sendEvent(
+    return matrixMessages.sendEditMessage(
+      client.value,
       roomId,
-      EventType.RoomMessage,
-      content as any,
+      newBody,
+      targetEventId,
     )
   }
 
@@ -1360,69 +581,17 @@ export function useMatrixClient() {
     fileName = 'image',
     options?: SendImageMessageOptions,
   ): Promise<void> {
-    const matrixClient = client.value
-    if (!matrixClient) {
+    if (!client.value) {
       throw new Error('Not logged in')
     }
-    const mimetype = imageFile.type || ''
-    if (!mimetype.startsWith('image/')) {
-      throw new Error('Only image uploads are supported')
-    }
-    const room = matrixClient.getRoom(roomId)
-    if (!room) {
-      throw new Error('Room not found')
-    }
-    const dimensions = await readImageDimensions(imageFile)
-    const imageInfo = getImageInfo(imageFile, dimensions)
-    const encryptedRoom = isRoomEncrypted(room)
-
-    const relationOptions: SendTextMessageOptions = {
-      replyTo: options?.replyTo,
-      threadRootEventId: options?.threadRootEventId,
-    }
-    const imageContentBase: Record<string, unknown> = {
-      msgtype: MsgType.Image,
-      body: fileName,
-      info: imageInfo,
-    }
-    applyMessageRelations(imageContentBase, relationOptions)
-
-    if (encryptedRoom) {
-      const cryptoReady = await ensureCryptoReady()
-      if (!cryptoReady) {
-        throw new Error('Encryption is not ready for media upload')
-      }
-      const plaintextData = await imageFile.arrayBuffer()
-      const encryptedResult = await encryptAttachmentData(plaintextData)
-      const encryptedBlob = new Blob(
-        [encryptedResult.encryptedData],
-        { type: 'application/octet-stream' }
-      )
-      const uploadResponse = await matrixClient.uploadContent(
-        encryptedBlob,
-        { type: 'application/octet-stream', includeFilename: true }
-      )
-      const mxcUrl = extractMxcUrl(uploadResponse)
-      const encryptedFile: MatrixEncryptedFile = {
-        ...encryptedResult.encryptedFile,
-        url: mxcUrl
-      }
-      await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-        ...imageContentBase,
-        file: encryptedFile,
-      })
-      return
-    }
-
-    const uploadResponse = await matrixClient.uploadContent(
+    return matrixMessages.sendImageMessage(
+      client.value,
+      roomId,
       imageFile,
-      { type: imageInfo.mimetype, includeFilename: true }
+      fileName,
+      options,
+      ensureCryptoReady,
     )
-    const mxcUrl = extractMxcUrl(uploadResponse)
-    await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-      ...imageContentBase,
-      url: mxcUrl,
-    })
   }
 
   async function sendAudioMessage(
@@ -1431,86 +600,17 @@ export function useMatrixClient() {
     fileName = 'voice-message',
     options?: SendAudioMessageOptions,
   ): Promise<void> {
-    const matrixClient = client.value
-    if (!matrixClient) {
+    if (!client.value) {
       throw new Error('Not logged in')
     }
-    const validation = validateAudioFile(
+    return matrixMessages.sendAudioMessage(
+      client.value,
+      roomId,
       audioFile,
-      audioFile instanceof File ? audioFile.name : fileName,
+      fileName,
+      options,
+      ensureCryptoReady,
     )
-    if (!validation.ok) {
-      if (validation.code === 'tooLarge') {
-        throw new Error('Audio file exceeds maximum upload size')
-      }
-      throw new Error('Only supported audio uploads are allowed')
-    }
-    const mimetype = validation.mimetype
-    const room = matrixClient.getRoom(roomId)
-    if (!room) {
-      throw new Error('Room not found')
-    }
-    let durationMs = options?.durationMs
-    if (typeof durationMs !== 'number' || durationMs <= 0) {
-      durationMs = await readAudioDurationMs(audioFile)
-    }
-    const audioInfo = getAudioInfo(
-      new Blob([audioFile], { type: mimetype }),
-      durationMs,
-    )
-    const encryptedRoom = isRoomEncrypted(room)
-    const relationOptions: SendTextMessageOptions = {
-      replyTo: options?.replyTo,
-      threadRootEventId: options?.threadRootEventId,
-    }
-    const isVoiceMessage = options?.isVoiceMessage !== false
-
-    const voiceContentBase: Record<string, unknown> = {
-      msgtype: MsgType.Audio,
-      body: fileName,
-      info: audioInfo,
-    }
-    if (isVoiceMessage) {
-      voiceContentBase['org.matrix.msc3245.voice'] = {}
-    }
-    applyMessageRelations(voiceContentBase, relationOptions)
-
-    if (encryptedRoom) {
-      const cryptoReady = await ensureCryptoReady()
-      if (!cryptoReady) {
-        throw new Error('Encryption is not ready for media upload')
-      }
-      const plaintextData = await audioFile.arrayBuffer()
-      const encryptedResult = await encryptAttachmentData(plaintextData)
-      const encryptedBlob = new Blob(
-        [encryptedResult.encryptedData],
-        { type: 'application/octet-stream' }
-      )
-      const uploadResponse = await matrixClient.uploadContent(
-        encryptedBlob,
-        { type: 'application/octet-stream', includeFilename: true }
-      )
-      const mxcUrl = extractMxcUrl(uploadResponse)
-      const encryptedFile: MatrixEncryptedFile = {
-        ...encryptedResult.encryptedFile,
-        url: mxcUrl
-      }
-      await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-        ...voiceContentBase,
-        file: encryptedFile,
-      })
-      return
-    }
-
-    const uploadResponse = await matrixClient.uploadContent(
-      audioFile,
-      { type: audioInfo.mimetype, includeFilename: true }
-    )
-    const mxcUrl = extractMxcUrl(uploadResponse)
-    await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-      ...voiceContentBase,
-      url: mxcUrl,
-    })
   }
 
   async function sendVideoMessage(
@@ -1519,182 +619,82 @@ export function useMatrixClient() {
     fileName = 'video',
     options?: SendVideoMessageOptions,
   ): Promise<void> {
-    const matrixClient = client.value
-    if (!matrixClient) {
+    if (!client.value) {
       throw new Error('Not logged in')
     }
-    const validation = validateVideoFile(
+    return matrixMessages.sendVideoMessage(
+      client.value,
+      roomId,
       videoFile,
-      videoFile instanceof File ? videoFile.name : fileName,
+      fileName,
+      options,
+      ensureCryptoReady,
     )
-    if (!validation.ok) {
-      if (validation.code === 'tooLarge') {
-        throw new Error('Video file exceeds maximum upload size')
-      }
-      throw new Error('Only supported video uploads are allowed')
-    }
-    const mimetype = validation.mimetype
-    const room = matrixClient.getRoom(roomId)
-    if (!room) {
-      throw new Error('Room not found')
-    }
-    const metadata = await readVideoMetadata(videoFile)
-    const thumbnailBlob = await captureVideoThumbnail(videoFile)
-    const encryptedRoom = isRoomEncrypted(room)
-    const relationOptions: SendTextMessageOptions = {
-      replyTo: options?.replyTo,
-      threadRootEventId: options?.threadRootEventId,
-    }
-
-    let thumbnailAttachment:
-      | { mxcUrl?: string; encryptedFile?: MatrixEncryptedFile; info?: ImageInfo }
-      | undefined
-    if (thumbnailBlob) {
-      const thumbDimensions = await readImageDimensions(thumbnailBlob)
-      const thumbInfo = getImageInfo(thumbnailBlob, thumbDimensions)
-      if (encryptedRoom) {
-        const cryptoReady = await ensureCryptoReady()
-        if (!cryptoReady) {
-          throw new Error('Encryption is not ready for media upload')
-        }
-        const encryptedThumb = await uploadEncryptedAttachment(
-          matrixClient,
-          thumbnailBlob,
-        )
-        thumbnailAttachment = {
-          encryptedFile: encryptedThumb,
-          info: thumbInfo,
-        }
-      } else {
-        const thumbMxcUrl = await uploadPlainAttachment(
-          matrixClient,
-          thumbnailBlob,
-          'image/jpeg',
-        )
-        thumbnailAttachment = {
-          mxcUrl: thumbMxcUrl,
-          info: thumbInfo,
-        }
-      }
-    }
-
-    const videoInfo = getVideoInfo(
-      videoFile,
-      metadata,
-      mimetype,
-      thumbnailAttachment,
-    )
-    const videoContentBase: Record<string, unknown> = {
-      msgtype: MsgType.Video,
-      body: fileName,
-      info: videoInfo,
-    }
-    applyMessageRelations(videoContentBase, relationOptions)
-
-    if (encryptedRoom) {
-      const cryptoReady = await ensureCryptoReady()
-      if (!cryptoReady) {
-        throw new Error('Encryption is not ready for media upload')
-      }
-      const encryptedFile = await uploadEncryptedAttachment(
-        matrixClient,
-        videoFile,
-      )
-      await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-        ...videoContentBase,
-        file: encryptedFile,
-      })
-      return
-    }
-
-    const mxcUrl = await uploadPlainAttachment(
-      matrixClient,
-      videoFile,
-      mimetype,
-    )
-    await matrixClient.sendEvent(roomId, EventType.RoomMessage, {
-      ...videoContentBase,
-      url: mxcUrl,
-    })
   }
 
   async function loadOlderMessages(roomId: string): Promise<boolean> {
-    const room = client.value?.getRoom(roomId)
-    if (!room || !client.value) return false
-    const timeline = room.getLiveTimeline()
-    return client.value.paginateEventTimeline(timeline, { backwards: true })
+    if (!client.value) {
+      return false
+    }
+    return matrixMessages.loadOlderMessages(client.value, roomId)
   }
 
   async function sendReaction(
     roomId: string,
     eventId: string,
-    emoji: string
+    emoji: string,
   ): Promise<void> {
     if (!client.value) {
       throw new Error('Not logged in')
     }
-    const trimmedEmoji = emoji.trim()
-    if (!trimmedEmoji) {
-      throw new Error('Emoji is required')
-    }
-    await client.value.sendEvent(roomId, 'm.reaction' as any, {
-      'm.relates_to': {
-        rel_type: 'm.annotation',
-        event_id: eventId,
-        key: trimmedEmoji
-      }
-    } as any)
+    return matrixMessages.sendReaction(
+      client.value,
+      roomId,
+      eventId,
+      emoji,
+    )
   }
 
   async function redactEvent(
     roomId: string,
-    reactionEventId: string
+    reactionEventId: string,
   ): Promise<void> {
     if (!client.value) {
       throw new Error('Not logged in')
     }
-    await (client.value as MatrixClient & {
-      redactEvent: (
-        roomId: string,
-        eventId: string
-      ) => Promise<unknown>
-    }).redactEvent(roomId, reactionEventId)
+    return matrixMessages.redactEvent(
+      client.value,
+      roomId,
+      reactionEventId,
+    )
   }
 
   async function toggleReaction(
     roomId: string,
     messageEventId: string,
     emoji: string,
-    options?: ReactionToggleOptions | string[]
+    options?: ReactionToggleOptions | string[],
   ): Promise<void> {
-    const ownReactionEventIds = Array.isArray(options)
-      ? options
-      : options?.ownReactionEventIds ?? []
-    const firstOwnReactionEventId = ownReactionEventIds[0]
-    if (firstOwnReactionEventId) {
-      await redactEvent(roomId, firstOwnReactionEventId)
-      return
-    }
-    await sendReaction(roomId, messageEventId, emoji)
-  }
-
-  function requireClient(): MatrixClient {
-    const matrixClient = client.value
-    if (!matrixClient) {
+    if (!client.value) {
       throw new Error('Not logged in')
     }
-    return matrixClient
+    return matrixMessages.toggleReaction(
+      client.value,
+      roomId,
+      messageEventId,
+      emoji,
+      options,
+    )
   }
 
   async function reorderSpaceChildren(
     parentSpaceId: string,
-    orderedChildRoomIds: string[]
+    orderedChildRoomIds: string[],
   ): Promise<void> {
-    const matrixClient = requireClient()
-    await persistSpaceChildOrder(
-      matrixClient,
+    return matrixRooms.reorderSpaceChildren(
+      requireClient(),
       parentSpaceId,
-      orderedChildRoomIds
+      orderedChildRoomIds,
     )
   }
 
@@ -1704,67 +704,75 @@ export function useMatrixClient() {
     nextParentSpaceId: string
     insertIndex?: number
   }): Promise<void> {
-    const matrixClient = requireClient()
-    await moveRoomBetweenParents({ matrixClient, ...options })
+    return matrixRooms.moveChannelBetweenSpaceParents(
+      requireClient(),
+      options,
+    )
   }
 
   async function pinRoomEvent(
     roomId: string,
     eventId: string,
   ): Promise<void> {
-    const matrixClient = requireClient()
-    await pinRoomEventState(matrixClient, roomId, eventId)
+    return matrixRooms.pinRoomEvent(requireClient(), roomId, eventId)
   }
 
   async function unpinRoomEvent(
     roomId: string,
     eventId: string,
   ): Promise<void> {
-    const matrixClient = requireClient()
-    await unpinRoomEventState(matrixClient, roomId, eventId)
+    return matrixRooms.unpinRoomEvent(requireClient(), roomId, eventId)
   }
 
-  async function updateSpaceName(spaceId: string, name: string): Promise<void> {
-    const matrixClient = requireClient()
-    await setRoomName(matrixClient, spaceId, name)
+  async function updateSpaceName(
+    spaceId: string,
+    name: string,
+  ): Promise<void> {
+    return matrixRooms.updateSpaceName(requireClient(), spaceId, name)
   }
 
   async function updateSpaceTopic(
     spaceId: string,
     topic: string,
   ): Promise<void> {
-    const matrixClient = requireClient()
-    await setRoomTopic(matrixClient, spaceId, topic)
+    return matrixRooms.updateSpaceTopic(requireClient(), spaceId, topic)
   }
 
   async function updateSpaceAvatar(
     spaceId: string,
     imageFile: File,
   ): Promise<void> {
-    const matrixClient = requireClient()
-    const mxcUrl = await uploadRoomAvatarFile(matrixClient, imageFile)
-    await setRoomAvatarFromMxc(matrixClient, spaceId, mxcUrl)
+    return matrixRooms.updateSpaceAvatar(
+      requireClient(),
+      spaceId,
+      imageFile,
+    )
   }
 
   async function removeSpaceAvatar(spaceId: string): Promise<void> {
-    const matrixClient = requireClient()
-    await clearRoomAvatar(matrixClient, spaceId)
+    return matrixRooms.removeSpaceAvatar(requireClient(), spaceId)
   }
 
   async function updateSpaceJoinRule(
     spaceId: string,
-    joinRule: SpaceAccessRule,
+    joinRule: Parameters<typeof matrixRooms.updateSpaceJoinRule>[2],
   ): Promise<void> {
-    const matrixClient = requireClient()
-    await setSpaceJoinRule(matrixClient, spaceId, joinRule)
+    return matrixRooms.updateSpaceJoinRule(
+      requireClient(),
+      spaceId,
+      joinRule,
+    )
   }
 
   async function upgradeSpaceRoom(
     spaceId: string,
     targetVersion: string,
   ): Promise<void> {
-    const matrixClient = requireClient()
-    await matrixClient.upgradeRoom(spaceId, targetVersion)
+    return matrixRooms.upgradeSpaceRoom(
+      requireClient(),
+      spaceId,
+      targetVersion,
+    )
   }
 
   async function saveSpaceRoles(
@@ -1773,98 +781,23 @@ export function useMatrixClient() {
     childRoomIds: string[] = [],
     scrubPowerLevel?: number,
   ): Promise<void> {
-    const matrixClient = requireClient()
-    await saveSpaceRolesAndSyncPowerLevels(
-      matrixClient,
+    return matrixRooms.saveSpaceRoles(
+      requireClient(),
       spaceId,
       content,
+      childRoomIds,
       scrubPowerLevel,
     )
-    if (childRoomIds.length > 0) {
-      await syncChildRoomPowerLevelsFromSpaceRoles(
-        matrixClient,
-        content,
-        childRoomIds,
-        scrubPowerLevel,
-      )
-    }
-  }
-
-  async function mergeDirectAccountData(
-    matrixClient: MatrixClient,
-    peerUserId: string,
-    roomId: string
-  ): Promise<void> {
-    const directEvent = matrixClient.getAccountData(EventType.Direct)
-    const previous = (directEvent?.getContent() as
-      | Record<string, string[]>
-      | undefined) ?? {}
-    const next: Record<string, string[]> = { ...previous }
-    const existing = new Set(next[peerUserId] ?? [])
-    existing.add(roomId)
-    next[peerUserId] = [...existing]
-    await matrixClient.setAccountData(EventType.Direct, next)
-  }
-
-  function findJoinedDirectRoomId(
-    matrixClient: MatrixClient,
-    peerUserId: string
-  ): string | null {
-    const directEvent = matrixClient.getAccountData(EventType.Direct)
-    const content = directEvent?.getContent() as
-      | Record<string, string[]>
-      | undefined
-    const candidates = content?.[peerUserId] ?? []
-    for (const roomId of candidates) {
-      const room = matrixClient.getRoom(roomId)
-      if (room?.getMyMembership() === 'join') {
-        return roomId
-      }
-    }
-    return null
   }
 
   async function getOrCreateDirectMessageRoom(
-    rawUserId: string
+    rawUserId: string,
   ): Promise<string> {
-    const matrixClient = requireClient()
-    const selfId = matrixClient.getUserId()
-    if (!selfId) {
-      throw new Error('Not logged in')
-    }
-    const domain = homeserverFromUserId(selfId)
-    const peerUserId = normalizeMatrixUserId(rawUserId, domain)
-    if (peerUserId.toLowerCase() === selfId.toLowerCase()) {
-      throw new Error('Cannot start a direct message with yourself')
-    }
-    const fromAccount = findJoinedDirectRoomId(matrixClient, peerUserId)
-    if (fromAccount) {
-      return fromAccount
-    }
-    const createOpts: sdk.ICreateRoomOpts = {
-      invite: [peerUserId],
-      preset: Preset.PrivateChat,
-      is_direct: true
-    }
-    if (await ensureCryptoReady()) {
-      createOpts.initial_state = [
-        {
-          type: EventType.RoomEncryption,
-          state_key: '',
-          content: { algorithm: 'm.megolm.v1.aes-sha2' }
-        }
-      ]
-    }
-    try {
-      const { room_id: roomId } = await matrixClient.createRoom(createOpts)
-      await mergeDirectAccountData(matrixClient, peerUserId, roomId)
-      return roomId
-    } catch (error) {
-      if (isTransportFailureWithoutMatrixBody(error)) {
-        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
-      }
-      throwMappedMatrixError(error, 'Could not start direct message')
-    }
+    return matrixRooms.getOrCreateDirectMessageRoom(
+      requireClient(),
+      rawUserId,
+      ensureCryptoReady,
+    )
   }
 
   function buildDirectMessageShareLink(rawUserId: string): string {
@@ -1884,182 +817,40 @@ export function useMatrixClient() {
     return buildMatrixToUserLink(selfId)
   }
 
-  function buildRoomCreateInitialState(
-    isPublic: boolean,
-    includeEncryption: boolean,
-  ): sdk.ICreateRoomOpts['initial_state'] {
-    const encryptionReady = includeEncryption
-    const encryptionState =
-      encryptionReady
-        ? [
-            {
-              type: EventType.RoomEncryption,
-              state_key: '',
-              content: { algorithm: 'm.megolm.v1.aes-sha2' },
-            },
-          ]
-        : []
-    return [
-      {
-        type: EventType.RoomJoinRules,
-        state_key: '',
-        content: {
-          join_rule: isPublic ? JoinRule.Public : JoinRule.Invite,
-        },
-      },
-      {
-        type: EventType.RoomHistoryVisibility,
-        state_key: '',
-        content: {
-          history_visibility: isPublic ? 'world_readable' : 'invited',
-        },
-      },
-      ...encryptionState,
-    ]
-  }
-
-  async function linkRoomToParentSpace(
-    roomId: string,
-    parentSpaceId: string,
-    insertIndex?: number,
-  ): Promise<void> {
-    const matrixClient = requireClient()
-    await moveChannelBetweenSpaceParents({
-      roomId,
-      previousParentSpaceId: null,
-      nextParentSpaceId: parentSpaceId,
-      insertIndex,
-    })
-    await waitForRoomSpaceParentLink(matrixClient, roomId, parentSpaceId)
-  }
-
   async function createMatrixSpace(
     input: CreateMatrixSpaceInput,
   ): Promise<string> {
-    const matrixClient = requireClient()
-    const trimmedName = input.name.trim()
-    if (!trimmedName) {
-      throw new Error('Space name is required')
-    }
-    const topic = input.topic?.trim()
-    const isPublic = input.visibility === 'public'
-    const selfId = matrixClient.getUserId()
-    const inviteUserIds = (input.inviteUserIds ?? []).filter(
-      (matrixUserId) =>
-        !selfId ||
-        matrixUserId.toLowerCase() !== selfId.toLowerCase(),
-    )
-    const createOpts: sdk.ICreateRoomOpts = {
-      name: trimmedName,
-      ...(topic ? { topic } : {}),
-      visibility: isPublic ? Visibility.Public : Visibility.Private,
-      creation_content: { type: 'm.space' },
-      ...(inviteUserIds.length > 0 ? { invite: inviteUserIds } : {}),
-      initial_state: buildRoomCreateInitialState(isPublic, false),
-    }
-    try {
-      const { room_id: roomId } = await matrixClient.createRoom(createOpts)
-      if (input.parentSpaceId) {
-        await linkRoomToParentSpace(
-          roomId,
-          input.parentSpaceId,
-          input.insertIndex,
-        )
-      }
-      return roomId
-    } catch (error) {
-      if (isTransportFailureWithoutMatrixBody(error)) {
-        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
-      }
-      throwMappedMatrixError(error, 'Could not create space')
-    }
+    return matrixRooms.createMatrixSpace(requireClient(), input)
   }
 
   async function createGroupRoom(
-    input: CreateGroupRoomInput
+    input: CreateGroupRoomInput,
   ): Promise<string> {
-    const matrixClient = requireClient()
-    const trimmedName = input.name.trim()
-    if (!trimmedName) {
-      throw new Error('Room name is required')
-    }
-    const topic = input.topic?.trim()
-    const isPublic = input.visibility === 'public'
-    const encryptionReady = await ensureCryptoReady()
-    const selfId = matrixClient.getUserId()
-    const inviteUserIds = (input.inviteUserIds ?? []).filter(
-      (matrixUserId) =>
-        !selfId ||
-        matrixUserId.toLowerCase() !== selfId.toLowerCase(),
+    return matrixRooms.createGroupRoom(
+      requireClient(),
+      input,
+      ensureCryptoReady,
     )
-    const createOpts: sdk.ICreateRoomOpts = {
-      name: trimmedName,
-      ...(topic ? { topic } : {}),
-      visibility: isPublic ? Visibility.Public : Visibility.Private,
-      ...(isPublic ? { preset: Preset.PublicChat } : {}),
-      is_direct: false,
-      ...(inviteUserIds.length > 0 ? { invite: inviteUserIds } : {}),
-      initial_state: buildRoomCreateInitialState(isPublic, encryptionReady),
-    }
-    try {
-      const { room_id: roomId } = await matrixClient.createRoom(createOpts)
-      if (input.parentSpaceId) {
-        await linkRoomToParentSpace(
-          roomId,
-          input.parentSpaceId,
-          input.insertIndex,
-        )
-      }
-      return roomId
-    } catch (error) {
-      if (isTransportFailureWithoutMatrixBody(error)) {
-        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
-      }
-      throwMappedMatrixError(error, 'Could not create room')
-    }
   }
 
   async function inviteUsersToRoom(
     roomId: string,
     matrixUserIds: string[],
   ): Promise<InviteUsersToRoomResult> {
-    const matrixClient = requireClient()
-    const selfId = matrixClient.getUserId()?.toLowerCase()
-    const invited: string[] = []
-    const failed: InviteUsersToRoomResult['failed'] = []
-    for (const matrixUserId of matrixUserIds) {
-      if (selfId && matrixUserId.toLowerCase() === selfId) {
-        continue
-      }
-      try {
-        await matrixClient.invite(roomId, matrixUserId)
-        invited.push(matrixUserId)
-      } catch (error) {
-        failed.push({
-          userId: matrixUserId,
-          error:
-            error instanceof Error ? error.message : String(error),
-        })
-      }
-    }
-    return { invited, failed }
+    return matrixRooms.inviteUsersToRoom(
+      requireClient(),
+      roomId,
+      matrixUserIds,
+    )
   }
 
-  async function joinRoomByIdOrAlias(roomIdOrAlias: string): Promise<string> {
-    const matrixClient = requireClient()
-    const trimmed = roomIdOrAlias.trim()
-    if (!trimmed) {
-      throw new Error('Room id or alias is required')
-    }
-    try {
-      const room = await matrixClient.joinRoom(trimmed, {})
-      return room.roomId
-    } catch (error) {
-      if (isTransportFailureWithoutMatrixBody(error)) {
-        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
-      }
-      throwMappedMatrixError(error, 'Could not join room')
-    }
+  async function joinRoomByIdOrAlias(
+    roomIdOrAlias: string,
+  ): Promise<string> {
+    return matrixRooms.joinRoomByIdOrAlias(
+      requireClient(),
+      roomIdOrAlias,
+    )
   }
 
   async function searchPublicRooms(options: {
@@ -2068,82 +859,14 @@ export function useMatrixClient() {
     since?: string
     server?: string
   }): Promise<SearchPublicRoomsResult> {
-    const matrixClient = requireClient()
-    const limit = options.limit ?? 30
-    const term = options.searchTerm?.trim()
-    try {
-      if (term) {
-        const response = await matrixClient.publicRooms({
-          server: options.server,
-          limit,
-          since: options.since,
-          filter: { generic_search_term: term }
-        })
-        return {
-          rooms: mapPublicRoomsChunk(
-            (response.chunk ?? []) as unknown as Array<
-              Record<string, unknown>
-            >
-          ),
-          nextBatch: response.next_batch,
-          prevBatch: response.prev_batch,
-          totalRoomCountEstimate: response.total_room_count_estimate
-        }
-      }
-      const response = await matrixClient.publicRooms({
-        server: options.server,
-        limit,
-        since: options.since
-      })
-      return {
-        rooms: mapPublicRoomsChunk(
-          (response.chunk ?? []) as unknown as Array<
-            Record<string, unknown>
-          >
-        ),
-        nextBatch: response.next_batch,
-        prevBatch: response.prev_batch,
-        totalRoomCountEstimate: response.total_room_count_estimate
-      }
-    } catch (error) {
-      if (isTransportFailureWithoutMatrixBody(error)) {
-        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
-      }
-      throwMappedMatrixError(
-        error,
-        'Could not load public rooms from this homeserver'
-      )
-    }
+    return matrixRooms.searchPublicRooms(requireClient(), options)
   }
 
   async function searchUsersDirectory(options: {
     term: string
     limit?: number
   }): Promise<UserDirectoryResultItem[]> {
-    const matrixClient = requireClient()
-    const term = options.term.trim()
-    if (term.length < 2) {
-      return []
-    }
-    try {
-      const response = await matrixClient.searchUserDirectory({
-        term,
-        limit: options.limit ?? 20
-      })
-      return (response.results ?? []).map((row) => ({
-        userId: row.user_id,
-        displayName: row.display_name,
-        avatarUrl: row.avatar_url
-      }))
-    } catch (error) {
-      if (isTransportFailureWithoutMatrixBody(error)) {
-        throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
-      }
-      throwMappedMatrixError(
-        error,
-        'User directory search is not available'
-      )
-    }
+    return matrixRooms.searchUsersDirectory(requireClient(), options)
   }
 
   return {
@@ -2204,6 +927,6 @@ export function useMatrixClient() {
     saveSpaceRoles,
     incomingVerificationFromOtherOwnDeviceBeacon:
       getIncomingVerificationFromOtherOwnDeviceReadonly(),
-    consumeIncomingVerificationFromOtherOwnDeviceBeacon
+    consumeIncomingVerificationFromOtherOwnDeviceBeacon,
   }
 }
