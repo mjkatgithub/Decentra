@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Build docs and Vite `manualChunks` for `matrix-js-sdk` and
+  `@matrix-org/matrix-sdk-crypto-wasm`; `npm run build:chunks` lists
+  client chunk sizes after production build ([#62](https://github.com/mjkatgithub/Decentra/issues/62))
 - Mention-priority unread: red channel/space/thread indicators from
   Matrix highlight counts, space-rail rollup with unread counts
   (Discord-style badges), tab title prefix, and optional browser

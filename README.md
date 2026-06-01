@@ -53,6 +53,11 @@ npm run build
 npm run preview
 ```
 
+Production bundles are larger than dev because of `matrix-js-sdk`
+(~1 MB+ minified). Vite may warn about chunks &gt; 500 kB — that is
+normal for Matrix clients. See [docs/build-bundling.md](docs/build-bundling.md)
+for chunk splitting, baseline sizes, and `npm run build:chunks`.
+
 ## Tests
 
 ```bash
