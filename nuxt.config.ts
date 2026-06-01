@@ -46,6 +46,20 @@ export default defineNuxtConfig({
   vite: {
     optimizeDeps: {
       exclude: ['@matrix-org/matrix-sdk-crypto-wasm']
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('@matrix-org/matrix-sdk-crypto-wasm')) {
+              return 'matrix-crypto-wasm'
+            }
+            if (id.includes('matrix-js-sdk')) {
+              return 'matrix-js-sdk'
+            }
+          }
+        }
+      }
     }
   },
   colorMode: {
