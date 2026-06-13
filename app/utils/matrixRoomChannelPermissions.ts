@@ -61,5 +61,11 @@ export function isJoinedRoom(
     return false
   }
   const room = matrixClient.getRoom(roomId)
+  return matrixRoomHasJoinedMembership(room)
+}
+
+export function matrixRoomHasJoinedMembership(
+  room: { getMyMembership?: () => string } | null | undefined,
+): boolean {
   return room?.getMyMembership?.() === 'join'
 }

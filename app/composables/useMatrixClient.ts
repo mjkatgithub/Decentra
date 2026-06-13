@@ -1,5 +1,6 @@
 import type { MatrixClient } from 'matrix-js-sdk'
 import * as sdk from 'matrix-js-sdk'
+import { matrixRoomHasJoinedMembership } from '~/utils/matrixRoomChannelPermissions'
 import {
   HOMESERVER_CONNECTION_HINT_ERROR,
   isSameHomeserver,
@@ -497,7 +498,9 @@ export function useMatrixClient() {
     if (!client.value) {
       return []
     }
-    return client.value.getRooms()
+    return client.value
+      .getRooms()
+      .filter((room) => matrixRoomHasJoinedMembership(room))
   }
 
   function getRoom(roomId: string): sdk.Room | null {
@@ -853,6 +856,10 @@ export function useMatrixClient() {
     )
   }
 
+  async function leaveRoom(roomId: string): Promise<void> {
+    return matrixRooms.leaveRoom(requireClient(), roomId)
+  }
+
   async function searchPublicRooms(options: {
     searchTerm?: string
     limit?: number
@@ -912,6 +919,7 @@ export function useMatrixClient() {
     createMatrixSpace,
     inviteUsersToRoom,
     joinRoomByIdOrAlias,
+    leaveRoom,
     searchPublicRooms,
     searchUsersDirectory,
     reorderSpaceChildren,

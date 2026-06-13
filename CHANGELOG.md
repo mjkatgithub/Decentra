@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Leave Matrix rooms from the chat sidebar: confirmation dialog,
+  `leaveRoom` via matrix-js-sdk, `m.direct` cleanup for DMs, neutral
+  chat view after leaving the active room
+  ([#94](https://github.com/mjkatgithub/Decentra/issues/94))
 - Project architecture map for developers and agents:
   `docs/architecture.md`, `docs/README.md`, issue documentation
   checklist; `AGENTS.md` requires doc updates on structural changes

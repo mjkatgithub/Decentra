@@ -231,4 +231,25 @@ describe('RoomCategoryList', () => {
     wrapper.find('button[aria-label="Invite to channel"]').exists()
       .should.equal(false)
   })
+
+  it('shows room actions when only leave is allowed', () => {
+    const wrapper = mountCategoryList(
+      [
+        {
+          id: 'dms',
+          name: 'Personal',
+          canReorderRooms: false,
+          rooms: [{ roomId: '!dm:example.org', name: 'Alice' }],
+        },
+      ],
+      {
+        canLeaveRoom: () => true,
+        canInviteToRoom: () => false,
+        canOpenRoomSettings: () => false,
+      },
+    )
+
+    wrapper.find('button[data-room-actions="!dm:example.org"]').exists()
+      .should.equal(true)
+  })
 })

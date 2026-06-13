@@ -50,6 +50,44 @@ import type {
   UserDirectoryResultItem,
 } from './matrixClientTypes'
 
+function readDirectAccountContent(
+  matrixClient: MatrixClient,
+): Record<string, string[]> {
+  const directEvent = matrixClient.getAccountData(EventType.Direct)
+  return (directEvent?.getContent() as
+    | Record<string, string[]>
+    | undefined) ?? {}
+}
+
+export function isRoomListedInDirectAccountData(
+  matrixClient: MatrixClient,
+  roomId: string,
+): boolean {
+  const content = readDirectAccountContent(matrixClient)
+  return Object.values(content).some((ids) => ids?.includes(roomId))
+}
+
+export async function removeDirectAccountData(
+  matrixClient: MatrixClient,
+  roomId: string,
+): Promise<void> {
+  const previous = readDirectAccountContent(matrixClient)
+  let changed = false
+  const next: Record<string, string[]> = {}
+  for (const [peerUserId, roomIds] of Object.entries(previous)) {
+    const filtered = (roomIds ?? []).filter((id) => id !== roomId)
+    if (filtered.length !== (roomIds?.length ?? 0)) {
+      changed = true
+    }
+    if (filtered.length > 0) {
+      next[peerUserId] = filtered
+    }
+  }
+  if (changed) {
+    await matrixClient.setAccountData(EventType.Direct, next)
+  }
+}
+
 export async function mergeDirectAccountData(
   matrixClient: MatrixClient,
   peerUserId: string,
@@ -308,6 +346,36 @@ export async function joinRoomByIdOrAlias(
       throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
     }
     throwMappedMatrixError(error, 'Could not join room')
+  }
+}
+
+export async function leaveRoom(
+  matrixClient: MatrixClient,
+  roomId: string,
+): Promise<void> {
+  const trimmed = roomId.trim()
+  if (!trimmed) {
+    throw new Error('Room id is required')
+  }
+  const shouldPruneDirect = isRoomListedInDirectAccountData(
+    matrixClient,
+    trimmed,
+  )
+  try {
+    await matrixClient.leave(trimmed)
+    if (shouldPruneDirect) {
+      await removeDirectAccountData(matrixClient, trimmed)
+    }
+    try {
+      await matrixClient.forget(trimmed)
+    } catch {
+      // Left rooms may linger until sync; getRooms() filters non-join.
+    }
+  } catch (error) {
+    if (isTransportFailureWithoutMatrixBody(error)) {
+      throw new Error(HOMESERVER_CONNECTION_HINT_ERROR)
+    }
+    throwMappedMatrixError(error, 'Could not leave room')
   }
 }
 

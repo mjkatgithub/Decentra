@@ -246,6 +246,13 @@ const messages: LocaleMessages = {
     'layout.openAccountSettings': 'Account-Einstellungen',
     'layout.openSpaceSettings': 'Space-Einstellungen',
     'layout.openRoomSettings': 'Kanal-Einstellungen',
+    'layout.leaveRoomMenu': 'Kanal verlassen',
+    'layout.leaveRoomConfirmTitle': 'Kanal verlassen?',
+    'layout.leaveRoomConfirmBody':
+      'Du verlässt {name}. Ein erneuter Beitritt ist nur mit Einladung möglich.',
+    'layout.leaveRoomConfirmAction': 'Verlassen',
+    'layout.leaveRoomCancel': 'Abbrechen',
+    'layout.leaveRoomFailed': 'Kanal konnte nicht verlassen werden',
     'layout.roomActionsMenu': 'Kanaloptionen',
     'layout.roomNotifications': 'Benachrichtigungen',
     'layout.spaceNotifications': 'Space-Benachrichtigungen',

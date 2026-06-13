@@ -45,7 +45,7 @@ re-exports from `app/composables/matrix/*`.
 | `sessionCrypto.ts` | localStorage session/device, Rust crypto WASM, verification |
 | `recoveryKeyBootstrap.ts` | Recovery key → cross-signing bootstrap |
 | `messages.ts` | Send, edit, reactions, media messages |
-| `roomsOrDirectory.ts` | Rooms, spaces, directory, DMs, invites |
+| `roomsOrDirectory.ts` | Rooms, spaces, directory, DMs, invites, leave |
 | `mediaUpload.ts` | Upload helpers |
 | `matrixRegistrationUia.ts` | Legacy `/register` UIA loop |
 | `signupUiaCore.ts`, `signupUiaFlows.ts` | UIA flow selection |
@@ -196,7 +196,7 @@ E2E: `tests/e2e/features/chat.feature`, `step-definitions/unread-channel.steps.m
 | --- | --- |
 | Category / room hierarchy | `app/utils/spaceRoomCategories.ts`, `homeRoomCategories.ts` |
 | Space rail | `useChatSpaceRail.ts` → `SpaceList.vue` |
-| Room sidebar | `useChatRoomSidebar.ts` → `RoomList.vue`, `RoomCategoryList.vue` |
+| Room sidebar | `useChatRoomSidebar.ts` → `RoomList.vue`, `RoomCategoryList.vue` (invite, settings, leave via ellipsis menu) |
 | Space roles | `decentraSpaceRoles.ts`, `decentraSpaceRolesPermissions.ts`, `spaceRolesMatrixSync.ts` |
 | Settings composables | `useSpaceRoles.ts`, `useSpaceSettings.ts`, `useSpaceMembers.ts` |
 | New space page | [`app/pages/spaces/new.vue`](../app/pages/spaces/new.vue) |
@@ -251,7 +251,7 @@ README).
 | --- | --- |
 | Matrix send / edit / reactions | `app/composables/matrix/messages.ts`; exports in `useMatrixClient.ts` |
 | New message type / timeline UI | `app/utils/chatTimeline/*`, `MessageItem.vue` |
-| New room or space action | `matrix/roomsOrDirectory.ts`, `useChatRoomSidebar.ts` |
+| New room or space action | `matrix/roomsOrDirectory.ts`, `useChatRoomSidebar.ts`, `LeaveRoomConfirmPanel.vue` |
 | Unread or space-rail badge | `roomUnread.ts`, `spaceUnread.ts`, `useSpaceUnreadById.ts` |
 | Push / sound / browser tab title | `incomingMessageNotify.ts`, `documentTitle.ts`, wiring in `chat.vue` |
 | i18n string | `app/composables/i18n/locales/en.ts` and `de.ts` |
