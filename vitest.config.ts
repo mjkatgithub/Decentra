@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     setupFiles: ['./tests/setup.ts'],
     environment: 'happy-dom',
+    pool: 'forks',
     include: ['tests/unit/**/*.spec.ts', 'tests/unit/**/*.test.ts'],
     coverage: {
       provider: 'v8',

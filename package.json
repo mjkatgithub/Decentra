@@ -21,7 +21,7 @@
     "test:e2e:signup-recaptcha": "cross-env DECENTRA_E2E_SIGNUP_RECAPTCHA=1 node tests/e2e/scripts/run-synapse-e2e-signup-recaptcha.mjs",
     "test:coverage": "vitest run --coverage",
     "test:ci:fast": "npm run test:unit && npm run test:integration && npm run test:e2e:smoke",
-    "test:ci:full": "npm run test:unit && npm run test:integration && npm run test:coverage && npm run test:e2e",
+    "test:ci:full": "npm run test:integration && npm run test:coverage && npm run test:e2e",
     "test:e2e:headed": "cross-env HEADLESS=false npm run test:e2e",
     "prepare:e2e": "playwright install chromium",
     "check:line-limit": "node scripts/check-file-line-limit.mjs"

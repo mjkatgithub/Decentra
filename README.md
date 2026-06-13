@@ -104,17 +104,28 @@ The local file stays untracked.
 
 This repo uses `.github/workflows/ci.yml` with two lanes:
 
-- **Fast lane:** runs on push + pull request (`test:ci:fast`).
-- **Full lane:** runs nightly and optionally manual
-  (`test:ci:full`).
+- **Fast lane:** runs on push to non-`master` branches (feature branches,
+  `develop`); runs `test:ci:fast` (unit + integration + E2E smoke).
+- **Full lane:** runs on every pull request (targets `develop` or
+  `master`), push to `master`, nightly schedule, and manual dispatch with
+  `run_full: true`; runs `test:ci:full` (integration + coverage + full
+  Synapse E2E via Docker).
 
-### Required repository secrets (for full lane)
+### E2E credentials (full lane)
 
-Set these in GitHub under **Settings > Secrets and variables > Actions**:
+The full lane starts a local Synapse stack in Docker and writes
+`tests/e2e/.env.e2e.generated` during seeding — **no GitHub secrets are
+required** for the default CI full-lane path.
+
+For optional scenarios against an external homeserver (e.g. matrix.org),
+set repository secrets under **Settings > Secrets and variables > Actions**:
 
 - `E2E_MATRIX_HOMESERVER` (optional, defaults to `https://matrix.org`)
 - `E2E_MATRIX_USERNAME`
 - `E2E_MATRIX_PASSWORD`
+
+For local credential-based runs, copy `tests/e2e/.env.e2e.example` to
+`tests/e2e/.env.e2e.local` and fill in username/password (see above).
 
 ### How to run manually
 

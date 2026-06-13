@@ -1,4 +1,12 @@
 import { computed, ref } from 'vue'
+import { vi } from 'vitest'
+
+/** Reset module mocks before each useMatrixClient spec (avoids page-spec leakage). */
+export function prepareMatrixClientSpecFile(): void {
+  vi.unmock('~/composables/useMatrixClient')
+  vi.resetModules()
+  vi.clearAllMocks()
+}
 
 export function setupMatrixClientTestGlobals(options?: {
   initialRestoreStatus?: 'idle' | 'loading' | 'success' | 'failure'

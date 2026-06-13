@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- CI full lane (`test:ci:full`) runs on every pull request; fast lane
+  remains on feature-branch pushes only; Vitest `pool: forks` and shared
+  Matrix client spec mocks stabilize coverage runs
+  ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
 - Leave Matrix rooms from the chat sidebar: confirmation dialog,
   `leaveRoom` via matrix-js-sdk, `m.direct` cleanup for DMs, neutral
   chat view after leaving the active room; Cucumber E2E for ephemeral
