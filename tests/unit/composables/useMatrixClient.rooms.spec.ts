@@ -313,4 +313,71 @@ describe('getOrCreateDirectMessageRoom', () => {
     expect(setAccountData).toHaveBeenCalled()
   })
 })
+
+describe('leaveRoom via useMatrixClient', () => {
+  it('delegates to matrix client leave', async () => {
+    const leave = vi.fn(async () => undefined)
+    const forget = vi.fn(async () => undefined)
+    const matrixClient = {
+      getUserId: () => '@alice:example.org',
+      getAccountData: vi.fn(() => undefined),
+      getRooms: vi.fn(() => []),
+      getRoom: vi.fn(() => null),
+      leave,
+      forget,
+      setAccountData: vi.fn(),
+      startClient: vi.fn(),
+      initRustCrypto: vi.fn(async () => undefined),
+      getCrypto: () => null,
+      getDeviceId: () => 'DEV',
+    }
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 't',
+        user_id: '@alice:example.org',
+        device_id: 'DEV',
+      })),
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, leaveRoom } = useMatrixClient()
+    await login('https://example.org', 'alice', 'pw')
+    await leaveRoom('!room:example.org')
+    expect(leave).toHaveBeenCalledWith('!room:example.org')
+    expect(forget).toHaveBeenCalledWith('!room:example.org')
+  })
+
+  it('getRooms omits rooms the user has left', async () => {
+    const joinedRoom = { roomId: '!joined:example.org', getMyMembership: () => 'join' }
+    const leftRoom = { roomId: '!left:example.org', getMyMembership: () => 'leave' }
+    const matrixClient = {
+      getUserId: () => '@alice:example.org',
+      getAccountData: vi.fn(() => undefined),
+      getRooms: vi.fn(() => [joinedRoom, leftRoom]),
+      getRoom: vi.fn(() => null),
+      startClient: vi.fn(),
+      initRustCrypto: vi.fn(async () => undefined),
+      getCrypto: () => null,
+      getDeviceId: () => 'DEV',
+    }
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 't',
+        user_id: '@alice:example.org',
+        device_id: 'DEV',
+      })),
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login, getRooms } = useMatrixClient()
+    await login('https://example.org', 'alice', 'pw')
+    expect(getRooms().map((room) => room.roomId)).toEqual(['!joined:example.org'])
+  })
+})
 })

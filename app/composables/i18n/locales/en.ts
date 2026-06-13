@@ -226,6 +226,13 @@ const messages: LocaleMessages = {
     'layout.openAccountSettings': 'Account settings',
     'layout.openSpaceSettings': 'Space settings',
     'layout.openRoomSettings': 'Channel settings',
+    'layout.leaveRoomMenu': 'Leave channel',
+    'layout.leaveRoomConfirmTitle': 'Leave channel?',
+    'layout.leaveRoomConfirmBody':
+      'You will leave {name}. You can rejoin only if invited again.',
+    'layout.leaveRoomConfirmAction': 'Leave',
+    'layout.leaveRoomCancel': 'Cancel',
+    'layout.leaveRoomFailed': 'Could not leave channel',
     'layout.roomActionsMenu': 'Channel options',
     'layout.roomNotifications': 'Notifications',
     'layout.spaceNotifications': 'Space notifications',

@@ -38,6 +38,7 @@ export function useChatSpaceRail(options: {
   >;
   allMessages: Ref<unknown[]>;
   messages: Ref<unknown[]>;
+  suppressAutoRoomSelect?: Ref<boolean>;
 }) {
   const joinedSpaceIds = computed(() =>
     getJoinedSpaceRoomIds(
@@ -258,6 +259,19 @@ export function useChatSpaceRail(options: {
         const selectedExists = rooms.some(
           (room) => room.roomId === options.selectedRoomId.value,
         );
+        if (
+          options.suppressAutoRoomSelect?.value &&
+          options.selectedRoomId.value === null
+        ) {
+          return;
+        }
+        if (!selectedExists && options.selectedRoomId.value !== null) {
+          const firstRoom = rooms[0];
+          if (firstRoom) {
+            options.selectedRoomId.value = firstRoom.roomId;
+          }
+          return;
+        }
         if (!selectedExists) {
           const firstRoom = rooms[0];
           if (firstRoom) {

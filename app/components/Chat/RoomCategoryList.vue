@@ -39,6 +39,7 @@ const props = defineProps<{
   resolveRoomInsertIndex?: (category: RoomSectionItem) => number | undefined
   canInviteToRoom?: (roomId: string) => boolean
   canOpenRoomSettings?: (roomId: string) => boolean
+  canLeaveRoom?: (roomId: string) => boolean
   canInviteToSpace?: boolean
   /** When null (e.g. Home), hierarchy DnD is off */
   selectedRootSpaceId: string | null
@@ -63,6 +64,7 @@ const emit = defineEmits<{
   inviteSpace: []
   inviteRoom: [roomId: string]
   openRoomSettings: [roomId: string]
+  leaveRoom: [roomId: string]
   setRoomNotification: [payload: { roomId: string; level: RoomNotificationLevel }]
   setSpaceNotification: [level: RoomNotificationLevel]
   openHomeStartDm: []
@@ -418,34 +420,47 @@ function roomNotificationMenuItems(roomId: string) {
 function showRoomActionMenu(roomId: string): boolean {
   return Boolean(
     props.canInviteToRoom?.(roomId) ||
-      props.canOpenRoomSettings?.(roomId),
+      props.canOpenRoomSettings?.(roomId) ||
+      props.canLeaveRoom?.(roomId),
   )
 }
 
 function roomActionMenuItems(roomId: string) {
-  const items: Array<{
+  const primaryItems: Array<{
     label: string
     icon: string
     onSelect: () => void
   }> = []
   if (props.canInviteToRoom?.(roomId)) {
-    items.push({
+    primaryItems.push({
       label: translateText('invite.roomMenu'),
       icon: 'i-lucide-user-plus',
       onSelect: () => emit('inviteRoom', roomId),
     })
   }
   if (props.canOpenRoomSettings?.(roomId)) {
-    items.push({
+    primaryItems.push({
       label: translateText('layout.openRoomSettings'),
       icon: 'i-lucide-settings-2',
       onSelect: () => emit('openRoomSettings', roomId),
     })
   }
-  if (items.length === 0) {
+  if (primaryItems.length === 0 && !props.canLeaveRoom?.(roomId)) {
     return []
   }
-  return [items]
+  if (!props.canLeaveRoom?.(roomId)) {
+    return [primaryItems]
+  }
+  const leaveItem = {
+    label: translateText('layout.leaveRoomMenu'),
+    icon: 'i-lucide-log-out',
+    color: 'error' as const,
+    onSelect: () => emit('leaveRoom', roomId),
+  }
+  if (primaryItems.length === 0) {
+    return [[leaveItem]]
+  }
+  return [primaryItems, [leaveItem]]
 }
 
 function spaceNotificationItems() {

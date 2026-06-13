@@ -46,6 +46,7 @@ export function useChatRoomSidebar(options: {
   refreshRooms: () => void;
 }) {
   const inviteTarget = ref<{ roomId: string; label: string } | null>(null);
+  const leaveTarget = ref<{ roomId: string; label: string } | null>(null);
 
   const canInviteToSpace = computed(() => {
     const spaceId = options.selectedSpaceId.value;
@@ -93,6 +94,18 @@ export function useChatRoomSidebar(options: {
     return isJoinedRoom(options.client.value, roomId);
   }
 
+  function canLeaveRoom(roomId: string): boolean {
+    const matrixClient = options.client.value;
+    if (!isJoinedRoom(matrixClient, roomId)) {
+      return false;
+    }
+    const matrixRoom = matrixClient?.getRoom(roomId);
+    if (!matrixRoom) {
+      return false;
+    }
+    return getRoomType(matrixRoom) !== "m.space";
+  }
+
   function openRoomSettings(roomId: string) {
     const query: Record<string, string> = { room: roomId };
     const rootId = options.selectedSpaceId.value;
@@ -126,6 +139,18 @@ export function useChatRoomSidebar(options: {
 
   function closeInviteOverlay() {
     inviteTarget.value = null;
+  }
+
+  function openLeaveRoom(roomId: string) {
+    const matrixClient = options.client.value;
+    const label =
+      matrixClient?.getRoom(roomId)?.name ||
+      options.translateText("layout.roomFallback");
+    leaveTarget.value = { roomId, label };
+  }
+
+  function closeLeaveOverlay() {
+    leaveTarget.value = null;
   }
 
   function buildHomeSections(): RoomCategoryGroup[] {
@@ -383,13 +408,17 @@ export function useChatRoomSidebar(options: {
 
   return {
     inviteTarget,
+    leaveTarget,
     canInviteToSpace,
     canInviteToRoom,
     canOpenRoomSettings,
+    canLeaveRoom,
     openRoomSettings,
     openInviteToRoom,
     openInviteToSpace,
     closeInviteOverlay,
+    openLeaveRoom,
+    closeLeaveOverlay,
     buildHomeSections,
     buildSpaceSections,
     canManageChildrenOnSpace,

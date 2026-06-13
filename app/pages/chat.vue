@@ -16,6 +16,7 @@ import ChatOnboardingPanel from "~/components/Chat/Onboarding/ChatOnboardingPane
 import ChatDmStartPanel from "~/components/Chat/Onboarding/ChatDmStartPanel.vue";
 import ChatPublicRoomsPanel from "~/components/Chat/Onboarding/ChatPublicRoomsPanel.vue";
 import MatrixInvitePanel from "~/components/Chat/MatrixInvitePanel.vue";
+import LeaveRoomConfirmPanel from "~/components/Chat/LeaveRoomConfirmPanel.vue";
 import { canUserSendRoomMessage } from "~/utils/matrixRoomMessagePermissions";
 import { canUserPinEvents } from "~/utils/matrixRoomPinnedEventsPermissions";
 import { canPerformSpaceRoleAction } from "~/utils/decentraSpaceRolesPermissions";
@@ -71,6 +72,7 @@ const selectedSpaceId = useState<string | null>(
   () => null,
 );
 const pendingRootSpaceId = ref<string | null>(null);
+const suppressAutoRoomSelect = ref(false);
 const matrixRooms = ref<Array<Record<string, any>>>([]);
 const spaceUnreadForRail = shallowRef<
   Record<
@@ -156,6 +158,7 @@ const spaceRail = useChatSpaceRail({
   spaceUnreadById: spaceUnreadForRail,
   allMessages,
   messages,
+  suppressAutoRoomSelect,
 });
 
 const {
@@ -306,13 +309,17 @@ const roomSidebar = useChatRoomSidebar({
 
 const {
   inviteTarget,
+  leaveTarget,
   canInviteToSpace,
   canInviteToRoom,
   canOpenRoomSettings,
+  canLeaveRoom,
   openRoomSettings,
   openInviteToRoom,
   openInviteToSpace,
   closeInviteOverlay,
+  openLeaveRoom,
+  closeLeaveOverlay,
   buildHomeSections,
   buildSpaceSections,
   canManageChildrenOnSpace,
@@ -326,6 +333,30 @@ const {
   openAddRoomToSpace,
   openAddSubspaceToSpace,
 } = roomSidebar;
+
+function navigateToChatHome() {
+  suppressAutoRoomSelect.value = true;
+  onboardingSubView.value = null;
+  selectedSpaceId.value = HOME_SPACE_ID;
+  selectedRoomId.value = null;
+  closeActiveThread();
+  resetTimelineState();
+  closeRoomThreadsPanel();
+  closePinnedMessagesPanel();
+}
+
+function onLeaveConfirming(roomId: string) {
+  if (selectedRoomId.value === roomId) {
+    navigateToChatHome();
+  }
+}
+
+function onRoomLeft(_leftRoomId: string) {
+  // Interim (#94): always Home onboarding. #124: space home when in a space.
+  navigateToChatHome();
+  refreshRooms();
+  closeLeaveOverlay();
+}
 
 const { spaceUnreadById } = useSpaceUnreadById({
   matrixSyncPrepared,
@@ -544,6 +575,7 @@ const {
 } = pageShell;
 
 function selectRoom(roomId: string) {
+  suppressAutoRoomSelect.value = false;
   pageShell.selectRoom(roomId, activeThread.value, closeActiveThread);
 }
 
@@ -635,10 +667,12 @@ setupMatrixEventWatchers();
           :can-invite-to-space="canInviteToSpace"
           :can-invite-to-room="canInviteToRoom"
           :can-open-room-settings="canOpenRoomSettings"
+          :can-leave-room="canLeaveRoom"
           :resolve-room-insert-index="resolveRoomInsertIndexForCategory"
           @invite-space="openInviteToSpace"
           @invite-room="openInviteToRoom"
           @open-room-settings="openRoomSettings"
+          @leave-room="openLeaveRoom"
           @open-home-start-dm="openHomeStartDm"
           @open-home-create-room="openHomeCreateRoom"
           @open-home-explore-public="openHomeExplorePublic"
@@ -918,6 +952,21 @@ setupMatrixEventWatchers();
         :target-label="inviteTarget.label"
         @close="closeInviteOverlay"
         @invited="closeInviteOverlay"
+      />
+    </div>
+
+    <div
+      v-if="leaveTarget"
+      class="fixed inset-0 z-50 flex items-center justify-center
+             bg-black/50 p-4"
+      @click.self="closeLeaveOverlay"
+    >
+      <LeaveRoomConfirmPanel
+        :target-room-id="leaveTarget.roomId"
+        :target-label="leaveTarget.label"
+        @close="closeLeaveOverlay"
+        @confirming="onLeaveConfirming"
+        @left="onRoomLeft"
       />
     </div>
   </div>
