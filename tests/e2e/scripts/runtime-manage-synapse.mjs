@@ -160,9 +160,38 @@ async function waitForSynapse() {
   throw new Error('Synapse startup timed out after 120 seconds')
 }
 
+/**
+ * Synapse `generate` writes /data as UID 991 inside the container. On Linux CI
+ * the checkout user cannot patch homeserver.yaml until ownership is restored.
+ */
+async function fixDataDirOwnership() {
+  if (process.platform === 'win32') {
+    return
+  }
+  const uid = process.getuid?.()
+  const gid = process.getgid?.()
+  if (uid === undefined || gid === undefined) {
+    return
+  }
+  await runCommand('docker', [
+    'run',
+    '--rm',
+    '-v',
+    `${dataDir}:/data`,
+    '--user',
+    'root',
+    'alpine:3',
+    'chown',
+    '-R',
+    `${uid}:${gid}`,
+    '/data',
+  ])
+}
+
 async function ensureConfigGenerated() {
   ensureDirectory(dataDir)
   if (existsSync(homeserverConfigPath)) {
+    await fixDataDirOwnership()
     ensureSynapseConfigOverrides()
     return
   }
@@ -177,8 +206,9 @@ async function ensureConfigGenerated() {
     '-v',
     `${dataDir}:/data`,
     'matrixdotorg/synapse:latest',
-    'generate'
+    'generate',
   ])
+  await fixDataDirOwnership()
   ensureSynapseConfigOverrides()
 }
 
