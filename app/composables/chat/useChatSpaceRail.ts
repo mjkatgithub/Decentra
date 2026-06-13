@@ -98,7 +98,19 @@ export function useChatSpaceRail(options: {
 
   const visibleRooms = computed(() => {
     if (options.selectedSpaceId.value === HOME_SPACE_ID) {
-      return roomItems.value;
+      return roomItems.value.filter(
+        (room) =>
+          isPersonalChatRoom(
+            room,
+            options.matrixRooms.value,
+            options.client.value,
+          ) ||
+          isGroupChatRoom(
+            room,
+            options.matrixRooms.value,
+            options.client.value,
+          ),
+      );
     }
     if (!options.selectedSpaceId.value) {
       return [];
@@ -221,6 +233,9 @@ export function useChatSpaceRail(options: {
         }
         const currentId = options.selectedSpaceId.value;
         if (!currentId || currentId === HOME_SPACE_ID) {
+          if (!currentId && spaces.length > 0) {
+            options.selectedSpaceId.value = HOME_SPACE_ID;
+          }
           return;
         }
         const selectedExists = spaces.some(
@@ -238,11 +253,8 @@ export function useChatSpaceRail(options: {
         ) {
           return;
         }
-        const firstRealSpace = spaces.find(
-          (space) => space.id !== HOME_SPACE_ID,
-        );
-        options.selectedSpaceId.value =
-          firstRealSpace?.id ?? spaces[0]?.id ?? null;
+        options.selectedSpaceId.value = HOME_SPACE_ID;
+        options.selectedRoomId.value = null;
       },
       { immediate: true },
     );
@@ -250,33 +262,17 @@ export function useChatSpaceRail(options: {
     watch(
       visibleRooms,
       (rooms) => {
-        if (rooms.length === 0) {
-          options.selectedRoomId.value = null;
-          options.allMessages.value = [];
-          options.messages.value = [];
+        const activeRoomId = options.selectedRoomId.value;
+        if (!activeRoomId) {
           return;
         }
         const selectedExists = rooms.some(
-          (room) => room.roomId === options.selectedRoomId.value,
+          (room) => room.roomId === activeRoomId,
         );
-        if (
-          options.suppressAutoRoomSelect?.value &&
-          options.selectedRoomId.value === null
-        ) {
-          return;
-        }
-        if (!selectedExists && options.selectedRoomId.value !== null) {
-          const firstRoom = rooms[0];
-          if (firstRoom) {
-            options.selectedRoomId.value = firstRoom.roomId;
-          }
-          return;
-        }
         if (!selectedExists) {
-          const firstRoom = rooms[0];
-          if (firstRoom) {
-            options.selectedRoomId.value = firstRoom.roomId;
-          }
+          options.selectedRoomId.value = null;
+          options.allMessages.value = [];
+          options.messages.value = [];
         }
       },
       { immediate: true },

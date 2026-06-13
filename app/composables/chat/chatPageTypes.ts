@@ -93,7 +93,14 @@ export interface RoomCategoryGroup {
     name: string;
     hasUnread?: boolean;
     hasMentionUnread?: boolean;
+    isJoined?: boolean;
+    avatarUrl?: string;
+    memberCount?: number;
   }>;
+  /** Lobby: user joined this subspace room */
+  isSubspaceJoined?: boolean;
+  /** Lobby: subspace avatar from hierarchy or local room */
+  subspaceAvatarUrl?: string;
 }
 
 export interface MemberItem {

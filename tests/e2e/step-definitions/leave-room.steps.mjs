@@ -72,6 +72,16 @@ async function assertChatHomeOnboarding(page) {
   })
 }
 
+async function assertSpaceHomePanel(page) {
+  const spaceHomePanel = page.locator('[data-space-home-panel]')
+  const welcomeHeading = page.getByRole('heading', {
+    name: /Welcome to|Willkommen bei/i,
+  })
+  await expect(spaceHomePanel.or(welcomeHeading)).toBeVisible({
+    timeout: 20000,
+  })
+}
+
 async function assertRoomAbsentFromSidebar(page, roomId) {
   await expect(roomButtonById(page, roomId)).toHaveCount(0, {
     timeout: 20000,
@@ -159,6 +169,15 @@ When('I confirm leaving the channel', async function () {
 
 Then('I should see the chat home onboarding panel', async function () {
   await assertChatHomeOnboarding(this.page)
+})
+
+Then('I should see the space home panel', async function () {
+  await assertSpaceHomePanel(this.page)
+})
+
+Then('I should not see the space home panel', async function () {
+  await expect(this.page.locator('[data-space-home-panel]'))
+    .toHaveCount(0, { timeout: 20000 })
 })
 
 Then(

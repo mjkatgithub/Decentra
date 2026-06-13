@@ -33,7 +33,9 @@ export interface SpaceRoomCategory {
    * UI block represents — used to reorder category blocks on the root.
    */
   rootChildAnchorIds: string[];
-  rooms: Array<{ roomId: string; name: string }>;
+  rooms: Array<{ roomId: string; name: string; isJoined?: boolean }>;
+  /** Subspace block: user has joined this nested space room */
+  isSubspaceJoined?: boolean;
 }
 
 export interface MatrixRoomLike {
@@ -497,6 +499,202 @@ export function buildSpaceRoomCategories(options: {
 
   for (const subspaceId of subspaceIdsInOrder) {
     appendSubspaceCategoriesDepthFirst(
+      subspaceId,
+      roomsById,
+      getRoomType,
+      getRoomDisplayName,
+      categories,
+      [subspaceId],
+      1,
+    );
+  }
+
+  return categories;
+}
+
+function resolveLobbyRoomName(
+  roomId: string,
+  roomsById: Map<string, unknown>,
+  getRoomDisplayName: (room: unknown) => string,
+): string {
+  const room = roomsById.get(roomId);
+  if (room) {
+    return getRoomDisplayName(room);
+  }
+  const localpart = roomId.split(":")[0]?.replace(/^!/, "") ?? roomId;
+  return localpart;
+}
+
+function isLobbyRoomJoined(
+  roomId: string,
+  roomsById: Map<string, unknown>,
+): boolean {
+  const room = roomsById.get(roomId);
+  if (!room || typeof room !== "object") {
+    return false;
+  }
+  const membership = (room as { getMyMembership?: () => string })
+    .getMyMembership?.();
+  return membership === "join";
+}
+
+function lobbyRoomEntry(
+  roomId: string,
+  roomsById: Map<string, unknown>,
+  getRoomDisplayName: (room: unknown) => string,
+): { roomId: string; name: string; isJoined: boolean } {
+  return {
+    roomId,
+    name: resolveLobbyRoomName(roomId, roomsById, getRoomDisplayName),
+    isJoined: isLobbyRoomJoined(roomId, roomsById),
+  };
+}
+
+function appendLobbySubspaceCategoriesDepthFirst(
+  subspaceId: string,
+  roomsById: Map<string, unknown>,
+  getRoomType: (room: unknown) => string | undefined,
+  getRoomDisplayName: (room: unknown) => string,
+  categories: SpaceRoomCategory[],
+  rootChildAnchorIds: string[],
+  nestingDepth: number,
+  parentSubspaceId?: string,
+): void {
+  const subspaceRoom = roomsById.get(subspaceId);
+  const isSubspaceJoined =
+    Boolean(subspaceRoom) &&
+    getRoomType(subspaceRoom) === ROOM_TYPE_SPACE &&
+    isLobbyRoomJoined(subspaceId, roomsById);
+
+  const roomsInSubspace: Array<{
+    roomId: string;
+    name: string;
+    isJoined: boolean;
+  }> = [];
+  const nestedSubspaceIds: string[] = [];
+
+  if (isSubspaceJoined && subspaceRoom) {
+    const parsedChildren = sortParsedSpaceChildren(
+      parseSpaceChildEvents(subspaceRoom as MatrixRoomLike),
+      (childId) =>
+        resolveLobbyRoomName(childId, roomsById, getRoomDisplayName),
+    );
+
+    for (const parsed of parsedChildren) {
+      const memberRoom = roomsById.get(parsed.childRoomId);
+      if (memberRoom && getRoomType(memberRoom) === ROOM_TYPE_SPACE) {
+        nestedSubspaceIds.push(parsed.childRoomId);
+      } else {
+        roomsInSubspace.push(
+          lobbyRoomEntry(
+            parsed.childRoomId,
+            roomsById,
+            getRoomDisplayName,
+          ),
+        );
+      }
+    }
+  }
+
+  categories.push({
+    id: subspaceId,
+    name: resolveLobbyRoomName(subspaceId, roomsById, getRoomDisplayName),
+    kind: "subspace",
+    subspaceRoomId: subspaceId,
+    nestingDepth,
+    parentSubspaceId,
+    rootChildAnchorIds,
+    rooms: roomsInSubspace,
+    isSubspaceJoined,
+  });
+
+  if (isSubspaceJoined) {
+    for (const nestedSubspaceId of nestedSubspaceIds) {
+      appendLobbySubspaceCategoriesDepthFirst(
+        nestedSubspaceId,
+        roomsById,
+        getRoomType,
+        getRoomDisplayName,
+        categories,
+        [],
+        nestingDepth + 1,
+        subspaceId,
+      );
+    }
+  }
+}
+
+/**
+ * Space lobby / sitemap: all m.space.child channels under a joined root space,
+ * including rooms the user has not joined yet.
+ */
+export function buildSpaceLobbyCategories(options: {
+  rootSpaceId: string;
+  matrixRooms: unknown[];
+  getRoomType: (room: unknown) => string | undefined;
+  getRoomId: (room: unknown) => string;
+  getRoomDisplayName: (room: unknown) => string;
+  generalCategoryLabel: string;
+}): SpaceRoomCategory[] {
+  const {
+    rootSpaceId,
+    matrixRooms,
+    getRoomType,
+    getRoomId,
+    getRoomDisplayName,
+    generalCategoryLabel,
+  } = options;
+
+  const roomsById = new Map<string, unknown>();
+  for (const room of matrixRooms) {
+    roomsById.set(getRoomId(room), room);
+  }
+
+  const rootRoom = roomsById.get(rootSpaceId);
+  if (!rootRoom || getRoomType(rootRoom) !== ROOM_TYPE_SPACE) {
+    return [];
+  }
+
+  const parsedRootChildren = sortParsedSpaceChildren(
+    parseSpaceChildEvents(rootRoom as MatrixRoomLike),
+    (childId) =>
+      resolveLobbyRoomName(childId, roomsById, getRoomDisplayName),
+  );
+
+  const rootLevelRooms: Array<{
+    roomId: string;
+    name: string;
+    isJoined: boolean;
+  }> = [];
+  const subspaceIdsInOrder: string[] = [];
+
+  for (const parsed of parsedRootChildren) {
+    const childRoom = roomsById.get(parsed.childRoomId);
+    const childType = childRoom ? getRoomType(childRoom) : undefined;
+    if (childType === ROOM_TYPE_SPACE) {
+      subspaceIdsInOrder.push(parsed.childRoomId);
+      continue;
+    }
+    rootLevelRooms.push(
+      lobbyRoomEntry(parsed.childRoomId, roomsById, getRoomDisplayName),
+    );
+  }
+
+  const categories: SpaceRoomCategory[] = [];
+
+  if (rootLevelRooms.length > 0) {
+    categories.push({
+      id: `${rootSpaceId}-rooms`,
+      name: generalCategoryLabel,
+      kind: "root",
+      nestingDepth: 0,
+      rootChildAnchorIds: rootLevelRooms.map((entry) => entry.roomId),
+      rooms: rootLevelRooms,
+    });
+  }
+
+  for (const subspaceId of subspaceIdsInOrder) {
+    appendLobbySubspaceCategoriesDepthFirst(
       subspaceId,
       roomsById,
       getRoomType,

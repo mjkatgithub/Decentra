@@ -70,6 +70,7 @@ const emit = defineEmits<{
   openHomeStartDm: []
   openHomeCreateRoom: []
   openHomeExplorePublic: []
+  openSpaceLobby: []
   persistRoomOrder: [
     payload: { parentSpaceId: string; orderedRoomIds: string[] },
   ]
@@ -92,6 +93,14 @@ const collapsedCategoryIds = ref<Set<string>>(new Set())
 
 const categoryDragEnabled = computed(
   () => Boolean(props.selectedRootSpaceId) && props.canReorderCategories,
+)
+
+const lobbyButtonActiveClass = computed(() =>
+  !props.selectedRoomId
+    ? 'bg-primary-100 text-primary-800 dark:bg-primary-900/40'
+      + ' dark:text-primary-200'
+    : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200'
+      + ' dark:hover:bg-gray-800',
 )
 
 const sortableDragOptions = {
@@ -622,6 +631,21 @@ function onRoomDragEnd(_category: RoomSectionItem, rawEvent: unknown) {
     </header>
 
     <div class="flex-1 overflow-y-auto px-2 py-3">
+      <button
+        v-if="selectedRootSpaceId"
+        type="button"
+        class="mb-3 flex w-full items-center gap-2 rounded-md px-2 py-2
+               text-left text-sm font-medium transition"
+        :class="lobbyButtonActiveClass"
+        data-space-lobby-button
+        @click="emit('openSpaceLobby')"
+      >
+        <UIcon
+          name="i-lucide-flag"
+          class="size-4 shrink-0"
+        />
+        <span>{{ translateText('spaceHome.lobby') }}</span>
+      </button>
       <template v-if="localCategories.length === 0">
         <p class="px-2 py-3 text-sm text-gray-500 dark:text-gray-400">
           {{ translateText('layout.noRoomsInSpace') }}

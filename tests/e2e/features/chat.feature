@@ -334,8 +334,17 @@ Feature: Chat
     And I open the channel options menu for the seeded test space channel
     And I choose leave channel from the menu
     And I confirm leaving the channel
-    Then I should see the chat home onboarding panel
+    Then I should see the space home panel
     And the seeded test space channel should not appear in the sidebar
+
+  @space_home
+  Scenario: Select space from rail shows overview and opens channel from list
+    When I open the login page
+    And I sign in with configured credentials
+    And I select the seeded test space in the space rail
+    Then I should see the space home panel
+    When I open the seeded test space channel
+    Then I should not see the space home panel
 
   @leave_room
   Scenario: Leave seeded direct message room from sidebar
