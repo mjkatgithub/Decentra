@@ -42,7 +42,6 @@ export function loadE2EEnv(workspaceRoot) {
       const variableValue = trimmedLine.slice(separatorIndex + 1).trim()
       process.env[variableName] = variableValue
     }
-    break
   }
 
   if (parseBoolean(process.env.E2E_USE_LOCAL_SYNAPSE)) {

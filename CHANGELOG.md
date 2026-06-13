@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - E2E runner: `start-server-and-test` third argument must be an npm script
   name (fixes local + CI `test:e2e:run` / smoke)
   ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
+- Synapse E2E data dir: restore UID 991 after patching config so the
+  container can read `localhost.signing.key`; merge all E2E env files;
+  run Cucumber via Node (fixes Windows `@tag` ENOENT)
+  ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
 
 - Leave Matrix rooms from the chat sidebar: confirmation dialog,
   `leaveRoom` via matrix-js-sdk, `m.direct` cleanup for DMs, neutral

@@ -55,9 +55,16 @@ Given('valid e2e credentials are configured', async function () {
   const missingKeys = requiredKeys.filter((key) => !process.env[key])
 
   if (missingKeys.length > 0) {
+    const dockerHint =
+      'Run `npm run test:e2e` to seed Synapse and write '
+      + 'tests/e2e/.env.e2e.generated.'
+    const localHint =
+      'Create tests/e2e/.env.e2e.local from tests/e2e/.env.e2e.example.'
+    const hint = process.env.E2E_USE_LOCAL_SYNAPSE === 'true'
+      ? dockerHint
+      : localHint
     throw new Error(
-      `Missing E2E credentials: ${missingKeys.join(', ')}. `
-      + 'Create tests/e2e/.env.e2e.local from tests/e2e/.env.e2e.example.'
+      `Missing E2E credentials: ${missingKeys.join(', ')}. ${hint}`
     )
   }
 })

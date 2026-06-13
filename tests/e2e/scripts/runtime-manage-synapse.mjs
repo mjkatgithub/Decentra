@@ -160,17 +160,17 @@ async function waitForSynapse() {
   throw new Error('Synapse startup timed out after 120 seconds')
 }
 
+/** matrixdotorg/synapse image runs as UID/GID 991. */
+const SYNAPSE_CONTAINER_UID = 991
+const SYNAPSE_CONTAINER_GID = 991
+
 /**
- * Synapse `generate` writes /data as UID 991 inside the container. On Linux CI
- * the checkout user cannot patch homeserver.yaml until ownership is restored.
+ * Synapse `generate` writes /data as UID 991. On Linux CI the checkout user
+ * must own files briefly to patch homeserver.yaml, then ownership returns to
+ * 991 so the Synapse container can read signing keys.
  */
-async function fixDataDirOwnership() {
+async function chownDataDir(ownerUid, ownerGid) {
   if (process.platform === 'win32') {
-    return
-  }
-  const uid = process.getuid?.()
-  const gid = process.getgid?.()
-  if (uid === undefined || gid === undefined) {
     return
   }
   await runCommand('docker', [
@@ -183,16 +183,34 @@ async function fixDataDirOwnership() {
     'alpine:3',
     'chown',
     '-R',
-    `${uid}:${gid}`,
+    `${ownerUid}:${ownerGid}`,
     '/data',
   ])
+}
+
+async function chownDataDirToHostUser() {
+  const uid = process.getuid?.()
+  const gid = process.getgid?.()
+  if (uid === undefined || gid === undefined) {
+    return
+  }
+  await chownDataDir(uid, gid)
+}
+
+async function chownDataDirToSynapseUser() {
+  await chownDataDir(SYNAPSE_CONTAINER_UID, SYNAPSE_CONTAINER_GID)
+}
+
+async function patchSynapseConfigOverrides() {
+  await chownDataDirToHostUser()
+  ensureSynapseConfigOverrides()
+  await chownDataDirToSynapseUser()
 }
 
 async function ensureConfigGenerated() {
   ensureDirectory(dataDir)
   if (existsSync(homeserverConfigPath)) {
-    await fixDataDirOwnership()
-    ensureSynapseConfigOverrides()
+    await patchSynapseConfigOverrides()
     return
   }
 
@@ -208,8 +226,7 @@ async function ensureConfigGenerated() {
     'matrixdotorg/synapse:latest',
     'generate',
   ])
-  await fixDataDirOwnership()
-  ensureSynapseConfigOverrides()
+  await patchSynapseConfigOverrides()
 }
 
 async function main() {

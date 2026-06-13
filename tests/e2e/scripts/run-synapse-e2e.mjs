@@ -1,9 +1,12 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadE2EEnv } from './runtime-e2e-env.mjs'
 
 const currentFilePath = fileURLToPath(import.meta.url)
 const workspaceRoot = resolve(dirname(currentFilePath), '..', '..', '..')
+const generatedEnvPath = resolve(workspaceRoot, 'tests/e2e/.env.e2e.generated')
 
 function runCommand(binary, args) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -27,6 +30,13 @@ async function main() {
   let testFailed = false
   await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'up'])
   await runCommand('node', ['tests/e2e/scripts/runtime-seed-synapse.mjs'])
+  loadE2EEnv(workspaceRoot)
+  if (!existsSync(generatedEnvPath) || !process.env.E2E_MATRIX_USERNAME) {
+    throw new Error(
+      'Synapse seed did not write E2E credentials to '
+      + 'tests/e2e/.env.e2e.generated'
+    )
+  }
 
   try {
     await runCommand('npm', ['run', 'test:e2e:run'])

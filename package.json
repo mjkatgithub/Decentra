@@ -16,7 +16,7 @@
     "test:e2e:cucumber": "node tests/e2e/scripts/run-cucumber-exclude-email.mjs",
     "test:e2e:cucumber:email": "node tests/e2e/scripts/run-cucumber-email-only.mjs",
     "test:e2e:cucumber:recaptcha": "node tests/e2e/scripts/run-cucumber-recaptcha-only.mjs",
-    "test:e2e:smoke:cucumber": "cucumber-js --tags @smoke",
+    "test:e2e:smoke:cucumber": "node tests/e2e/scripts/run-cucumber-smoke.mjs",
     "test:e2e:run": "nuxt build && start-server-and-test preview 3000 test:e2e:cucumber",
     "test:e2e:run:email": "nuxt build && start-server-and-test preview 3000 test:e2e:cucumber:email",
     "test:e2e:run:recaptcha": "nuxt build && start-server-and-test preview 3000 test:e2e:cucumber:recaptcha",
