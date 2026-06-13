@@ -18,6 +18,18 @@ const categories = [
       { roomId: '!other:example.org', name: 'Random', isJoined: false },
     ],
   },
+  {
+    id: '!sub:example.org',
+    name: 'Subspace',
+    kind: 'subspace' as const,
+    subspaceRoomId: '!sub:example.org',
+    subspaceAvatarUrl: 'https://example.org/sub.png',
+    nestingDepth: 1,
+    rootChildAnchorIds: ['!sub:example.org'],
+    canReorderRooms: false,
+    isSubspaceJoined: false,
+    rooms: [],
+  },
 ]
 
 function mountSpaceHome(extraProps: Record<string, unknown> = {}) {
@@ -107,5 +119,12 @@ describe('SpaceHomePanel', () => {
 
     wrapper.emitted('invite')?.length.should.equal(1)
     wrapper.emitted('open-settings')?.length.should.equal(1)
+  })
+
+  it('renders subspace avatar and join button for unjoined subspace', () => {
+    const wrapper = mountSpaceHome()
+
+    wrapper.find('img[alt="Subspace"]').exists().should.equal(true)
+    wrapper.text().should.include('Join subspace')
   })
 })

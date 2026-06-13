@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Space home / sitemap view in the main pane when a Matrix Space is
   selected but no channel is active; rail `selectSpace` clears room
   selection; leaving a space channel lands on space home; lobby lists
-  unjoined channels with join actions and a sidebar Lobby entry
+  unjoined channels with join actions and a sidebar Lobby entry; no
+  auto-select of first channel on load or space change
   ([#124](https://github.com/mjkatgithub/Decentra/issues/124))
 - Project architecture map for developers and agents:
   `docs/architecture.md`, `docs/README.md`, issue documentation

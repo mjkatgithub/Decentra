@@ -34,8 +34,7 @@ import { useChatSpaceRail } from "~/composables/chat/useChatSpaceRail";
 import { useChatRoomSidebar } from "~/composables/chat/useChatRoomSidebar";
 import { useChatMatrixEvents } from "~/composables/chat/useChatMatrixEvents";
 import { useChatPageShell } from "~/composables/chat/useChatPageShell";
-import { useSpaceLobbyNames } from "~/composables/useSpaceLobbyNames";
-import { applyLobbyHierarchyNames } from "~/utils/spaceLobbyHierarchy";
+import { useSpaceLobbyHierarchy } from "~/composables/useSpaceLobbyHierarchy";
 
 const {
   client,
@@ -109,7 +108,7 @@ function refreshRooms() {
   matrixRooms.value = getRooms();
   scheduleThreadNavRefresh();
   refreshUnread();
-  refreshLobbyNames();
+  refreshLobbyHierarchy();
 }
 
 const timeline = useChatTimelineWindow({
@@ -345,12 +344,44 @@ function isHomeSpaceContext(spaceId: string | null): boolean {
   return spaceId === null || spaceId === HOME_SPACE_ID;
 }
 
-const { lobbyRoomNamesById, refreshLobbyNames } = useSpaceLobbyNames({
-  client,
-  selectedSpaceId,
-  matrixSyncPrepared,
-  isHomeSpace: isHomeSpaceContext,
-});
+const { lobbyCategories: lobbyHierarchyCategories, refreshLobbyHierarchy } =
+  useSpaceLobbyHierarchy({
+    client,
+    selectedSpaceId,
+    matrixSyncPrepared,
+    isHomeSpace: isHomeSpaceContext,
+    translateText,
+    resolveMxcAvatarUrl: (mxcUrl) => {
+      const matrixClient = client.value;
+      if (!mxcUrl || !matrixClient?.mxcUrlToHttp) {
+        return undefined;
+      }
+      try {
+        const httpUrl = matrixClient.mxcUrlToHttp(
+          mxcUrl,
+          40,
+          40,
+          "crop",
+          false,
+          true,
+          true,
+        ) as string;
+        const accessToken = matrixClient.getAccessToken?.();
+        if (!accessToken || !httpUrl.includes("/_matrix/")) {
+          return httpUrl;
+        }
+        if (httpUrl.includes("access_token=")) {
+          return httpUrl;
+        }
+        const separator = httpUrl.includes("?") ? "&" : "?";
+        return `${httpUrl}${separator}access_token=${encodeURIComponent(
+          accessToken,
+        )}`;
+      } catch {
+        return undefined;
+      }
+    },
+  });
 
 function navigateToChatHome() {
   suppressAutoRoomSelect.value = true;
@@ -456,10 +487,10 @@ const spaceLobbyCategories = computed<RoomCategoryGroup[]>(() => {
   if (isHomeSpaceContext(selectedSpaceId.value)) {
     return [];
   }
-  return applyLobbyHierarchyNames(
-    buildSpaceLobbySections(),
-    lobbyRoomNamesById.value,
-  );
+  if (lobbyHierarchyCategories.value.length > 0) {
+    return lobbyHierarchyCategories.value;
+  }
+  return buildSpaceLobbySections();
 });
 
 const roomCategoryStructure = computed<RoomCategoryGroup[]>(() => {

@@ -1,49 +1,68 @@
 import type { MatrixClient } from "matrix-js-sdk";
-import { fetchSpaceHierarchyRoomNames } from "~/utils/spaceLobbyHierarchy";
+import type { RoomCategoryGroup } from "~/composables/chat/chatPageTypes";
+import { matrixRoomHasJoinedMembership } from "~/utils/matrixRoomChannelPermissions";
+import { fetchSpaceHierarchyLobby } from "~/utils/spaceLobbyHierarchy";
 
-export function useSpaceLobbyNames(options: {
+export function useSpaceLobbyHierarchy(options: {
   client: Ref<MatrixClient | null>;
   selectedSpaceId: Ref<string | null>;
   matrixSyncPrepared: Ref<boolean>;
   isHomeSpace: (spaceId: string | null) => boolean;
+  translateText: (key: string) => string;
+  resolveMxcAvatarUrl: (mxcUrl: string | undefined) => string | undefined;
 }) {
-  const lobbyRoomNamesById = ref<Record<string, string>>({});
+  const lobbyCategories = ref<RoomCategoryGroup[]>([]);
   let requestId = 0;
   let debounceTimerId: number | null = null;
 
-  async function loadNames(spaceId: string) {
+  function isRoomJoined(roomId: string): boolean {
+    const matrixClient = options.client.value;
+    if (!matrixClient) {
+      return false;
+    }
+    return matrixRoomHasJoinedMembership(matrixClient.getRoom(roomId));
+  }
+
+  async function loadLobby(spaceId: string) {
     const matrixClient = options.client.value;
     if (!matrixClient) {
       return;
     }
     const currentRequest = ++requestId;
-    const names = await fetchSpaceHierarchyRoomNames(
+    const categories = await fetchSpaceHierarchyLobby(
       matrixClient,
       spaceId,
+      {
+        generalCategoryLabel: options.translateText(
+          "layout.spaceRoomsCategory",
+        ),
+        resolveAvatarUrl: options.resolveMxcAvatarUrl,
+        isRoomJoined,
+      },
     );
     if (currentRequest !== requestId) {
       return;
     }
-    lobbyRoomNamesById.value = names;
+    lobbyCategories.value = categories;
   }
 
-  function scheduleLoadNames(spaceId: string) {
+  function scheduleLoadLobby(spaceId: string) {
     if (debounceTimerId !== null) {
       window.clearTimeout(debounceTimerId);
     }
     debounceTimerId = window.setTimeout(() => {
       debounceTimerId = null;
-      void loadNames(spaceId);
+      void loadLobby(spaceId);
     }, 250);
   }
 
-  function clearLobbyNames() {
+  function clearLobby() {
     requestId++;
     if (debounceTimerId !== null) {
       window.clearTimeout(debounceTimerId);
       debounceTimerId = null;
     }
-    lobbyRoomNamesById.value = {};
+    lobbyCategories.value = [];
   }
 
   watch(
@@ -54,15 +73,15 @@ export function useSpaceLobbyNames(options: {
     ],
     ([matrixClient, spaceId, prepared]) => {
       if (!matrixClient || !prepared || options.isHomeSpace(spaceId)) {
-        clearLobbyNames();
+        clearLobby();
         return;
       }
-      scheduleLoadNames(spaceId as string);
+      scheduleLoadLobby(spaceId as string);
     },
     { immediate: true },
   );
 
-  function refreshLobbyNames() {
+  function refreshLobbyHierarchy() {
     const spaceId = options.selectedSpaceId.value;
     if (
       !options.client.value ||
@@ -72,11 +91,11 @@ export function useSpaceLobbyNames(options: {
     ) {
       return;
     }
-    scheduleLoadNames(spaceId);
+    scheduleLoadLobby(spaceId);
   }
 
   return {
-    lobbyRoomNamesById,
-    refreshLobbyNames,
+    lobbyCategories,
+    refreshLobbyHierarchy,
   };
 }

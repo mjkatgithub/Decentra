@@ -30,6 +30,38 @@ const channelCategories = computed(() =>
 
 const hasLobbyEntries = computed(() => channelCategories.value.length > 0)
 
+function categoryIndentStyle(category: RoomCategoryGroup) {
+  const depth = category.nestingDepth ?? 0
+  if (category.kind !== 'subspace' || depth <= 1) {
+    return undefined
+  }
+  const indentRem = (depth - 1) * 1.25
+  return { marginLeft: `${indentRem}rem` }
+}
+
+function subspaceInitial(name: string): string {
+  const trimmed = name.trim()
+  return trimmed ? trimmed.charAt(0).toUpperCase() : '?'
+}
+
+function roomMemberLabel(count: number | undefined): string | null {
+  if (count === undefined || count <= 0) {
+    return null
+  }
+  return translateText('layout.spaceMembersCount', {
+    count: String(count),
+  })
+}
+
+function categoryTitleClass(category: RoomCategoryGroup): string {
+  if (category.kind === 'root') {
+    return 'truncate text-xs font-semibold uppercase tracking-wide'
+      + ' text-gray-500 dark:text-gray-400'
+  }
+  return 'truncate text-sm font-semibold text-gray-800'
+    + ' dark:text-gray-100'
+}
+
 function onRoomAction(roomId: string, isJoined: boolean) {
   if (isJoined) {
     emit('select-room', roomId)
@@ -51,7 +83,7 @@ function onSubspaceAction(category: RoomCategoryGroup) {
 
 <template>
   <div
-    class="mx-auto flex w-full max-w-2xl flex-col gap-5 overflow-auto p-2"
+    class="mx-auto flex w-full max-w-2xl flex-col gap-4 overflow-auto p-2"
     data-space-home-panel
   >
     <div
@@ -123,20 +155,43 @@ function onSubspaceAction(category: RoomCategoryGroup) {
       </div>
     </div>
 
-    <div v-if="hasLobbyEntries" class="flex flex-col gap-4">
+    <div v-if="hasLobbyEntries" class="flex flex-col gap-3">
       <section
         v-for="category in channelCategories"
         :key="category.id"
         class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm
                dark:border-gray-800 dark:bg-gray-900"
+        :style="categoryIndentStyle(category)"
+        :data-lobby-category-depth="category.nestingDepth ?? 0"
       >
-        <div class="mb-2 flex items-center justify-between gap-2">
-          <h3
-            class="text-xs font-semibold uppercase tracking-wide text-gray-500
-                   dark:text-gray-400"
-          >
-            {{ category.name }}
-          </h3>
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <div class="flex min-w-0 items-center gap-2">
+            <template v-if="category.kind === 'subspace'">
+              <div
+                v-if="category.subspaceAvatarUrl"
+                class="size-8 shrink-0 overflow-hidden rounded-md
+                       bg-gray-200 dark:bg-gray-700"
+              >
+                <img
+                  :src="category.subspaceAvatarUrl"
+                  :alt="category.name"
+                  class="size-full object-cover"
+                >
+              </div>
+              <div
+                v-else
+                class="flex size-8 shrink-0 items-center justify-center
+                       rounded-md bg-primary-100 text-sm font-semibold
+                       text-primary-700 dark:bg-primary-900/40
+                       dark:text-primary-300"
+              >
+                {{ subspaceInitial(category.name) }}
+              </div>
+            </template>
+            <h3 :class="categoryTitleClass(category)">
+              {{ category.name }}
+            </h3>
+          </div>
           <UButton
             v-if="
               category.kind === 'subspace' &&
@@ -166,14 +221,36 @@ function onSubspaceAction(category: RoomCategoryGroup) {
           class="flex items-center gap-2 border-b border-gray-100 py-2
                  last:border-b-0 dark:border-gray-800"
         >
+          <div
+            v-if="room.avatarUrl"
+            class="size-7 shrink-0 overflow-hidden rounded-md bg-gray-200
+                   dark:bg-gray-700"
+          >
+            <img
+              :src="room.avatarUrl"
+              :alt="room.name"
+              class="size-full object-cover"
+            >
+          </div>
           <UIcon
+            v-else
             name="i-lucide-hash"
             class="size-4 shrink-0 text-gray-500 dark:text-gray-400"
           />
-          <span class="min-w-0 flex-1 truncate text-sm text-gray-800
-                         dark:text-gray-100">
-            {{ room.name }}
-          </span>
+          <div class="min-w-0 flex-1">
+            <span
+              class="block truncate text-sm text-gray-800
+                     dark:text-gray-100"
+            >
+              {{ room.name }}
+            </span>
+            <span
+              v-if="roomMemberLabel(room.memberCount)"
+              class="text-xs text-gray-500 dark:text-gray-400"
+            >
+              {{ roomMemberLabel(room.memberCount) }}
+            </span>
+          </div>
           <UButton
             v-if="room.isJoined !== false"
             size="xs"
