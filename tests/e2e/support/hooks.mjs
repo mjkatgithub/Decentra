@@ -1,7 +1,9 @@
-import { Before, After, BeforeAll, AfterAll } from '@cucumber/cucumber'
+import { Before, After, BeforeAll, AfterAll, setDefaultTimeout } from '@cucumber/cucumber'
 import { chromium } from '@playwright/test'
 import { resolve } from 'node:path'
 import { loadE2EEnv } from '../scripts/runtime-e2e-env.mjs'
+
+setDefaultTimeout(120 * 1000)
 
 let browser
 let page
@@ -9,13 +11,28 @@ let page
 const isHeadless = process.env.HEADLESS !== 'false'
 loadE2EEnv(resolve(process.cwd()))
 
+const SYNAPSE_E2E_STEP_MARKERS = [
+  'I open the seeded test room',
+  'I open the side seeded test room',
+  'leave test dm room',
+  'seeded test space channel',
+  'seeded test space in the space rail',
+  'main test room',
+  'seeded space channel',
+  'typing in the main test room',
+]
+
 function shouldValidateSynapseEnv(pickle) {
   if (!pickle?.steps) {
     return false
   }
   return pickle.steps.some((step) => {
-    return typeof step.text === 'string' &&
-      step.text.includes('I open the seeded test room')
+    if (typeof step.text !== 'string') {
+      return false
+    }
+    return SYNAPSE_E2E_STEP_MARKERS.some((marker) =>
+      step.text.includes(marker),
+    )
   })
 }
 

@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Leave Matrix rooms from the chat sidebar: confirmation dialog,
   `leaveRoom` via matrix-js-sdk, `m.direct` cleanup for DMs, neutral
-  chat view after leaving the active room
+  chat view after leaving the active room; Cucumber E2E for ephemeral
+  group, space channel, and DM leave flows
   ([#94](https://github.com/mjkatgithub/Decentra/issues/94))
 - Project architecture map for developers and agents:
   `docs/architecture.md`, `docs/README.md`, issue documentation

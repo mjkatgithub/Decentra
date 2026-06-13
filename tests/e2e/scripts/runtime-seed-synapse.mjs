@@ -313,6 +313,41 @@ async function main() {
     body: 'E2E_POST_UNDECRYPTABLE_MESSAGE'
   })
 
+  const leaveDmRoomResponse = await withAuth(
+    primarySession.access_token,
+    '/_matrix/client/v3/createRoom',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        invite: [secondarySession.user_id],
+        is_direct: true,
+        preset: 'trusted_private_chat',
+      }),
+    },
+  )
+  const leaveDmRoomId = leaveDmRoomResponse.room_id
+  await withAuth(
+    secondarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(leaveDmRoomId)}/join`,
+    { method: 'POST', body: '{}' },
+  )
+  await withAuth(
+    primarySession.access_token,
+    `/_matrix/client/v3/user/${encodeURIComponent(primarySession.user_id)}/account_data/m.direct`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        [secondarySession.user_id]: [leaveDmRoomId],
+      }),
+    },
+  )
+  await sendMessage(
+    primarySession.access_token,
+    leaveDmRoomId,
+    'seed-leave-dm',
+    { msgtype: 'm.text', body: 'E2E_LEAVE_DM_SEED' },
+  )
+
   const generatedEnvPath = resolve(workspaceRoot, 'tests/e2e/.env.e2e.generated')
   mkdirSync(dirname(generatedEnvPath), { recursive: true })
   const generatedEnv = [
@@ -329,7 +364,9 @@ async function main() {
     `E2E_SIDE_TEST_ROOM_ID=${sideRoomId}`,
     `E2E_TEST_SPACE_NAME=${spaceName}`,
     `E2E_TEST_SPACE_ID=${spaceId}`,
+    `E2E_TEST_SPACE_CHANNEL_NAME=${spaceChannelName}`,
     `E2E_TEST_SPACE_CHANNEL_ID=${spaceChannelId}`,
+    `E2E_LEAVE_DM_ROOM_ID=${leaveDmRoomId}`,
   ].join('\n')
   writeFileSync(generatedEnvPath, `${generatedEnv}\n`, 'utf8')
   console.log('Synapse E2E seeding completed')
