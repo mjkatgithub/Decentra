@@ -508,6 +508,17 @@ const messages: LocaleMessages = {
     'rooms.visibilityPublic': 'Oeffentlich (Verzeichnis, offener Beitritt)',
     'rooms.createSubmit': 'Raum erstellen',
     'onboarding.title': 'Erste Schritte',
+    'spaceHome.welcome': 'Willkommen bei {space}',
+    'spaceHome.subtitle':
+      'Waehle einen Kanal oder verwalte diesen Space.',
+    'spaceHome.emptyChannels': 'Noch keine Kanaele beigetreten.',
+    'spaceHome.channelsSection': 'Kanaele',
+    'spaceHome.lobby': 'Lobby',
+    'spaceHome.joinChannel': 'Beitreten',
+    'spaceHome.joinSubspace': 'Subspace beitreten',
+    'spaceHome.openChannel': '{name} oeffnen',
+    'spaceHome.emptySubspaceChannels':
+      'Tritt diesem Subspace bei, um seine Kanaele zu sehen.',
     'onboarding.subtitle':
       'DM starten, Raum anlegen oder oeffentliche Raeume entdecken.',
     'onboarding.startDm': 'Direktnachricht starten',

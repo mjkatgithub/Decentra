@@ -1,6 +1,7 @@
 import { describe, it } from 'vitest'
 import {
   assignLexOrdersForSiblingCount,
+  buildSpaceLobbyCategories,
   buildSpaceRoomCategories,
   getJoinedSpaceIdsListedAsChild,
   getJoinedSpaceRoomIds,
@@ -419,5 +420,49 @@ describe('spaceRoomCategories', () => {
     categories[2]!.rooms.map((room) => room.roomId).should.deep.equal([
       roomNestedId,
     ])
+  })
+
+  it('buildSpaceLobbyCategories includes unjoined m.space.child rooms', () => {
+    const rootId = '!root:example.org'
+    const joinedRoomId = '!joined:example.org'
+    const unjoinedRoomId = '!unjoined:example.org'
+
+    const matrixRooms = [
+      {
+        roomId: rootId,
+        name: 'Root',
+        getType: () => 'm.space' as const,
+        getMyMembership: () => 'join',
+        currentState: {
+          getStateEvents: () => [
+            mockStateEvent(joinedRoomId, { order: '0' }),
+            mockStateEvent(unjoinedRoomId, { order: '1' }),
+          ],
+        },
+      },
+      {
+        roomId: joinedRoomId,
+        name: 'Joined',
+        getType: () => undefined,
+        getMyMembership: () => 'join',
+      },
+    ]
+
+    const categories = buildSpaceLobbyCategories({
+      rootSpaceId: rootId,
+      matrixRooms,
+      getRoomType: (room: unknown) =>
+        (room as { getType?: () => string }).getType?.(),
+      getRoomId: (room: unknown) => (room as { roomId: string }).roomId,
+      getRoomDisplayName: (room: unknown) =>
+        String((room as { name?: string }).name ?? ''),
+      generalCategoryLabel: 'Rooms',
+    })
+
+    categories.length.should.equal(1)
+    categories[0]!.rooms.length.should.equal(2)
+    categories[0]!.rooms[0]!.isJoined.should.equal(true)
+    categories[0]!.rooms[1]!.isJoined.should.equal(false)
+    categories[0]!.rooms[1]!.roomId.should.equal(unjoinedRoomId)
   })
 })

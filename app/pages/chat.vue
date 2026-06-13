@@ -15,6 +15,7 @@ import type { RoomNotificationLevel } from "~/utils/matrixNotificationRules";
 import ChatOnboardingPanel from "~/components/Chat/Onboarding/ChatOnboardingPanel.vue";
 import ChatDmStartPanel from "~/components/Chat/Onboarding/ChatDmStartPanel.vue";
 import ChatPublicRoomsPanel from "~/components/Chat/Onboarding/ChatPublicRoomsPanel.vue";
+import SpaceHomePanel from "~/components/Chat/SpaceHomePanel.vue";
 import MatrixInvitePanel from "~/components/Chat/MatrixInvitePanel.vue";
 import LeaveRoomConfirmPanel from "~/components/Chat/LeaveRoomConfirmPanel.vue";
 import { canUserSendRoomMessage } from "~/utils/matrixRoomMessagePermissions";
@@ -33,6 +34,8 @@ import { useChatSpaceRail } from "~/composables/chat/useChatSpaceRail";
 import { useChatRoomSidebar } from "~/composables/chat/useChatRoomSidebar";
 import { useChatMatrixEvents } from "~/composables/chat/useChatMatrixEvents";
 import { useChatPageShell } from "~/composables/chat/useChatPageShell";
+import { useSpaceLobbyNames } from "~/composables/useSpaceLobbyNames";
+import { applyLobbyHierarchyNames } from "~/utils/spaceLobbyHierarchy";
 
 const {
   client,
@@ -47,6 +50,7 @@ const {
   unpinRoomEvent,
   markRoomAsRead,
   markThreadAsRead,
+  joinRoomByIdOrAlias,
 } = useMatrixClient();
 const matrixSyncPrepared = useMatrixSyncPrepared(client);
 const { translateText } = useAppI18n();
@@ -73,6 +77,7 @@ const selectedSpaceId = useState<string | null>(
 );
 const pendingRootSpaceId = ref<string | null>(null);
 const suppressAutoRoomSelect = ref(false);
+const lobbyJoiningRoomId = ref<string | null>(null);
 const matrixRooms = ref<Array<Record<string, any>>>([]);
 const spaceUnreadForRail = shallowRef<
   Record<
@@ -104,6 +109,7 @@ function refreshRooms() {
   matrixRooms.value = getRooms();
   scheduleThreadNavRefresh();
   refreshUnread();
+  refreshLobbyNames();
 }
 
 const timeline = useChatTimelineWindow({
@@ -322,6 +328,7 @@ const {
   closeLeaveOverlay,
   buildHomeSections,
   buildSpaceSections,
+  buildSpaceLobbySections,
   canManageChildrenOnSpace,
   canReorderRootCategories,
   canAddSpaceChildren,
@@ -334,6 +341,17 @@ const {
   openAddSubspaceToSpace,
 } = roomSidebar;
 
+function isHomeSpaceContext(spaceId: string | null): boolean {
+  return spaceId === null || spaceId === HOME_SPACE_ID;
+}
+
+const { lobbyRoomNamesById, refreshLobbyNames } = useSpaceLobbyNames({
+  client,
+  selectedSpaceId,
+  matrixSyncPrepared,
+  isHomeSpace: isHomeSpaceContext,
+});
+
 function navigateToChatHome() {
   suppressAutoRoomSelect.value = true;
   onboardingSubView.value = null;
@@ -345,15 +363,37 @@ function navigateToChatHome() {
   closePinnedMessagesPanel();
 }
 
-function onLeaveConfirming(roomId: string) {
-  if (selectedRoomId.value === roomId) {
+function isInMatrixSpace(): boolean {
+  const spaceId = selectedSpaceId.value;
+  return spaceId !== null && spaceId !== HOME_SPACE_ID;
+}
+
+function navigateToSpaceHome() {
+  suppressAutoRoomSelect.value = true;
+  onboardingSubView.value = null;
+  selectedRoomId.value = null;
+  closeActiveThread();
+  resetTimelineState();
+  closeRoomThreadsPanel();
+  closePinnedMessagesPanel();
+}
+
+function navigateAfterLeavingActiveRoom() {
+  if (isInMatrixSpace()) {
+    navigateToSpaceHome();
+  } else {
     navigateToChatHome();
   }
 }
 
+function onLeaveConfirming(roomId: string) {
+  if (selectedRoomId.value === roomId) {
+    navigateAfterLeavingActiveRoom();
+  }
+}
+
 function onRoomLeft(_leftRoomId: string) {
-  // Interim (#94): always Home onboarding. #124: space home when in a space.
-  navigateToChatHome();
+  navigateAfterLeavingActiveRoom();
   refreshRooms();
   closeLeaveOverlay();
 }
@@ -389,6 +429,37 @@ const spaceMemberCountLabel = computed(() => {
   return translateText("layout.spaceMembersCount", {
     count: String(total),
   });
+});
+
+const selectedSpaceAvatarUrl = computed(() => {
+  const spaceId = selectedSpaceId.value;
+  if (!spaceId || isHomeSpaceContext(spaceId)) {
+    return undefined;
+  }
+  return spaceRailItems.value.find((space) => space.id === spaceId)
+    ?.avatarUrl;
+});
+
+const selectedSpaceTopic = computed(() => {
+  const spaceId = selectedSpaceId.value;
+  if (!spaceId || isHomeSpaceContext(spaceId)) {
+    return undefined;
+  }
+  const spaceRoom = client.value?.getRoom(spaceId);
+  const topic = spaceRoom?.currentState
+    ?.getStateEvents?.("m.room.topic", "")
+    ?.getContent?.()?.topic;
+  return typeof topic === "string" && topic.length > 0 ? topic : undefined;
+});
+
+const spaceLobbyCategories = computed<RoomCategoryGroup[]>(() => {
+  if (isHomeSpaceContext(selectedSpaceId.value)) {
+    return [];
+  }
+  return applyLobbyHierarchyNames(
+    buildSpaceLobbySections(),
+    lobbyRoomNamesById.value,
+  );
 });
 
 const roomCategoryStructure = computed<RoomCategoryGroup[]>(() => {
@@ -554,6 +625,7 @@ const pageShell = useChatPageShell({
   isMobile,
   spaceRailExpanded,
   onboardingSubView,
+  suppressAutoRoomSelect,
   refreshRooms,
   clearLoadMessagesTimer,
   clearThreadNavRefreshTimer,
@@ -564,7 +636,6 @@ const {
   closeMobileOverlays,
   toggleLeftSidebar,
   toggleSpaceRail,
-  selectSpace,
   openHomeStartDm,
   openHomeExplorePublic,
   onDirectMessageStarted,
@@ -573,6 +644,34 @@ const {
   mountShell,
   unmountShell,
 } = pageShell;
+
+function selectSpace(spaceId: string) {
+  closeActiveThread();
+  resetTimelineState();
+  closeRoomThreadsPanel();
+  closePinnedMessagesPanel();
+  pageShell.selectSpace(spaceId);
+}
+
+function openSpaceLobby() {
+  navigateToSpaceHome();
+}
+
+async function onJoinLobbyRoom(roomId: string) {
+  if (lobbyJoiningRoomId.value) {
+    return;
+  }
+  lobbyJoiningRoomId.value = roomId;
+  try {
+    const joinedRoomId = await joinRoomByIdOrAlias(roomId);
+    refreshRooms();
+    selectRoom(joinedRoomId);
+  } catch (thrownError) {
+    console.error("joinRoomByIdOrAlias failed", thrownError);
+  } finally {
+    lobbyJoiningRoomId.value = null;
+  }
+}
 
 function selectRoom(roomId: string) {
   suppressAutoRoomSelect.value = false;
@@ -676,6 +775,7 @@ setupMatrixEventWatchers();
           @open-home-start-dm="openHomeStartDm"
           @open-home-create-room="openHomeCreateRoom"
           @open-home-explore-public="openHomeExplorePublic"
+          @open-space-lobby="openSpaceLobby"
           @persist-room-order="onPersistRoomOrder"
           @move-room-between-categories="onMoveRoomBetweenCategories"
           @reorder-root-categories="onReorderRootCategories"
@@ -781,22 +881,38 @@ setupMatrixEventWatchers();
         v-if="!selectedRoomId"
         class="flex flex-1 items-center justify-center overflow-auto p-4"
       >
-        <ChatDmStartPanel
-          v-if="onboardingSubView === 'dm'"
-          @back="onboardingSubView = null"
-          @started="onDirectMessageStarted"
-        />
-        <ChatPublicRoomsPanel
-          v-else-if="onboardingSubView === 'public'"
-          @back="onboardingSubView = null"
-          @joined="onPublicRoomJoined"
-        />
-        <ChatOnboardingPanel
+        <template v-if="isHomeSpaceContext(selectedSpaceId)">
+          <ChatDmStartPanel
+            v-if="onboardingSubView === 'dm'"
+            @back="onboardingSubView = null"
+            @started="onDirectMessageStarted"
+          />
+          <ChatPublicRoomsPanel
+            v-else-if="onboardingSubView === 'public'"
+            @back="onboardingSubView = null"
+            @joined="onPublicRoomJoined"
+          />
+          <ChatOnboardingPanel
+            v-else
+            :show-header="!hasJoinedNonSpaceRooms"
+            @open-dm="onboardingSubView = 'dm'"
+            @open-create-room="navigateTo('/rooms/new')"
+            @open-public-rooms="onboardingSubView = 'public'"
+          />
+        </template>
+        <SpaceHomePanel
           v-else
-          :show-header="!hasJoinedNonSpaceRooms"
-          @open-dm="onboardingSubView = 'dm'"
-          @open-create-room="navigateTo('/rooms/new')"
-          @open-public-rooms="onboardingSubView = 'public'"
+          :space-name="selectedSpaceName"
+          :space-avatar-url="selectedSpaceAvatarUrl"
+          :space-topic="selectedSpaceTopic"
+          :member-count-label="spaceMemberCountLabel"
+          :categories="spaceLobbyCategories"
+          :can-invite="canInviteToSpace"
+          :joining-room-id="lobbyJoiningRoomId"
+          @select-room="selectRoom"
+          @join-room="onJoinLobbyRoom"
+          @invite="openInviteToSpace"
+          @open-settings="openSpaceSettings"
         />
       </div>
       <template v-else>

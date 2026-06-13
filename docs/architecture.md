@@ -140,6 +140,7 @@ Related outside `chat/`: `useChatMedia.ts`, `useRoomTyping.ts`,
 | `ChatPinnedMessagesPanel.vue` | Pinned messages |
 | `VoiceMessagePlayer.vue`, `VideoMessagePlayer.vue` | Media playback |
 | `Onboarding/*` | DM start, public rooms, onboarding panel |
+| `SpaceHomePanel.vue` | Space overview when space selected, no room |
 
 ### Timeline utils
 

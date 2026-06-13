@@ -1,6 +1,7 @@
 import { HOME_SPACE_ID } from "~/utils/spaceUnread";
 import {
   buildSpaceRoomCategories,
+  buildSpaceLobbyCategories,
   parseSpaceChildEvents,
   resolveRootSpaceIdForHierarchy,
   sortParsedSpaceChildren,
@@ -253,6 +254,43 @@ export function useChatRoomSidebar(options: {
       );
   }
 
+  function buildSpaceLobbySections(): RoomCategoryGroup[] {
+    const selectedId = options.selectedSpaceId.value;
+    if (!selectedId || selectedId === HOME_SPACE_ID) {
+      return [];
+    }
+    const built = buildSpaceLobbyCategories({
+      rootSpaceId: selectedId,
+      matrixRooms: options.matrixRooms.value,
+      getRoomType,
+      getRoomId: getMatrixRoomId,
+      getRoomDisplayName: (room) =>
+        String(
+          (room as { name?: string }).name ||
+            options.translateText("layout.roomFallback"),
+        ),
+      generalCategoryLabel: options.translateText(
+        "layout.spaceRoomsCategory",
+      ),
+    });
+    return built.map((category) => ({
+      id: category.id,
+      name: category.name,
+      kind: category.kind,
+      subspaceRoomId: category.subspaceRoomId,
+      nestingDepth: category.nestingDepth,
+      parentSubspaceId: category.parentSubspaceId,
+      rootChildAnchorIds: category.rootChildAnchorIds,
+      canReorderRooms: false,
+      isSubspaceJoined: category.isSubspaceJoined,
+      rooms: category.rooms.map((room) => ({
+        roomId: room.roomId,
+        name: room.name,
+        isJoined: room.isJoined ?? true,
+      })),
+    }));
+  }
+
   function canManageChildrenOnSpace(spaceRoomId: string): boolean {
     return canManageSpaceChildren(
       options.client.value,
@@ -421,6 +459,7 @@ export function useChatRoomSidebar(options: {
     closeLeaveOverlay,
     buildHomeSections,
     buildSpaceSections,
+    buildSpaceLobbySections,
     canManageChildrenOnSpace,
     canReorderRootCategories,
     canAddSpaceChildren,

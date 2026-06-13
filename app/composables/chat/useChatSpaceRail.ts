@@ -221,6 +221,9 @@ export function useChatSpaceRail(options: {
         }
         const currentId = options.selectedSpaceId.value;
         if (!currentId || currentId === HOME_SPACE_ID) {
+          if (!currentId && spaces.length > 0) {
+            options.selectedSpaceId.value = HOME_SPACE_ID;
+          }
           return;
         }
         const selectedExists = spaces.some(

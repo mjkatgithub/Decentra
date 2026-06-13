@@ -481,6 +481,16 @@ const messages: LocaleMessages = {
     'rooms.visibilityPublic': 'Public (listed, open join)',
     'rooms.createSubmit': 'Create room',
     'onboarding.title': 'Get started',
+    'spaceHome.welcome': 'Welcome to {space}',
+    'spaceHome.subtitle': 'Pick a channel or manage this space.',
+    'spaceHome.emptyChannels': 'No channels joined yet.',
+    'spaceHome.channelsSection': 'Channels',
+    'spaceHome.lobby': 'Lobby',
+    'spaceHome.joinChannel': 'Join',
+    'spaceHome.joinSubspace': 'Join subspace',
+    'spaceHome.openChannel': 'Open {name}',
+    'spaceHome.emptySubspaceChannels':
+      'Join this subspace to see its channels.',
     'onboarding.subtitle':
       'Start a direct message, create a room, or explore public rooms.',
     'onboarding.startDm': 'Start direct message',

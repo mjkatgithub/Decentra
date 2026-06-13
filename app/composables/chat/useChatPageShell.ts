@@ -19,6 +19,7 @@ export function useChatPageShell(options: {
   isMobile: Ref<boolean>;
   spaceRailExpanded: Ref<boolean>;
   onboardingSubView: Ref<null | "dm" | "public">;
+  suppressAutoRoomSelect: Ref<boolean>;
   refreshRooms: () => void;
   clearLoadMessagesTimer: () => void;
   clearThreadNavRefreshTimer: () => void;
@@ -80,6 +81,9 @@ export function useChatPageShell(options: {
       void navigateTo({ path: "/chat", query: {} }, { replace: true });
       scheduleSpaceHierarchyRefresh();
     } else if (rootSpaceId) {
+      options.selectedRoomId.value = null;
+      options.onboardingSubView.value = null;
+      options.suppressAutoRoomSelect.value = true;
       options.refreshRooms();
       void navigateTo({ path: "/chat", query: {} }, { replace: true });
       scheduleSpaceHierarchyRefresh();
@@ -125,6 +129,9 @@ export function useChatPageShell(options: {
 
   function selectSpace(spaceId: string) {
     options.selectedSpaceId.value = spaceId;
+    options.selectedRoomId.value = null;
+    options.onboardingSubView.value = null;
+    options.suppressAutoRoomSelect.value = true;
     if (options.isMobile.value) {
       options.leftSidebarOpen.value = false;
     }
