@@ -89,6 +89,25 @@ npm run test:ci:full
 npm run prepare:e2e
 ```
 
+### Test layers (current state)
+
+| Layer | Location | Role today |
+|-------|----------|------------|
+| Unit | `tests/unit/` | Main safety net (~438 tests); composables, utils, components |
+| Integration | `tests/integration/` | Small module-level checks (3 files, 9 tests); not full Nuxt/Matrix wiring |
+| E2E | `tests/e2e/` | Cucumber + Playwright against Docker Synapse |
+
+**Coverage:** `npm run test:coverage` reports **~50% lines** overall
+(`vitest.config.ts` thresholds are intentionally low at 10–20% so CI
+passes while pages/plugins stay mostly untested). A **~90%** target is
+reasonable for critical modules (Matrix client, timeline, auth) but is **not**
+the current baseline — raise thresholds incrementally per epic/issue.
+
+**Integration gap:** Issue templates mention integration tests; most features
+today rely on unit + E2E. Expanding `tests/integration/` (e.g. composable
+chains, i18n + component mount, timeline with mocked Matrix room) is backlog
+work, not part of the CI lane fix.
+
 ### E2E Credentials
 
 For credential-based E2E scenarios, create a local env file:

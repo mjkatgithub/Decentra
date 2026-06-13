@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Synapse E2E on Linux CI: restore data-dir ownership after `synapse generate`
   so `homeserver.yaml` overrides are writable (GitHub Actions EACCES)
   ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
+- E2E runner: `start-server-and-test` third argument must be an npm script
+  name (fixes local + CI `test:e2e:run` / smoke)
+  ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
 
 - Leave Matrix rooms from the chat sidebar: confirmation dialog,
   `leaveRoom` via matrix-js-sdk, `m.direct` cleanup for DMs, neutral
