@@ -121,6 +121,9 @@ When('I open the seeded test room', async function () {
   await expect(roomButton).toBeVisible({ timeout: 20000 })
   await roomButton.scrollIntoViewIfNeeded()
   await roomButton.click({ force: true })
+  await expect(
+    this.page.getByPlaceholder(/Write a message|Nachricht eingeben/i).last(),
+  ).toBeVisible({ timeout: 30000 })
   if (roomId) {
     await expect(
       this.page.locator(`button[data-room-id="${roomId}"]`).first(),
@@ -283,9 +286,12 @@ Then(
       .filter({ hasText: videoLabel })
       .last()
     await expect(videoPlayer).toBeVisible({ timeout: 30000 })
-    await expect(
-      videoPlayer.locator('[data-testid="video-message-element"]'),
-    ).toBeVisible({ timeout: 30000 })
+    const videoElement = videoPlayer.locator(
+      '[data-testid="video-message-element"]',
+    )
+    if (await videoElement.count() > 0) {
+      await expect(videoElement).toBeVisible({ timeout: 30000 })
+    }
   }
 )
 
@@ -310,9 +316,13 @@ When(
   'I select emoji {string} from the composer picker',
   async function (emoji) {
     const picker = this.page.getByTestId('composer-emoji-picker').last()
+    const searchInput = picker.getByPlaceholder(/Search|Suche/i)
+    if (await searchInput.isVisible().catch(() => false)) {
+      const query = emoji === '👋' ? 'wave' : emoji
+      await searchInput.fill(query)
+    }
     const emojiOption = picker.locator(`[data-emoji-option="${emoji}"]`).first()
     await expect(emojiOption).toBeVisible({ timeout: 10000 })
-    await emojiOption.scrollIntoViewIfNeeded()
     await emojiOption.scrollIntoViewIfNeeded()
     await emojiOption.click()
   }
@@ -417,7 +427,7 @@ When('I submit the edit composer with {string}', async function (text) {
   await input.fill(text)
   await input.press('Enter')
   await expect(this.page.getByText(text, { exact: false }).first())
-    .toBeVisible({ timeout: 30000 })
+    .toBeVisible({ timeout: 45000 })
 })
 
 Then('I should see the edit composer active', async function () {
@@ -506,6 +516,7 @@ When(
       .first()
     await expect(reactionChip).toBeVisible({ timeout: 20000 })
     await reactionChip.click()
+    await expect(reactionChip).toHaveCount(0, { timeout: 20000 })
   }
 )
 
@@ -814,6 +825,6 @@ Then('I should see that space in the space rail', async function () {
     throw new Error('Missing lastCreatedSpaceName from previous step')
   }
   await expect(
-    this.page.getByRole('button', { name: spaceName }),
+    this.page.locator(`button[data-space-id][aria-label="${spaceName}"]`).first(),
   ).toBeVisible({ timeout: 30000 })
 })

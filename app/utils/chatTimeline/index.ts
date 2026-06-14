@@ -32,8 +32,10 @@ export {
   buildUndecryptableMessageText,
   getMessageBody,
   getRedactedEventIds,
+  isDecryptableChatMessageEvent,
   isRedactedMessageEvent,
   isUndecryptableEvent,
+  readChatMessageContent,
 } from './reactionsAndMedia'
 
 export {

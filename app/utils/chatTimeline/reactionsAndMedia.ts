@@ -90,7 +90,37 @@ export function isUndecryptableEvent(
     return true
   }
   const eventType = timelineEvent.getType?.() ?? ''
-  return eventType === 'm.room.encrypted'
+  if (eventType !== 'm.room.encrypted') {
+    return false
+  }
+  const clearContent = timelineEvent.getClearContent?.()
+  return !clearContent || typeof clearContent !== 'object'
+}
+
+export function isDecryptableChatMessageEvent(
+  timelineEvent: Record<string, any>,
+): boolean {
+  const eventType = timelineEvent.getType?.() ?? ''
+  if (eventType === 'm.room.message') {
+    return true
+  }
+  if (eventType === 'm.room.encrypted') {
+    return !isUndecryptableEvent(timelineEvent)
+  }
+  return false
+}
+
+export function readChatMessageContent(
+  timelineEvent: Record<string, any>,
+): Record<string, any> {
+  if (!isDecryptableChatMessageEvent(timelineEvent)) {
+    return timelineEvent.getContent?.() ?? {}
+  }
+  return (
+    timelineEvent.getClearContent?.() ??
+    timelineEvent.getContent?.() ??
+    {}
+  )
 }
 
 export function buildUndecryptableMessageText(senderName: string): string {

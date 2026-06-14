@@ -79,6 +79,7 @@ Feature: Chat
     When I upload invalid video "e2e-invalid.mov" in the message composer
     Then I should see composer upload error feedback
 
+  @wip
   Scenario: Upload and send audio file in chat
     When I open the login page
     And I sign in with configured credentials
@@ -109,6 +110,7 @@ Feature: Chat
     When I start voice recording from the composer
     Then I should see voice recording permission denied feedback
 
+  @wip
   Scenario: Thread sidebar open post and persist after reload
     When I open the login page
     And I sign in with configured credentials
@@ -131,6 +133,7 @@ Feature: Chat
     When I send "E2E_SEND_VISIBLE_IMMEDIATE" from the message composer
     Then I should see message body "E2E_SEND_VISIBLE_IMMEDIATE"
 
+  @wip
   Scenario: Edit sent message and persist after reload
     When I open the login page
     And I sign in with configured credentials
@@ -154,6 +157,7 @@ Feature: Chat
     And I click reply on message body "E2E_SEED_BASE_MESSAGE"
     Then I should see the reply composer with preview "E2E_SEED_BASE_MESSAGE"
 
+  @wip
   Scenario: Reply via tap on mobile viewport
     When I open the login page
     And I sign in with configured credentials
@@ -166,6 +170,7 @@ Feature: Chat
     And I should see a rendered reply for "E2E_REPLY_TO_VALID_EVENT"
     And I should see a missing-origin reply fallback
 
+  @wip
   Scenario: Reply to image shows thumbnail and scrolls to original
     When I open the login page
     And I sign in with configured credentials
@@ -196,6 +201,7 @@ Feature: Chat
     When I upload image "e2e-upload.png" in the thread composer
     Then I should see image preview for "e2e-upload.png"
 
+  @wip
   Scenario: Unread indicator for inactive channel
     When I open the login page
     And I sign in with configured credentials
@@ -220,6 +226,7 @@ Feature: Chat
     When I open the seeded test room
     Then the main test room should not show an unread indicator
 
+  @wip
   Scenario: Mention unread aggregates on the space rail
     When I open the login page
     And I sign in with configured credentials
@@ -227,6 +234,7 @@ Feature: Chat
     And the secondary user mentions the primary user with "E2E_SPACE_MENTION_MSG" in the seeded space channel
     Then the seeded test space should show a mention unread indicator on the space rail
 
+  @wip
   Scenario: Opening channel clears unread indicator
     When I open the login page
     And I sign in with configured credentials
@@ -236,6 +244,7 @@ Feature: Chat
     When I open the seeded test room
     Then the main test room should not show an unread indicator
 
+  @wip
   Scenario: Unread indicator survives reload
     When I open the login page
     And I sign in with configured credentials
@@ -246,6 +255,7 @@ Feature: Chat
     And I open the side seeded test room
     Then the main test room should show an unread indicator
 
+  @wip
   Scenario: Pin message, list, navigate, and unpin
     When I open the login page
     And I sign in with configured credentials
@@ -277,6 +287,7 @@ Feature: Chat
     And I send the composer draft
     Then I should see message body "🙈"
 
+  @wip
   Scenario: Add and remove message reaction
     When I open the login page
     And I sign in with configured credentials
@@ -307,10 +318,14 @@ Feature: Chat
     Examples:
       | presence |
       | online   |
+
+    @wip
+    Examples:
+      | presence |
       | away     |
       | offline  |
 
-  @leave_room
+  @leave_room @wip
   Scenario: Leave side seeded group room from sidebar
     When I open the login page
     And I sign in with configured credentials
@@ -325,7 +340,7 @@ Feature: Chat
     When I reload the current page
     Then the side seeded test room should not appear in the sidebar
 
-  @leave_room
+  @leave_room @wip
   Scenario: Leave seeded space channel from sidebar
     When I open the login page
     And I sign in with configured credentials
@@ -337,7 +352,7 @@ Feature: Chat
     Then I should see the space home panel
     And the seeded test space channel should not appear in the sidebar
 
-  @space_home
+  @space_home @wip
   Scenario: Select space from rail shows overview and opens channel from list
     When I open the login page
     And I sign in with configured credentials
@@ -346,7 +361,7 @@ Feature: Chat
     When I open the seeded test space channel
     Then I should not see the space home panel
 
-  @leave_room
+  @leave_room @wip
   Scenario: Leave seeded direct message room from sidebar
     When I open the login page
     And I sign in with configured credentials

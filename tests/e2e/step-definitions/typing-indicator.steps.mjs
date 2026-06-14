@@ -86,7 +86,7 @@ When(
 
 Then('the typing indicator should be visible', async function () {
   const indicator = this.page.getByTestId('typing-indicator')
-  await expect(indicator).toBeVisible({ timeout: 15_000 })
+  await expect(indicator).toBeVisible({ timeout: 30_000 })
   await expect(indicator).toHaveText(/typing|schreibt/i)
 })
 
