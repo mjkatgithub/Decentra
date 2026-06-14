@@ -139,25 +139,61 @@ function ensureSynapseConfigOverrides() {
   }
 }
 
+const SYNAPSE_BASE_URL = 'http://127.0.0.1:8008'
+
+function sleep(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+}
+
+/**
+ * /versions can return 200 before registration routes are ready on CI.
+ * Also probe the shared-secret register nonce endpoint used by the seed.
+ */
+async function isSynapseReadyForSeed() {
+  try {
+    const versionsResponse = await fetch(
+      `${SYNAPSE_BASE_URL}/_matrix/client/versions`,
+    )
+    if (!versionsResponse.ok) {
+      return false
+    }
+
+    const registerResponse = await fetch(
+      `${SYNAPSE_BASE_URL}/_synapse/admin/v1/register`,
+      { method: 'GET' },
+    )
+    if (!registerResponse.ok) {
+      return false
+    }
+
+    const registerBodyText = await registerResponse.text()
+    const registerBody = registerBodyText
+      ? JSON.parse(registerBodyText)
+      : {}
+    return typeof registerBody.nonce === 'string' && registerBody.nonce.length > 0
+  } catch {
+    return false
+  }
+}
+
 async function waitForSynapse() {
-  const endpoint = 'http://127.0.0.1:8008/_matrix/client/versions'
   const timeoutMs = 120000
   const pollMs = 2000
   const startedAt = Date.now()
 
   while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(endpoint)
-      if (response.ok) {
-        console.log('Synapse is ready at http://127.0.0.1:8008')
-        return
-      }
-    } catch {
-      // Keep polling.
+    if (await isSynapseReadyForSeed()) {
+      console.log(
+        'Synapse is ready for E2E seed at http://127.0.0.1:8008',
+      )
+      return
     }
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, pollMs))
+    await sleep(pollMs)
   }
-  throw new Error('Synapse startup timed out after 120 seconds')
+  throw new Error(
+    'Synapse startup timed out after 120 seconds '
+    + '(versions + registration API not ready)',
+  )
 }
 
 /** matrixdotorg/synapse image runs as UID/GID 991. */

@@ -27,6 +27,23 @@ function logStep(message) {
   console.log(`[seed] ${message}`)
 }
 
+function sleep(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+}
+
+function isRetryableSeedError(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (
+    message.includes('fetch failed')
+    || message.includes('ECONNREFUSED')
+    || message.includes('ECONNRESET')
+    || message.includes('ETIMEDOUT')
+  ) {
+    return true
+  }
+  return /\bMatrix request failed \((502|503|504)\):/.test(message)
+}
+
 async function requestJson(path, init) {
   const response = await fetch(apiUrl(path), init)
   const bodyText = await response.text()
@@ -35,6 +52,31 @@ async function requestJson(path, init) {
     throw new Error(`Matrix request failed (${body?.errcode || response.status}): ${path}`)
   }
   return body
+}
+
+async function requestJsonWithRetry(path, init, options = {}) {
+  const maxAttempts = options.maxAttempts ?? 3
+  const delayMs = options.delayMs ?? 1000
+  let lastError
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await requestJson(path, init)
+    } catch (error) {
+      lastError = error
+      const canRetry = isRetryableSeedError(error) && attempt < maxAttempts
+      if (!canRetry) {
+        throw error
+      }
+      logStep(
+        `retry ${attempt}/${maxAttempts - 1} for ${path}: `
+        + (error instanceof Error ? error.message : String(error)),
+      )
+      await sleep(delayMs)
+    }
+  }
+
+  throw lastError
 }
 
 async function login(localpart, password) {
@@ -51,7 +93,11 @@ async function login(localpart, password) {
 
 async function registerViaSecret(localpart, password) {
   const endpoint = '/_synapse/admin/v1/register'
-  const nonceResponse = await requestJson(endpoint, { method: 'GET' })
+  const nonceResponse = await requestJsonWithRetry(
+    endpoint,
+    { method: 'GET' },
+    { maxAttempts: 3, delayMs: 1000 },
+  )
   const nonce = nonceResponse.nonce
   const macInput = `${nonce}\u0000${localpart}\u0000${password}\u0000notadmin`
   const mac = createHmac('sha1', registrationSecret).update(macInput).digest('hex')
@@ -64,15 +110,19 @@ async function registerViaSecret(localpart, password) {
 
 async function ensureUser(localpart, password) {
   try {
-    const session = await requestJson('/_matrix/client/v3/register', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        username: localpart,
-        password,
-        auth: { type: 'm.login.dummy' }
-      })
-    })
+    const session = await requestJsonWithRetry(
+      '/_matrix/client/v3/register',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          username: localpart,
+          password,
+          auth: { type: 'm.login.dummy' },
+        }),
+      },
+      { maxAttempts: 3, delayMs: 1000 },
+    )
     logStep(`ensureUser ${localpart}: registered via dummy`)
     return session
   } catch (error) {
