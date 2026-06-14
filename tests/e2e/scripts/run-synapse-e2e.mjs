@@ -29,7 +29,26 @@ function runCommand(binary, args) {
 async function main() {
   let testFailed = false
   await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'up'])
-  await runCommand('node', ['tests/e2e/scripts/runtime-seed-synapse.mjs'])
+
+  try {
+    await runCommand('node', ['tests/e2e/scripts/runtime-seed-synapse.mjs'])
+  } catch (seedError) {
+    console.error(
+      '[e2e] Synapse seed process failed:',
+      seedError instanceof Error ? seedError.message : String(seedError),
+    )
+    try {
+      await runCommand(
+        'node',
+        ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'logs'],
+      )
+    } catch {
+      // Ignore log failures during seed cleanup.
+    }
+    await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'down'])
+    process.exit(1)
+  }
+
   loadE2EEnv(workspaceRoot)
   const generatedEnvExists = existsSync(generatedEnvPath)
   const matrixUsername = process.env.E2E_MATRIX_USERNAME

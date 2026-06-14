@@ -147,7 +147,7 @@ function sleep(ms) {
 
 /**
  * /versions can return 200 before registration routes are ready on CI.
- * Also probe the shared-secret register nonce endpoint used by the seed.
+ * Also probe client registration and the shared-secret register nonce endpoint.
  */
 async function isSynapseReadyForSeed() {
   try {
@@ -167,10 +167,34 @@ async function isSynapseReadyForSeed() {
     }
 
     const registerBodyText = await registerResponse.text()
-    const registerBody = registerBodyText
-      ? JSON.parse(registerBodyText)
-      : {}
-    return typeof registerBody.nonce === 'string' && registerBody.nonce.length > 0
+    let registerBody = {}
+    try {
+      registerBody = registerBodyText ? JSON.parse(registerBodyText) : {}
+    } catch {
+      return false
+    }
+    if (typeof registerBody.nonce !== 'string' || registerBody.nonce.length === 0) {
+      return false
+    }
+
+    const clientRegisterResponse = await fetch(
+      `${SYNAPSE_BASE_URL}/_matrix/client/v3/register`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    )
+    // Ready when Synapse returns a structured Matrix error, not a proxy HTML page.
+    const clientBodyText = await clientRegisterResponse.text()
+    try {
+      const clientBody = clientBodyText ? JSON.parse(clientBodyText) : {}
+      return typeof clientBody.errcode === 'string'
+        || typeof clientBody.session === 'string'
+        || clientRegisterResponse.ok
+    } catch {
+      return false
+    }
   } catch {
     return false
   }

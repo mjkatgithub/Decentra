@@ -38,16 +38,38 @@ function isRetryableSeedError(error) {
     || message.includes('ECONNREFUSED')
     || message.includes('ECONNRESET')
     || message.includes('ETIMEDOUT')
+    || message.includes('Unexpected token')
+    || message.includes('is not valid JSON')
   ) {
     return true
   }
-  return /\bMatrix request failed \((502|503|504)\):/.test(message)
+  if (
+    /\bMatrix request failed \((502|503|504|500|429)\):/.test(message)
+    || message.includes('M_LIMIT_EXCEEDED')
+    || message.includes('M_UNKNOWN')
+  ) {
+    return true
+  }
+  return false
+}
+
+function parseResponseBody(bodyText) {
+  if (!bodyText) {
+    return {}
+  }
+  try {
+    return JSON.parse(bodyText)
+  } catch {
+    throw new Error(
+      `Matrix response was not JSON (${bodyText.slice(0, 120)}…)`,
+    )
+  }
 }
 
 async function requestJson(path, init) {
   const response = await fetch(apiUrl(path), init)
   const bodyText = await response.text()
-  const body = bodyText ? JSON.parse(bodyText) : {}
+  const body = parseResponseBody(bodyText)
   if (!response.ok) {
     throw new Error(`Matrix request failed (${body?.errcode || response.status}): ${path}`)
   }
@@ -96,47 +118,121 @@ async function registerViaSecret(localpart, password) {
   const nonceResponse = await requestJsonWithRetry(
     endpoint,
     { method: 'GET' },
-    { maxAttempts: 3, delayMs: 1000 },
+    { maxAttempts: 5, delayMs: 1500 },
   )
   const nonce = nonceResponse.nonce
   const macInput = `${nonce}\u0000${localpart}\u0000${password}\u0000notadmin`
   const mac = createHmac('sha1', registrationSecret).update(macInput).digest('hex')
-  return requestJson(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ nonce, username: localpart, password, admin: false, mac })
-  })
+  return requestJsonWithRetry(
+    endpoint,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        nonce,
+        username: localpart,
+        password,
+        admin: false,
+        mac,
+      }),
+    },
+    { maxAttempts: 5, delayMs: 1500 },
+  )
+}
+
+function isExistingUserError(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('M_USER_IN_USE')
+    || message.includes('M_EXCLUSIVE')
+    || message.includes('User ID already taken')
+}
+
+async function registerViaDummy(localpart, password) {
+  return requestJsonWithRetry(
+    '/_matrix/client/v3/register',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        username: localpart,
+        password,
+        auth: { type: 'm.login.dummy' },
+      }),
+    },
+    { maxAttempts: 5, delayMs: 1500 },
+  )
 }
 
 async function ensureUser(localpart, password) {
   try {
-    const session = await requestJsonWithRetry(
-      '/_matrix/client/v3/register',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          username: localpart,
-          password,
-          auth: { type: 'm.login.dummy' },
-        }),
-      },
-      { maxAttempts: 3, delayMs: 1000 },
-    )
-    logStep(`ensureUser ${localpart}: registered via dummy`)
+    const session = await registerViaSecret(localpart, password)
+    logStep(`ensureUser ${localpart}: registered via shared secret`)
     return session
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    if (errorMessage.includes('M_USER_IN_USE')) {
+  } catch (secretError) {
+    if (isExistingUserError(secretError)) {
       logStep(`ensureUser ${localpart}: exists, logging in`)
-      return login(localpart, password)
+      return requestJsonWithRetry(
+        '/_matrix/client/v3/login',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            type: 'm.login.password',
+            identifier: { type: 'm.id.user', user: localpart },
+            password,
+          }),
+        },
+        { maxAttempts: 5, delayMs: 1500 },
+      )
     }
+
+    const secretMessage = secretError instanceof Error
+      ? secretError.message
+      : String(secretError)
     logStep(
-      `ensureUser ${localpart}: dummy failed (${errorMessage}); `
-      + 'falling back to shared-secret register',
+      `ensureUser ${localpart}: shared-secret failed (${secretMessage}); `
+      + 'falling back to dummy register',
     )
-    return registerViaSecret(localpart, password)
+    try {
+      const session = await registerViaDummy(localpart, password)
+      logStep(`ensureUser ${localpart}: registered via dummy`)
+      return session
+    } catch (dummyError) {
+      if (isExistingUserError(dummyError)) {
+        logStep(`ensureUser ${localpart}: exists, logging in`)
+        return login(localpart, password)
+      }
+      throw dummyError
+    }
   }
+}
+
+async function warmUpRegistration() {
+  const timeoutMs = 60000
+  const pollMs = 2000
+  const startedAt = Date.now()
+  logStep('waiting for registration API warmup')
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(
+        apiUrl('/_synapse/admin/v1/register'),
+        { method: 'GET' },
+      )
+      if (response.ok) {
+        const body = parseResponseBody(await response.text())
+        if (typeof body.nonce === 'string' && body.nonce.length > 0) {
+          logStep('registration API warmup complete')
+          return
+        }
+      }
+    } catch {
+      // Keep polling until registration API is reachable.
+    }
+    await sleep(pollMs)
+  }
+
+  throw new Error('Registration API warmup timed out after 60 seconds')
 }
 
 async function withAuth(accessToken, path, init = {}) {
@@ -227,6 +323,7 @@ async function uploadAudio(accessToken) {
 
 async function main() {
   logStep(`starting seed against ${homeserver}`)
+  await warmUpRegistration()
   const primarySession = await ensureUser(primaryLocalpart, primaryPassword)
   const secondarySession = await ensureUser(secondaryLocalpart, secondaryPassword)
   logStep('users ready')
@@ -460,6 +557,9 @@ async function main() {
 }
 
 void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error))
+  console.error(
+    '[seed] fatal:',
+    error instanceof Error ? error.stack || error.message : String(error),
+  )
   process.exit(1)
 })
