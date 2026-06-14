@@ -246,6 +246,19 @@ async function main() {
   )
   await withAuth(
     primarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceChannelId)}/invite`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ user_id: secondarySession.user_id }),
+    },
+  )
+  await withAuth(
+    secondarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceChannelId)}/join`,
+    { method: 'POST', body: '{}' },
+  )
+  await withAuth(
+    primarySession.access_token,
     `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.encryption`,
     { method: 'PUT', body: JSON.stringify({ algorithm: 'm.megolm.v1.aes-sha2' }) }
   )

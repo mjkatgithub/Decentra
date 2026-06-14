@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - E2E login: seed writes localpart + `E2E_MATRIX_USER_ID`; app login
   normalizes MXID; `npm run test:e2e:login` for isolated auth scenario
   ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
+- Unit tests: shared `matrixClientTestDoubles` factory for
+  `useMatrixClient` specs; Vitest `fileParallelism: false` avoids mock
+  races; `test:coverage` green (439/439)
+  ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
+- E2E: Bob invited to seeded space channel; typing API uses login MXID;
+  space-home locators, collapsed rail create-space, secondary login
+  timeout; member presence from `member.user.presence`; unread refresh
+  on room select
+  ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
 
 - Leave Matrix rooms from the chat sidebar: confirmation dialog,
   `leaveRoom` via matrix-js-sdk, `m.direct` cleanup for DMs, neutral

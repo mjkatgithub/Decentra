@@ -236,7 +236,11 @@ export function buildSortedMemberItems(
       displayName: String(member.name || member.userId || ""),
       avatarUrl: getMemberAvatarUrl(member),
       status: normalizePresence(
-        typeof member.presence === "string" ? member.presence : undefined,
+        typeof member.user?.presence === 'string'
+          ? member.user.presence
+          : typeof member.presence === 'string'
+            ? member.presence
+            : undefined,
       ),
     }))
     .sort((memberA: MemberItem, memberB: MemberItem) => {

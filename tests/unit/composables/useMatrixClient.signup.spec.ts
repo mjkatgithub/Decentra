@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import './matrixClientSpecMocks'
 import { createClient } from 'matrix-js-sdk'
-import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
+import { installRegisterClient } from './matrixClientTestDoubles'
 import {
   prepareMatrixClientSpecFile,
-  setupFreshMatrixClientGlobals,
   setupMatrixClientTestGlobals,
 } from './matrixClientTestSetup'
 
@@ -12,13 +11,13 @@ describe('useMatrixClient signup', () => {
   beforeEach(() => {
     prepareMatrixClientSpecFile()
     setupMatrixClientTestGlobals()
+    installRegisterClient(createClient)
   })
 
   it('submits register request with normalized username', async () => {
-    const authClient = {
-      registerRequest: vi.fn(async () => ({ user_id: '@alice:example.org' }))
-    }
-    createClient.mockReturnValueOnce(authClient)
+    const authClient = installRegisterClient(createClient, {
+      registerRequest: vi.fn(async () => ({ user_id: '@alice:example.org' })),
+    })
 
     const {
       useMatrixClient
@@ -35,10 +34,9 @@ describe('useMatrixClient signup', () => {
   })
 
   it('with email, starts UIA with register payload without auth', async () => {
-    const authClient = {
-      registerRequest: vi.fn(async () => ({ user_id: '@alice:example.org' }))
-    }
-    createClient.mockReturnValueOnce(authClient)
+    const authClient = installRegisterClient(createClient, {
+      registerRequest: vi.fn(async () => ({ user_id: '@alice:example.org' })),
+    })
 
     const {
       useMatrixClient
@@ -59,12 +57,11 @@ describe('useMatrixClient signup', () => {
   })
 
   it('maps homeserver-disabled register API errors to REGISTER_API_CLOSED', async () => {
-    const authClient = {
+    installRegisterClient(createClient, {
       registerRequest: vi.fn(async () => {
         throw new Error('Registration has been disabled')
-      })
-    }
-    createClient.mockReturnValueOnce(authClient)
+      }),
+    })
 
     const {
       SIGNUP_REGISTER_API_CLOSED_ERROR,
@@ -79,7 +76,7 @@ describe('useMatrixClient signup', () => {
 
   it('persists UIA email signup state after 401 with session and email flow', async () => {
     const requestRegisterEmailToken = vi.fn(async () => ({ sid: 'sid-1' }))
-    const authClient = {
+    const authClient = installRegisterClient(createClient, {
       registerRequest: vi.fn(async () => {
         const stageError = new Error('Additional auth required') as Error & {
           data?: {
@@ -90,14 +87,13 @@ describe('useMatrixClient signup', () => {
         stageError.data = {
           session: 'uia-session-1',
           flows: [
-            { stages: ['m.login.email.identity'] }
-          ]
+            { stages: ['m.login.email.identity'] },
+          ],
         }
         throw stageError
       }),
-      requestRegisterEmailToken
-    }
-    createClient.mockReturnValueOnce(authClient)
+      requestRegisterEmailToken,
+    })
 
     const {
       SIGNUP_PENDING_STORAGE_KEY,
@@ -127,13 +123,12 @@ describe('useMatrixClient signup', () => {
 
   it('maps sdk http identity-server error to legacy email token path', async () => {
     const requestRegisterEmailToken = vi.fn(async () => ({ sid: 'sid-1' }))
-    const authClient = {
+    const authClient = installRegisterClient(createClient, {
       registerRequest: vi.fn(async () => {
         throw new Error("Cannot read properties of undefined (reading 'http')")
       }),
-      requestRegisterEmailToken
-    }
-    createClient.mockReturnValueOnce(authClient)
+      requestRegisterEmailToken,
+    })
 
     const {
       SIGNUP_EMAIL_VERIFICATION_REQUIRED_ERROR,
@@ -186,8 +181,7 @@ describe('useMatrixClient signup', () => {
         throw e
       })
       .mockResolvedValueOnce({ user_id: '@alice:example.org' })
-    const authClient = { registerRequest }
-    createClient.mockReturnValueOnce(authClient)
+    const authClient = installRegisterClient(createClient, { registerRequest })
 
     const {
       SIGNUP_PENDING_STORAGE_KEY,
@@ -238,14 +232,13 @@ describe('useMatrixClient signup', () => {
         flowStages: ['m.login.email.identity']
       })
     )
-    const authClient = {
+    installRegisterClient(createClient, {
       registerRequest: vi.fn(async () => {
-        const e = new Error('nope') as Error & { data?: Record<string, unknown> }
-        e.data = { errcode: 'M_UNAUTHORIZED', error: 'nope' }
-        throw e
-      })
-    }
-    createClient.mockReturnValueOnce(authClient)
+        const error = new Error('nope') as Error & { data?: Record<string, unknown> }
+        error.data = { errcode: 'M_UNAUTHORIZED', error: 'nope' }
+        throw error
+      }),
+    })
 
     const {
       SIGNUP_EMAIL_NOT_CONFIRMED_YET,
@@ -280,19 +273,18 @@ describe('useMatrixClient signup', () => {
         flowStages: ['m.login.email.identity']
       })
     )
-    const authClient = {
+    installRegisterClient(createClient, {
       registerRequest: vi.fn(async () => {
-        const e = new Error('ui') as Error & { data?: Record<string, unknown> }
-        e.data = {
+        const error = new Error('ui') as Error & { data?: Record<string, unknown> }
+        error.data = {
           session: 'other-session',
           flows: [{ stages: ['m.login.email.identity'] }],
           errcode: 'M_FORBIDDEN',
-          error: 'fail'
+          error: 'fail',
         }
-        throw e
-      })
-    }
-    createClient.mockReturnValueOnce(authClient)
+        throw error
+      }),
+    })
 
     const {
       SIGNUP_SESSION_EXPIRED,
@@ -304,10 +296,10 @@ describe('useMatrixClient signup', () => {
   })
 
   it('falls back to legacy register method when needed', async () => {
-    const authClient = {
-      register: vi.fn(async () => ({ user_id: '@alice:example.org' }))
-    }
-    createClient.mockReturnValueOnce(authClient)
+    const authClient = installRegisterClient(createClient, {
+      registerRequest: undefined as unknown as ReturnType<typeof vi.fn>,
+      register: vi.fn(async () => ({ user_id: '@alice:example.org' })),
+    })
 
     const {
       useMatrixClient

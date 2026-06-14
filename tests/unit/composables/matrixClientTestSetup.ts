@@ -6,6 +6,10 @@ export function prepareMatrixClientSpecFile(): void {
   vi.unmock('~/composables/useMatrixClient')
   vi.resetModules()
   vi.clearAllMocks()
+  localStorage.clear()
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.clear()
+  }
 }
 
 export function setupMatrixClientTestGlobals(options?: {

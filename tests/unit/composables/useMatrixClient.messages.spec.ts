@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import './matrixClientSpecMocks'
 import { createClient } from 'matrix-js-sdk'
-import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
+import {
+  installLoginFlow,
+  installLoginFlowFromStubs,
+  installRegisterClient,
+} from './matrixClientTestDoubles'
 import {
   prepareMatrixClientSpecFile,
-  setupFreshMatrixClientGlobals,
   setupMatrixClientTestGlobals,
 } from './matrixClientTestSetup'
 
@@ -12,6 +15,7 @@ describe('useMatrixClient messages', () => {
   beforeEach(() => {
     prepareMatrixClientSpecFile()
     setupMatrixClientTestGlobals()
+    installLoginFlow(createClient)
   })
 
   it('sends text message with reply relation payload', async () => {
@@ -27,9 +31,7 @@ describe('useMatrixClient messages', () => {
       startClient: vi.fn(),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendMessage } = useMatrixClient()
@@ -67,9 +69,7 @@ describe('useMatrixClient messages', () => {
       startClient: vi.fn(),
       sendEvent: vi.fn(async () => undefined),
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendEditMessage } = useMatrixClient()
@@ -112,9 +112,7 @@ describe('useMatrixClient messages', () => {
       startClient: vi.fn(),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendMessage } = useMatrixClient()
@@ -163,9 +161,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
     const originalImage = (globalThis as Record<string, unknown>).Image
     ;(globalThis as Record<string, unknown>).Image = undefined
 
@@ -212,9 +208,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
     const originalImage = (globalThis as Record<string, unknown>).Image
     ;(globalThis as Record<string, unknown>).Image = undefined
 
@@ -258,9 +252,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
     const originalImage = (globalThis as Record<string, unknown>).Image
     ;(globalThis as Record<string, unknown>).Image = undefined
 
@@ -309,9 +301,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendAudioMessage } = useMatrixClient()
@@ -361,9 +351,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendAudioMessage } = useMatrixClient()
@@ -400,9 +388,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendAudioMessage } = useMatrixClient()
@@ -442,9 +428,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined),
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
     const originalImage = (globalThis as Record<string, unknown>).Image
     ;(globalThis as Record<string, unknown>).Image = undefined
 
@@ -484,9 +468,7 @@ describe('useMatrixClient messages', () => {
       uploadContent: vi.fn(async () => undefined),
       sendEvent: vi.fn(async () => undefined),
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendVideoMessage } = useMatrixClient()
@@ -517,9 +499,7 @@ describe('useMatrixClient messages', () => {
       uploadContent: vi.fn(async () => undefined),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendAudioMessage } = useMatrixClient()
@@ -552,9 +532,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendAudioMessage } = useMatrixClient()
@@ -600,9 +578,7 @@ describe('useMatrixClient messages', () => {
       uploadContent: vi.fn(async () => 'mxc://example.org/encrypted-audio'),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendAudioMessage } = useMatrixClient()
@@ -630,9 +606,7 @@ describe('useMatrixClient messages', () => {
       startClient: vi.fn(),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, sendReaction } = useMatrixClient()
@@ -667,9 +641,7 @@ describe('useMatrixClient messages', () => {
       sendEvent: vi.fn(async () => undefined),
       redactEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, toggleReaction } = useMatrixClient()
@@ -709,9 +681,7 @@ describe('useMatrixClient messages', () => {
       uploadContent: vi.fn(async () => 'mxc://example.org/encrypted-image'),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
     const originalImage = (globalThis as Record<string, unknown>).Image
     ;(globalThis as Record<string, unknown>).Image = undefined
 
@@ -752,9 +722,7 @@ describe('useMatrixClient messages', () => {
       uploadContent: vi.fn(async () => 'mxc://example.org/encrypted-image'),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const originalImage = (globalThis as Record<string, unknown>).Image
     ;(globalThis as Record<string, unknown>).Image = undefined
@@ -801,9 +769,7 @@ describe('useMatrixClient messages', () => {
       uploadContent: vi.fn(async () => 'mxc://example.org/encrypted-image'),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
     const originalImage = (globalThis as Record<string, unknown>).Image
     ;(globalThis as Record<string, unknown>).Image = undefined
 
@@ -840,9 +806,7 @@ describe('useMatrixClient messages', () => {
       })),
       sendEvent: vi.fn(async () => undefined)
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
     const originalImage = (globalThis as Record<string, unknown>).Image
     ;(globalThis as Record<string, unknown>).Image = undefined
 
@@ -870,9 +834,7 @@ describe('useMatrixClient messages', () => {
       initRustCrypto: vi.fn(async () => undefined),
       startClient: vi.fn()
     }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, authClient, matrixClient)
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login } = useMatrixClient()
@@ -899,7 +861,7 @@ describe('useMatrixClient messages', () => {
         throw new TypeError('Failed to fetch')
       })
     }
-    createClient.mockReturnValueOnce(authClient)
+    installRegisterClient(createClient, authClient)
 
     const {
       HOMESERVER_CONNECTION_HINT_ERROR,

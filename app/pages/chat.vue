@@ -506,6 +506,7 @@ const roomCategories = computed<RoomCategoryGroup[]>(() => {
     roomCategoryStructure.value,
     unreadByRoomId.value,
     matrixSyncPrepared.value,
+    selectedRoomId.value,
   ) as RoomCategoryGroup[];
 });
 

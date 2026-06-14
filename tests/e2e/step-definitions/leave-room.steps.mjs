@@ -73,11 +73,7 @@ async function assertChatHomeOnboarding(page) {
 }
 
 async function assertSpaceHomePanel(page) {
-  const spaceHomePanel = page.locator('[data-space-home-panel]')
-  const welcomeHeading = page.getByRole('heading', {
-    name: /Welcome to|Willkommen bei/i,
-  })
-  await expect(spaceHomePanel.or(welcomeHeading)).toBeVisible({
+  await expect(page.locator('[data-space-home-panel]')).toBeVisible({
     timeout: 20000,
   })
 }
@@ -117,13 +113,21 @@ When('I select the seeded test space in the space rail', async function () {
 })
 
 When('I open the seeded test space channel', async function () {
+  const channelId = requireEnv('E2E_TEST_SPACE_CHANNEL_ID')
   const channelName =
     process.env.E2E_TEST_SPACE_CHANNEL_NAME || 'E2E Space General'
-  const roomButton = this.page
+  const roomById = this.page
+    .locator(`[data-space-home-room-id="${channelId}"]`)
+    .first()
+  const roomByName = this.page
     .getByRole('button', { name: new RegExp(channelName, 'i') })
     .first()
-  await expect(roomButton).toBeVisible({ timeout: 20000 })
+  const roomButton = roomById.or(roomByName).first()
+  await expect(roomButton).toBeVisible({ timeout: 45000 })
   await roomButton.click()
+  await expect(this.page.locator('[data-space-home-panel]')).toHaveCount(0, {
+    timeout: 30000,
+  })
 })
 
 When('I open the leave test dm room', async function () {

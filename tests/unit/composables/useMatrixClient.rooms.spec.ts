@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import './matrixClientSpecMocks'
 import { createClient } from 'matrix-js-sdk'
-import { initAsync as initCryptoWasm } from '@matrix-org/matrix-sdk-crypto-wasm'
+import {
+  installLoginFlow,
+  installLoginFlowFromStubs,
+  loginAndImport,
+} from './matrixClientTestDoubles'
 import {
   prepareMatrixClientSpecFile,
-  setupFreshMatrixClientGlobals,
   setupMatrixClientTestGlobals,
 } from './matrixClientTestSetup'
 
@@ -16,13 +19,10 @@ describe('useMatrixClient rooms', () => {
     if (typeof sessionStorage !== 'undefined') {
       sessionStorage.clear()
     }
+    installLoginFlow(createClient)
   })
 
   describe('createMatrixSpace', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
   async function loginForSpaceCreate(
     createRoomImpl?: () => Promise<{ room_id: string }>,
   ) {
@@ -30,28 +30,11 @@ describe('useMatrixClient rooms', () => {
       createRoomImpl ??
         (async () => ({ room_id: '!new-space:example.org' })),
     )
-    const matrixClient = {
-      getUserId: () => '@alice:example.org',
+    const { clientApi, matrixClient } = await loginAndImport(createClient, {
       createRoom,
-      startClient: vi.fn(),
-      initRustCrypto: vi.fn(async () => undefined),
-      getCrypto: () => null,
+      getUserId: () => '@alice:example.org',
       getDeviceId: () => 'DEV',
-    }
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 't',
-        user_id: '@alice:example.org',
-        device_id: 'DEV',
-      })),
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
-
-    const { useMatrixClient } = await import('~/composables/useMatrixClient')
-    const clientApi = useMatrixClient()
-    await clientApi.login('https://example.org', 'alice', 'pw')
+    })
     return { clientApi, createRoom }
   }
 
@@ -219,36 +202,20 @@ describe('useMatrixClient rooms', () => {
 describe('getOrCreateDirectMessageRoom', () => {
   it('reuses joined room from m.direct map', async () => {
     const createRoom = vi.fn()
-    const matrixClient = {
-      getUserId: () => '@alice:example.org',
+    installLoginFlowFromStubs(createClient, {}, {
       getAccountData: vi.fn(() => ({
         getContent: () => ({
-          '@bob:example.org': ['!old:example.org']
-        })
+          '@bob:example.org': ['!old:example.org'],
+        }),
       })),
-      getRoom: vi.fn((id: string) => {
-        if (id !== '!old:example.org') {
+      getRoom: vi.fn((roomId: string) => {
+        if (roomId !== '!old:example.org') {
           return null
         }
         return { getMyMembership: () => 'join' }
       }),
       createRoom,
-      setAccountData: vi.fn(),
-      startClient: vi.fn(),
-      initRustCrypto: vi.fn(async () => undefined),
-      getCrypto: () => null,
-      getDeviceId: () => 'DEV'
-    }
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 't',
-        user_id: '@alice:example.org',
-        device_id: 'DEV'
-      }))
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    })
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, getOrCreateDirectMessageRoom } = useMatrixClient()
@@ -261,27 +228,13 @@ describe('getOrCreateDirectMessageRoom', () => {
   it('creates room and merges m.direct when none exists', async () => {
     const createRoom = vi.fn(async () => ({ room_id: '!new:example.org' }))
     const setAccountData = vi.fn(async () => undefined)
-    const matrixClient = {
-      getUserId: () => '@alice:example.org',
+    installLoginFlowFromStubs(createClient, {}, {
       getAccountData: vi.fn(() => undefined),
       getRoom: vi.fn(() => null),
       createRoom,
       setAccountData,
-      startClient: vi.fn(),
-      initRustCrypto: vi.fn(async () => undefined),
-      getCrypto: () => ({}),
-      getDeviceId: () => 'DEV'
-    }
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 't',
-        user_id: '@alice:example.org',
-        device_id: 'DEV'
-      }))
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+      getCrypto: vi.fn(() => ({})),
+    })
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, getOrCreateDirectMessageRoom } = useMatrixClient()
@@ -297,29 +250,7 @@ describe('leaveRoom via useMatrixClient', () => {
   it('delegates to matrix client leave', async () => {
     const leave = vi.fn(async () => undefined)
     const forget = vi.fn(async () => undefined)
-    const matrixClient = {
-      getUserId: () => '@alice:example.org',
-      getAccountData: vi.fn(() => undefined),
-      getRooms: vi.fn(() => []),
-      getRoom: vi.fn(() => null),
-      leave,
-      forget,
-      setAccountData: vi.fn(),
-      startClient: vi.fn(),
-      initRustCrypto: vi.fn(async () => undefined),
-      getCrypto: () => null,
-      getDeviceId: () => 'DEV',
-    }
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 't',
-        user_id: '@alice:example.org',
-        device_id: 'DEV',
-      })),
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    installLoginFlowFromStubs(createClient, {}, { leave, forget })
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, leaveRoom } = useMatrixClient()
@@ -330,28 +261,17 @@ describe('leaveRoom via useMatrixClient', () => {
   })
 
   it('getRooms omits rooms the user has left', async () => {
-    const joinedRoom = { roomId: '!joined:example.org', getMyMembership: () => 'join' }
-    const leftRoom = { roomId: '!left:example.org', getMyMembership: () => 'leave' }
-    const matrixClient = {
-      getUserId: () => '@alice:example.org',
-      getAccountData: vi.fn(() => undefined),
+    const joinedRoom = {
+      roomId: '!joined:example.org',
+      getMyMembership: () => 'join',
+    }
+    const leftRoom = {
+      roomId: '!left:example.org',
+      getMyMembership: () => 'leave',
+    }
+    installLoginFlowFromStubs(createClient, {}, {
       getRooms: vi.fn(() => [joinedRoom, leftRoom]),
-      getRoom: vi.fn(() => null),
-      startClient: vi.fn(),
-      initRustCrypto: vi.fn(async () => undefined),
-      getCrypto: () => null,
-      getDeviceId: () => 'DEV',
-    }
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 't',
-        user_id: '@alice:example.org',
-        device_id: 'DEV',
-      })),
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    })
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login, getRooms } = useMatrixClient()

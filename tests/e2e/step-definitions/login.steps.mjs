@@ -1,7 +1,10 @@
 import { Given, When, Then } from '@cucumber/cucumber'
 import { expect } from '@playwright/test'
 import { passwordField, fillPasswordField } from '../support/password-field.mjs'
-import { resolveE2ELoginUsername } from '../support/e2e-credentials.mjs'
+import {
+  resolveE2ELoginUsername,
+  resolveE2ESecondaryLoginUsername,
+} from '../support/e2e-credentials.mjs'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
@@ -36,16 +39,20 @@ async function fillLoginForm(
   homeserverValue,
   usernameValue,
   passwordValue,
+  loginUsernameOverride,
 ) {
-  const loginUsername = resolveE2ELoginUsername() || usernameValue
+  const loginUsername =
+    loginUsernameOverride ||
+    resolveE2ELoginUsername() ||
+    usernameValue
   await page.getByLabel(/Homeserver|Homeserver-URL/i).fill(homeserverValue)
   await page.getByLabel(/Username|Benutzername/i).fill(loginUsername)
   await fillPasswordField(page, passwordValue)
 }
 
-async function waitForChatRedirect(page, homeserverValue) {
+async function waitForChatRedirect(page, homeserverValue, timeoutMs = 45000) {
   try {
-    await expect(page).toHaveURL(/\/chat/, { timeout: 45000 })
+    await expect(page).toHaveURL(/\/chat/, { timeout: timeoutMs })
   } catch (error) {
     const loginError = await assertLoginError(page)
     const detail = loginError
@@ -57,11 +64,24 @@ async function waitForChatRedirect(page, homeserverValue) {
   }
 }
 
-async function submitLogin(page, homeserverValue, usernameValue, passwordValue) {
+async function submitLogin(
+  page,
+  homeserverValue,
+  usernameValue,
+  passwordValue,
+  redirectTimeoutMs = 45000,
+  loginUsernameOverride,
+) {
   await page.goto(`${BASE_URL}/login`)
-  await fillLoginForm(page, homeserverValue, usernameValue, passwordValue)
+  await fillLoginForm(
+    page,
+    homeserverValue,
+    usernameValue,
+    passwordValue,
+    loginUsernameOverride,
+  )
   await page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
-  await waitForChatRedirect(page, homeserverValue)
+  await waitForChatRedirect(page, homeserverValue, redirectTimeoutMs)
 }
 
 When('I open the login page', async function () {
@@ -137,7 +157,14 @@ When('I sign in with secondary configured credentials', async function () {
   const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
   const usernameValue = requireEnv('E2E_SECOND_MATRIX_USERNAME')
   const passwordValue = requireEnv('E2E_SECOND_MATRIX_PASSWORD')
-  await submitLogin(this.page, homeserverValue, usernameValue, passwordValue)
+  await submitLogin(
+    this.page,
+    homeserverValue,
+    usernameValue,
+    passwordValue,
+    90_000,
+    resolveE2ESecondaryLoginUsername() || usernameValue,
+  )
 })
 
 Then('I should see the login form', async function () {

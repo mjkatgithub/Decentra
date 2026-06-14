@@ -30,6 +30,18 @@ export function resolveE2EMatrixUserId() {
   )
 }
 
+/** Login form localpart for secondary user. */
+export function resolveE2ESecondaryLoginUsername() {
+  const raw =
+    process.env.E2E_SECOND_MATRIX_LOGIN_USERNAME ||
+    process.env.E2E_SECOND_MATRIX_USERNAME ||
+    ''
+  if (!raw) {
+    return ''
+  }
+  return extractE2ELocalpart(raw)
+}
+
 /** @param {'primary' | 'secondary'} which */
 export function resolveE2ESecondaryMatrixUserId() {
   return (

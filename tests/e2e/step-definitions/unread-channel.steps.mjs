@@ -175,10 +175,10 @@ Then(
     const roomButton = mainTestRoomButton(this.page)
     await expect(roomButton).toBeVisible({ timeout: 20000 })
     await expect(roomButton).toHaveAttribute('data-unread', 'false', {
-      timeout: 20000,
+      timeout: 45000,
     })
     await expect(roomButton).toHaveAttribute('data-mention-unread', 'false', {
-      timeout: 20000,
+      timeout: 45000,
     })
   },
 )

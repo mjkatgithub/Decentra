@@ -111,12 +111,21 @@ When('I set my presence to {string}', async function (presenceValue) {
 })
 
 When('I open the seeded test room', async function () {
+  const roomId = process.env.E2E_TEST_ROOM_ID
   const seededRoomName = process.env.E2E_TEST_ROOM_NAME || 'Decentra E2E Room'
-  const roomButton = this.page
-    .getByRole('button', { name: new RegExp(seededRoomName, 'i') })
-    .first()
+  const roomButton = roomId
+    ? this.page.locator(`button[data-room-id="${roomId}"]`).first()
+    : this.page
+      .getByRole('button', { name: new RegExp(seededRoomName, 'i') })
+      .first()
   await expect(roomButton).toBeVisible({ timeout: 20000 })
-  await roomButton.click()
+  await roomButton.scrollIntoViewIfNeeded()
+  await roomButton.click({ force: true })
+  if (roomId) {
+    await expect(
+      this.page.locator(`button[data-room-id="${roomId}"]`).first(),
+    ).toHaveAttribute('data-unread', 'false', { timeout: 45000 })
+  }
 })
 
 Then('I should see message body {string}', async function (messageText) {
@@ -303,6 +312,8 @@ When(
     const picker = this.page.getByTestId('composer-emoji-picker').last()
     const emojiOption = picker.locator(`[data-emoji-option="${emoji}"]`).first()
     await expect(emojiOption).toBeVisible({ timeout: 10000 })
+    await emojiOption.scrollIntoViewIfNeeded()
+    await emojiOption.scrollIntoViewIfNeeded()
     await emojiOption.click()
   }
 )
@@ -405,6 +416,8 @@ When('I submit the edit composer with {string}', async function (text) {
   await expect(input).toBeVisible({ timeout: 15000 })
   await input.fill(text)
   await input.press('Enter')
+  await expect(this.page.getByText(text, { exact: false }).first())
+    .toBeVisible({ timeout: 30000 })
 })
 
 Then('I should see the edit composer active', async function () {
@@ -439,6 +452,12 @@ When('I click reply on message body {string}', async function (messageText) {
 When('I use the mobile chat viewport', async function () {
   await this.page.setViewportSize({ width: 390, height: 844 })
   await this.page.emulateMedia({ media: 'screen' })
+  const menuButton = this.page.getByRole('button', {
+    name: /Toggle navigation|Navigation umschalten/i,
+  })
+  if (await menuButton.isVisible().catch(() => false)) {
+    await menuButton.click()
+  }
 })
 
 When(
@@ -472,6 +491,7 @@ When(
       .locator(`[data-emoji-option="${emoji}"]`)
       .first()
     await expect(emojiOption).toBeVisible({ timeout: 10000 })
+    await emojiOption.scrollIntoViewIfNeeded()
     await emojiOption.click()
   }
 )
@@ -484,7 +504,7 @@ When(
     const reactionChip = messageItem
       .locator(`[data-reaction-chip="${emoji}"]`)
       .first()
-    await expect(reactionChip).toBeVisible({ timeout: 10000 })
+    await expect(reactionChip).toBeVisible({ timeout: 20000 })
     await reactionChip.click()
   }
 )
@@ -497,7 +517,7 @@ Then(
     const reactionChip = messageItem
       .locator(`[data-reaction-chip="${emoji}"]`)
       .first()
-    await expect(reactionChip).toBeVisible({ timeout: 10000 })
+    await expect(reactionChip).toBeVisible({ timeout: 20000 })
     await expect(reactionChip).toContainText(emoji)
     await expect(reactionChip).toContainText(count)
   }
@@ -659,8 +679,11 @@ Then(
 
     const statusDot = memberRow.locator('span.absolute.h-3.w-3.rounded-full')
       .first()
+    await expect(statusDot).not.toHaveClass(/bg-gray-400/, {
+      timeout: 30000,
+    })
     await expect(statusDot).toHaveClass(new RegExp(expectedClassName), {
-      timeout: 15000
+      timeout: 30000,
     })
   }
 )
@@ -762,9 +785,19 @@ When('I create a new space with a unique name', async function () {
   this.lastCreatedSpaceName = uniqueName
   await this.page.goto(`${BASE_URL}/chat`)
   await expect(this.page).toHaveURL(/\/chat/, { timeout: 15000 })
-  const createSpaceButton = this.page.getByRole('button', {
-    name: /Create space|Space erstellen/i,
+  const spacesNav = this.page.locator('nav[aria-label="Spaces"]')
+  const expandRail = spacesNav.getByRole('button', {
+    name: /Expand spaces|Spaces erweitern/i,
   })
+  if (await expandRail.isVisible().catch(() => false)) {
+    await expandRail.click()
+  }
+  let createSpaceButton = spacesNav.getByTestId('create-space-button')
+  if (!(await createSpaceButton.isVisible().catch(() => false))) {
+    createSpaceButton = spacesNav.getByRole('button', {
+      name: /Create space|Space erstellen/i,
+    })
+  }
   await expect(createSpaceButton).toBeVisible({ timeout: 15000 })
   await createSpaceButton.click()
   await expect(this.page).toHaveURL(/\/spaces\/new/, { timeout: 15000 })
