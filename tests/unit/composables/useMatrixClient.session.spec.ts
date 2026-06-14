@@ -103,6 +103,40 @@ describe('useMatrixClient session', () => {
     })
   })
 
+  it('login sends localpart when username is a full MXID', async () => {
+    const authClient = {
+      loginRequest: vi.fn(async () => ({
+        access_token: 'token-123',
+        user_id: '@alice:example.org',
+        device_id: 'DEVICE123',
+      })),
+    }
+    const matrixClient = {
+      initRustCrypto: vi.fn(async () => undefined),
+      startClient: vi.fn(),
+    }
+    createClient
+      .mockReturnValueOnce(authClient)
+      .mockReturnValueOnce(matrixClient)
+
+    const { useMatrixClient } = await import('~/composables/useMatrixClient')
+    const { login } = useMatrixClient()
+    await login(
+      'https://matrix.example.org',
+      '@alice:example.org',
+      'secret',
+    )
+
+    expect(authClient.loginRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        identifier: {
+          type: 'm.id.user',
+          user: 'alice',
+        },
+      }),
+    )
+  })
+
   it('continues startup when Rust crypto init fails', async () => {
     const authClient = {
       loginRequest: vi.fn(async () => ({

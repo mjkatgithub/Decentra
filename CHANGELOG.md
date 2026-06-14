@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   container can read `localhost.signing.key`; merge all E2E env files;
   run Cucumber via Node (fixes Windows `@tag` ENOENT)
   ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
+- E2E login: seed writes localpart + `E2E_MATRIX_USER_ID`; app login
+  normalizes MXID; `npm run test:e2e:login` for isolated auth scenario
+  ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
 
 - Leave Matrix rooms from the chat sidebar: confirmation dialog,
   `leaveRoom` via matrix-js-sdk, `m.direct` cleanup for DMs, neutral

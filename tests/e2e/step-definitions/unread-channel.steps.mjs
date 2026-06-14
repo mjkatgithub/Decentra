@@ -13,8 +13,10 @@ function matrixHomeserverUrl() {
   return requireEnv('E2E_MATRIX_HOMESERVER').replace(/\/$/, '')
 }
 
+import { resolveE2EMatrixUserId } from '../support/e2e-credentials.mjs'
+
 function primaryMatrixUserId() {
-  return requireEnv('E2E_MATRIX_USERNAME')
+  return resolveE2EMatrixUserId()
 }
 
 function primaryLocalpart() {

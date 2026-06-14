@@ -76,6 +76,9 @@ npm run test:e2e:smoke
 # E2E with visible browser
 npm run test:e2e:headed
 
+# E2E login only (Synapse + seed + one @login scenario) — debug auth first
+npm run test:e2e:login
+
 # Coverage (currently from unit Vitest config)
 npm run test:coverage
 

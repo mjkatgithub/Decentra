@@ -32,10 +32,12 @@ function expectedPresenceDotClass(presenceValue) {
   throw new Error(`Unsupported presence value: ${presenceValue}`)
 }
 
+import { resolveE2EMatrixUserId } from '../support/e2e-credentials.mjs'
+
 function currentUserNameNeedle() {
-  const configuredUserId = process.env.E2E_MATRIX_USERNAME
+  const configuredUserId = resolveE2EMatrixUserId()
   if (!configuredUserId) {
-    throw new Error('Missing required E2E env: E2E_MATRIX_USERNAME')
+    throw new Error('Missing required E2E env: E2E_MATRIX_USER_ID')
   }
   if (!configuredUserId.includes(':')) {
     return configuredUserId.replace('@', '')
