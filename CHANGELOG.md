@@ -44,10 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   edit/upload/thread/pin/reaction, mobile reply) quarantined with
   `@wip` and excluded from the lane for dedicated follow-up
   ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
-- Synapse E2E seed: wait for registration API readiness (not only
-  `/versions`), retry transient seed Matrix requests, prefer shared-secret
-  registration on CI, and dump Synapse logs when seed fails
-  ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
+- Synapse E2E seed: bounded fetch timeouts, top-level await so the seed
+  process cannot exit before credentials are written, re-wait Synapse
+  before seed, shared-secret registration with retries, Synapse logs on
+  seed failure ([#122](https://github.com/mjkatgithub/Decentra/issues/122))
 
 - Leave Matrix rooms from the chat sidebar: confirmation dialog,
   `leaveRoom` via matrix-js-sdk, `m.direct` cleanup for DMs, neutral

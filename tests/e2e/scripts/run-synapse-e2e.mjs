@@ -29,6 +29,7 @@ function runCommand(binary, args) {
 async function main() {
   let testFailed = false
   await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'up'])
+  await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'wait'])
 
   try {
     await runCommand('node', ['tests/e2e/scripts/runtime-seed-synapse.mjs'])

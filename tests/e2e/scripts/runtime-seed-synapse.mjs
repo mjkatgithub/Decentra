@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadE2EEnv } from './runtime-e2e-env.mjs'
+import { fetchWithTimeout } from './runtime-fetch.mjs'
 
 const currentFilePath = fileURLToPath(import.meta.url)
 const workspaceRoot = resolve(dirname(currentFilePath), '..', '..', '..')
@@ -38,6 +39,7 @@ function isRetryableSeedError(error) {
     || message.includes('ECONNREFUSED')
     || message.includes('ECONNRESET')
     || message.includes('ETIMEDOUT')
+    || message.includes('Request timed out after')
     || message.includes('Unexpected token')
     || message.includes('is not valid JSON')
   ) {
@@ -67,7 +69,7 @@ function parseResponseBody(bodyText) {
 }
 
 async function requestJson(path, init) {
-  const response = await fetch(apiUrl(path), init)
+  const response = await fetchWithTimeout(apiUrl(path), init, 15000)
   const bodyText = await response.text()
   const body = parseResponseBody(bodyText)
   if (!response.ok) {
@@ -207,39 +209,11 @@ async function ensureUser(localpart, password) {
   }
 }
 
-async function warmUpRegistration() {
-  const timeoutMs = 60000
-  const pollMs = 2000
-  const startedAt = Date.now()
-  logStep('waiting for registration API warmup')
-
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(
-        apiUrl('/_synapse/admin/v1/register'),
-        { method: 'GET' },
-      )
-      if (response.ok) {
-        const body = parseResponseBody(await response.text())
-        if (typeof body.nonce === 'string' && body.nonce.length > 0) {
-          logStep('registration API warmup complete')
-          return
-        }
-      }
-    } catch {
-      // Keep polling until registration API is reachable.
-    }
-    await sleep(pollMs)
-  }
-
-  throw new Error('Registration API warmup timed out after 60 seconds')
-}
-
 async function withAuth(accessToken, path, init = {}) {
   const headers = {
     'content-type': 'application/json',
     ...(init.headers || {}),
-    authorization: `Bearer ${accessToken}`
+    authorization: `Bearer ${accessToken}`,
   }
   return requestJson(path, { ...init, headers })
 }
@@ -323,7 +297,6 @@ async function uploadAudio(accessToken) {
 
 async function main() {
   logStep(`starting seed against ${homeserver}`)
-  await warmUpRegistration()
   const primarySession = await ensureUser(primaryLocalpart, primaryPassword)
   const secondarySession = await ensureUser(secondaryLocalpart, secondaryPassword)
   logStep('users ready')
@@ -556,10 +529,12 @@ async function main() {
   console.log('Synapse E2E seeding completed')
 }
 
-void main().catch((error) => {
+try {
+  await main()
+} catch (error) {
   console.error(
     '[seed] fatal:',
     error instanceof Error ? error.stack || error.message : String(error),
   )
   process.exit(1)
-})
+}

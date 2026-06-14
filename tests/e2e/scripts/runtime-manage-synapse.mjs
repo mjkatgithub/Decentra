@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { loadE2EEnv, parseBoolean } from './runtime-e2e-env.mjs'
+import { fetchWithTimeout } from './runtime-fetch.mjs'
 
 const command = process.argv[2]
 const currentFilePath = fileURLToPath(import.meta.url)
@@ -147,20 +148,23 @@ function sleep(ms) {
 
 /**
  * /versions can return 200 before registration routes are ready on CI.
- * Also probe client registration and the shared-secret register nonce endpoint.
+ * Also probe the shared-secret register nonce endpoint used by the seed.
  */
 async function isSynapseReadyForSeed() {
   try {
-    const versionsResponse = await fetch(
+    const versionsResponse = await fetchWithTimeout(
       `${SYNAPSE_BASE_URL}/_matrix/client/versions`,
+      {},
+      10000,
     )
     if (!versionsResponse.ok) {
       return false
     }
 
-    const registerResponse = await fetch(
+    const registerResponse = await fetchWithTimeout(
       `${SYNAPSE_BASE_URL}/_synapse/admin/v1/register`,
       { method: 'GET' },
+      10000,
     )
     if (!registerResponse.ok) {
       return false
@@ -173,28 +177,8 @@ async function isSynapseReadyForSeed() {
     } catch {
       return false
     }
-    if (typeof registerBody.nonce !== 'string' || registerBody.nonce.length === 0) {
-      return false
-    }
-
-    const clientRegisterResponse = await fetch(
-      `${SYNAPSE_BASE_URL}/_matrix/client/v3/register`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
-      },
-    )
-    // Ready when Synapse returns a structured Matrix error, not a proxy HTML page.
-    const clientBodyText = await clientRegisterResponse.text()
-    try {
-      const clientBody = clientBodyText ? JSON.parse(clientBodyText) : {}
-      return typeof clientBody.errcode === 'string'
-        || typeof clientBody.session === 'string'
-        || clientRegisterResponse.ok
-    } catch {
-      return false
-    }
+    return typeof registerBody.nonce === 'string'
+      && registerBody.nonce.length > 0
   } catch {
     return false
   }
