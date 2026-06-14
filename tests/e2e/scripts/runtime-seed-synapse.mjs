@@ -23,6 +23,10 @@ function apiUrl(path) {
   return `${homeserver}${path}`
 }
 
+function logStep(message) {
+  console.log(`[seed] ${message}`)
+}
+
 async function requestJson(path, init) {
   const response = await fetch(apiUrl(path), init)
   const bodyText = await response.text()
@@ -60,7 +64,7 @@ async function registerViaSecret(localpart, password) {
 
 async function ensureUser(localpart, password) {
   try {
-    return await requestJson('/_matrix/client/v3/register', {
+    const session = await requestJson('/_matrix/client/v3/register', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -69,11 +73,18 @@ async function ensureUser(localpart, password) {
         auth: { type: 'm.login.dummy' }
       })
     })
+    logStep(`ensureUser ${localpart}: registered via dummy`)
+    return session
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     if (errorMessage.includes('M_USER_IN_USE')) {
+      logStep(`ensureUser ${localpart}: exists, logging in`)
       return login(localpart, password)
     }
+    logStep(
+      `ensureUser ${localpart}: dummy failed (${errorMessage}); `
+      + 'falling back to shared-secret register',
+    )
     return registerViaSecret(localpart, password)
   }
 }
@@ -165,8 +176,10 @@ async function uploadAudio(accessToken) {
 }
 
 async function main() {
+  logStep(`starting seed against ${homeserver}`)
   const primarySession = await ensureUser(primaryLocalpart, primaryPassword)
   const secondarySession = await ensureUser(secondaryLocalpart, secondaryPassword)
+  logStep('users ready')
   const roomResponse = await withAuth(primarySession.access_token, '/_matrix/client/v3/createRoom', {
     method: 'POST',
     body: JSON.stringify({
@@ -190,6 +203,7 @@ async function main() {
     },
   )
   const sideRoomId = sideRoomResponse.room_id
+  logStep('main + side rooms created')
 
   const spaceName = process.env.E2E_TEST_SPACE_NAME || 'Decentra E2E Space'
   const spaceChannelName =
@@ -233,6 +247,7 @@ async function main() {
       body: JSON.stringify({ via }),
     },
   )
+  logStep('space + channel created and linked')
 
   await withAuth(
     secondarySession.access_token,
@@ -257,11 +272,13 @@ async function main() {
     `/_matrix/client/v3/rooms/${encodeURIComponent(spaceChannelId)}/join`,
     { method: 'POST', body: '{}' },
   )
+  logStep('secondary user joined main/side/space rooms')
   await withAuth(
     primarySession.access_token,
     `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.encryption`,
     { method: 'PUT', body: JSON.stringify({ algorithm: 'm.megolm.v1.aes-sha2' }) }
   )
+  logStep('encryption enabled on main room')
 
   const baseEvent = await sendMessage(primarySession.access_token, roomId, 'seed-text-1', {
     msgtype: 'm.text',
@@ -325,6 +342,7 @@ async function main() {
     msgtype: 'm.text',
     body: 'E2E_POST_UNDECRYPTABLE_MESSAGE'
   })
+  logStep('seed messages + media sent')
 
   const leaveDmRoomResponse = await withAuth(
     primarySession.access_token,
@@ -361,6 +379,8 @@ async function main() {
     { msgtype: 'm.text', body: 'E2E_LEAVE_DM_SEED' },
   )
 
+  logStep('leave DM room seeded')
+
   const generatedEnvPath = resolve(workspaceRoot, 'tests/e2e/.env.e2e.generated')
   mkdirSync(dirname(generatedEnvPath), { recursive: true })
   const generatedEnv = [
@@ -385,6 +405,7 @@ async function main() {
     `E2E_LEAVE_DM_ROOM_ID=${leaveDmRoomId}`,
   ].join('\n')
   writeFileSync(generatedEnvPath, `${generatedEnv}\n`, 'utf8')
+  logStep(`wrote credentials to ${generatedEnvPath}`)
   console.log('Synapse E2E seeding completed')
 }
 

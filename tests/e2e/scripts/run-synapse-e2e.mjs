@@ -31,7 +31,14 @@ async function main() {
   await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'up'])
   await runCommand('node', ['tests/e2e/scripts/runtime-seed-synapse.mjs'])
   loadE2EEnv(workspaceRoot)
-  if (!existsSync(generatedEnvPath) || !process.env.E2E_MATRIX_USERNAME) {
+  const generatedEnvExists = existsSync(generatedEnvPath)
+  const matrixUsername = process.env.E2E_MATRIX_USERNAME
+  if (!generatedEnvExists || !matrixUsername) {
+    console.error(
+      `[e2e] generated env path: ${generatedEnvPath} `
+      + `(exists=${generatedEnvExists}); `
+      + `E2E_MATRIX_USERNAME=${matrixUsername || '(unset)'}`,
+    )
     throw new Error(
       'Synapse seed did not write E2E credentials to '
       + 'tests/e2e/.env.e2e.generated'
