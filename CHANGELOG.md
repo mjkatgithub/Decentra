@@ -294,6 +294,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- E2E mobile reply: scope Playwright `hasTouch` to `@mobile` browser
+  contexts only so tap-to-reply works without breaking desktop hover
+  actions; re-enable `Reply via tap on mobile viewport` scenario
+  ([#135](https://github.com/mjkatgithub/Decentra/issues/135))
+
 - Synapse E2E on Linux CI: restore data-dir ownership after `synapse generate`
   so `homeserver.yaml` overrides are writable (GitHub Actions EACCES)
   ([#122](https://github.com/mjkatgithub/Decentra/issues/122))

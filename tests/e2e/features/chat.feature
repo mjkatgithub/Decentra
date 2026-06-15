@@ -157,7 +157,7 @@ Feature: Chat
     And I click reply on message body "E2E_SEED_BASE_MESSAGE"
     Then I should see the reply composer with preview "E2E_SEED_BASE_MESSAGE"
 
-  @wip
+  @mobile
   Scenario: Reply via tap on mobile viewport
     When I open the login page
     And I sign in with configured credentials
