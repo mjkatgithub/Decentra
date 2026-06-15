@@ -26,7 +26,10 @@ Note in the issue **Notes** with one line, for example:
 ## Documentation checklist
 - [ ] Structural change? Update `docs/architecture.md` (relevant section only)
 - [ ] If no doc change: note in **Notes**: `Docs: N/A — …`
-- [ ] User-visible change logged in CHANGELOG under `[Unreleased]`
+- [ ] User-visible change logged in CHANGELOG under `[Unreleased]`:
+  read file until last `## [version]` release; use existing `### Added` /
+  `### Changed` / `### Fixed` blocks; prepend bullet at top of the right
+  subsection (never nest `### Fixed` inside `### Added`)
 ```
 
 Main map: [architecture.md](architecture.md). Hub: [README.md](README.md).

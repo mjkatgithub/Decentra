@@ -28,6 +28,23 @@
 - When an issue is successfully completed, add a concise entry under
   `## [Unreleased]` in `CHANGELOG.md` (Keep a Changelog style, link the
   issue number) before telling the user the work is ready to merge.
+- **CHANGELOG placement** (read the file first — do not append blindly
+  under `[Unreleased]`):
+  - Scan from the top until the first `## [version]` release heading
+    (e.g. `## [0.1.0]`). Everything above that is `[Unreleased]`.
+  - Under `[Unreleased]`, use the **existing** subsection headings only:
+    `### Added`, `### Changed`, `### Deprecated`, `### Removed`,
+    `### Fixed`, `### Security`. Do **not** add a second `### Fixed`
+    (or any duplicate heading) inside `### Added` or elsewhere.
+  - Insert each new bullet **at the top of the matching subsection**
+    (immediately after its `### …` line), newest first within that block.
+  - Pick the subsection by change type: new capability → Added; behavior
+    change → Changed; bug/CI/test fix → Fixed; removal → Removed; etc.
+  - One bullet per deliverable; link the GitHub issue
+    (`[#123](https://github.com/mjkatgithub/Decentra/issues/123)`).
+  - If the subsection does not exist yet under `[Unreleased]`, add it in
+    Keep a Changelog order **before** the next lower section (e.g. new
+    `### Fixed` after `### Changed`, not after `### Added`).
 
 ## Project documentation
 
