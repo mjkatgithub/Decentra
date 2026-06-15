@@ -6,6 +6,7 @@ import { loadE2EEnv } from '../scripts/runtime-e2e-env.mjs'
 setDefaultTimeout(120 * 1000)
 
 let browser
+let context
 let page
 
 const isHeadless = process.env.HEADLESS !== 'false'
@@ -34,6 +35,13 @@ function shouldValidateSynapseEnv(pickle) {
       step.text.includes(marker),
     )
   })
+}
+
+function scenarioNeedsTouchContext(pickle) {
+  if (!pickle?.tags) {
+    return false
+  }
+  return pickle.tags.some((tag) => tag.name === '@mobile')
 }
 
 function validateSynapseEnv() {
@@ -65,10 +73,21 @@ Before(async function ({ pickle }) {
   if (shouldValidateSynapseEnv(pickle)) {
     validateSynapseEnv()
   }
-  page = await browser.newPage()
+  const touchContext = scenarioNeedsTouchContext(pickle)
+  context = await browser.newContext(
+    touchContext ? { hasTouch: true } : {},
+  )
+  page = await context.newPage()
   this.page = page
 })
 
 After(async function () {
-  if (page) await page.close()
+  if (page) {
+    await page.close()
+    page = undefined
+  }
+  if (context) {
+    await context.close()
+    context = undefined
+  }
 })
