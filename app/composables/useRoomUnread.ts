@@ -68,6 +68,13 @@ export function useRoomUnread(options: {
   }
 
   watch(
+    () => options.selectedRoomId.value,
+    () => {
+      refreshUnread()
+    },
+  )
+
+  watch(
     () => options.client.value,
     (matrixClient, _previousClient, onCleanup) => {
       if (!matrixClient) {

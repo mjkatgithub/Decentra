@@ -20,11 +20,20 @@ export function applyUnreadToRoomCategories<
   categories: T[],
   unreadByRoomId: Record<string, RoomUnreadState>,
   includeUnread: boolean,
+  activeRoomId?: string | null,
 ): Array<Omit<T, 'rooms'> & { rooms: RoomCategoryRoomWithUnread[] }> {
   return categories.map((category) => ({
     ...category,
     rooms: category.rooms.map((room) => {
       if (!includeUnread) {
+        return {
+          roomId: room.roomId,
+          name: room.name,
+          hasUnread: false,
+          hasMentionUnread: false,
+        }
+      }
+      if (activeRoomId && activeRoomId === room.roomId) {
         return {
           roomId: room.roomId,
           name: room.name,

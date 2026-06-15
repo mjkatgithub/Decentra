@@ -1,43 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildMatrixSdkMock } from './matrixClientSdkMock'
+import './matrixClientSpecMocks'
+import { createClient } from 'matrix-js-sdk'
 import {
-  setupFreshMatrixClientGlobals,
+  installLoginFlow,
+  loginAndImport,
+} from './matrixClientTestDoubles'
+import {
+  prepareMatrixClientSpecFile,
   setupMatrixClientTestGlobals,
 } from './matrixClientTestSetup'
 
-const matrixMocks = vi.hoisted(() => ({
-  createClient: vi.fn(),
-  initCryptoWasm: vi.fn(async () => undefined),
-}))
-
-vi.mock('matrix-js-sdk', () => buildMatrixSdkMock(matrixMocks.createClient))
-vi.mock('@matrix-org/matrix-sdk-crypto-wasm', () => ({
-  initAsync: matrixMocks.initCryptoWasm,
-}))
-vi.mock('~/utils/videoMetadata', () => ({
-  readVideoMetadata: vi.fn(async () => ({
-    durationMs: 5000,
-    w: 640,
-    h: 360,
-  })),
-  captureVideoThumbnail: vi.fn(async () => (
-    new Blob(['thumb'], { type: 'image/jpeg' })
-  )),
-}))
-
-const createClient = matrixMocks.createClient
-const initCryptoWasm = matrixMocks.initCryptoWasm
-
 describe('useMatrixClient session', () => {
   beforeEach(() => {
-    vi.resetModules()
-    vi.clearAllMocks()
+    prepareMatrixClientSpecFile()
     setupMatrixClientTestGlobals()
+    installLoginFlow(createClient)
   })
 
   it('marks restore as success when no session exists', async () => {
-    setupFreshMatrixClientGlobals()
-
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const {
       sessionRestoreStatus,
@@ -48,20 +28,21 @@ describe('useMatrixClient session', () => {
 
     expect(sessionRestoreStatus.value).toBe('success')
     expect(createClient).not.toHaveBeenCalled()
-  }, 15000)
+  })
 
   it('marks restore as failure when session bootstrap throws', async () => {
+    prepareMatrixClientSpecFile()
+    createClient.mockImplementation(() => {
+      throw new Error('restore failed')
+    })
+    setupMatrixClientTestGlobals({ initialRestoreStatus: 'idle' })
     localStorage.setItem('decentra.matrix.session.v1', JSON.stringify({
       baseUrl: 'https://matrix.example.org',
       accessToken: 'token-123',
       userId: '@alice:example.org',
     }))
-    createClient.mockImplementation(() => {
-      throw new Error('restore failed')
-    })
     const consoleErrorSpy = vi.spyOn(console, 'error')
       .mockImplementation(() => undefined)
-    setupFreshMatrixClientGlobals()
 
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const {
@@ -78,108 +59,91 @@ describe('useMatrixClient session', () => {
 
   it('initializes Rust crypto before starting client', async () => {
     const callOrder: string[] = []
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 'token-123',
-        user_id: '@alice:example.org',
-        device_id: 'DEVICE123'
-      }))
-    }
-    const matrixClient = {
-      initRustCrypto: vi.fn(async () => {
-        callOrder.push('initRustCrypto')
-      }),
-      startClient: vi.fn(() => {
-        callOrder.push('startClient')
-      })
-    }
-
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
-
-    const { useMatrixClient } = await import('~/composables/useMatrixClient')
-    const { login } = useMatrixClient()
-    await login('https://matrix.example.org', 'alice', 'secret')
+    const { matrixClient, authClient } = await loginAndImport(
+      createClient,
+      {
+        initRustCrypto: vi.fn(async () => {
+          callOrder.push('initRustCrypto')
+        }),
+        startClient: vi.fn(() => {
+          callOrder.push('startClient')
+        }),
+      },
+    )
 
     expect(authClient.loginRequest).toHaveBeenCalledWith({
       type: 'm.login.password',
       identifier: {
         type: 'm.id.user',
-        user: 'alice'
+        user: 'alice',
       },
       password: 'secret',
-      device_id: undefined
+      device_id: undefined,
     })
     expect(matrixClient.initRustCrypto).toHaveBeenCalledTimes(1)
     expect(matrixClient.startClient).toHaveBeenCalledWith({
-      initialSyncLimit: 50
+      initialSyncLimit: 50,
     })
     expect(callOrder).toEqual(['initRustCrypto', 'startClient'])
     expect(createClient).toHaveBeenNthCalledWith(2, {
       baseUrl: 'https://matrix.example.org',
       accessToken: 'token-123',
       userId: '@alice:example.org',
-      deviceId: 'DEVICE123'
+      deviceId: 'DEVICE123',
     })
   })
 
+  it('login sends localpart when username is a full MXID', async () => {
+    const { clientApi, authClient } = await loginAndImport(createClient)
+    await clientApi.login(
+      'https://matrix.example.org',
+      '@alice:example.org',
+      'secret',
+    )
+
+    expect(authClient.loginRequest).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        identifier: {
+          type: 'm.id.user',
+          user: 'alice',
+        },
+      }),
+    )
+  })
+
   it('continues startup when Rust crypto init fails', async () => {
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 'token-123',
-        user_id: '@alice:example.org',
-        device_id: 'DEVICE123'
-      }))
-    }
-    const matrixClient = {
+    const consoleErrorSpy = vi.spyOn(console, 'error')
+      .mockImplementation(() => undefined)
+    const { matrixClient } = await loginAndImport(createClient, {
       initRustCrypto: vi.fn(async () => {
         throw new Error('wasm missing')
       }),
-      startClient: vi.fn()
-    }
-
-    const consoleErrorSpy = vi.spyOn(console, 'error')
-      .mockImplementation(() => undefined)
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
-
-    const { useMatrixClient } = await import('~/composables/useMatrixClient')
-    const { login } = useMatrixClient()
-    await login('https://matrix.example.org', 'alice', 'secret')
+    })
 
     expect(matrixClient.startClient).toHaveBeenCalledWith({
-      initialSyncLimit: 50
+      initialSyncLimit: 50,
     })
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1)
     consoleErrorSpy.mockRestore()
   })
 
   it('skips Rust crypto init when device id is missing', async () => {
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 'token-123',
-        user_id: '@alice:example.org'
-      }))
-    }
-    const matrixClient = {
-      initRustCrypto: vi.fn(async () => undefined),
-      startClient: vi.fn()
-    }
     const consoleWarnSpy = vi.spyOn(console, 'warn')
       .mockImplementation(() => undefined)
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
-
-    const { useMatrixClient } = await import('~/composables/useMatrixClient')
-    const { login } = useMatrixClient()
-    await login('https://matrix.example.org', 'alice', 'secret')
+    const { matrixClient } = await loginAndImport(
+      createClient,
+      {},
+      {
+        loginRequest: vi.fn(async () => ({
+          access_token: 'token-123',
+          user_id: '@alice:example.org',
+        })),
+      },
+    )
 
     expect(matrixClient.initRustCrypto).not.toHaveBeenCalled()
     expect(matrixClient.startClient).toHaveBeenCalledWith({
-      initialSyncLimit: 50
+      initialSyncLimit: 50,
     })
     expect(consoleWarnSpy).toHaveBeenCalledTimes(1)
     consoleWarnSpy.mockRestore()
@@ -190,35 +154,19 @@ describe('useMatrixClient session', () => {
       baseUrl: 'https://matrix.example.org',
       accessToken: 'old-token',
       userId: '@alice:example.org',
-      deviceId: 'DEVICE123'
+      deviceId: 'DEVICE123',
     }))
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 'new-token',
-        user_id: '@alice:example.org',
-        device_id: 'DEVICE123'
-      }))
-    }
-    const matrixClient = {
-      initRustCrypto: vi.fn(async () => undefined),
-      startClient: vi.fn()
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    const { clientApi, authClient } = await loginAndImport(createClient)
+    await clientApi.login('https://matrix.example.org', 'alice', 'secret')
 
-    const { useMatrixClient } = await import('~/composables/useMatrixClient')
-    const { login } = useMatrixClient()
-    await login('https://matrix.example.org', 'alice', 'secret')
-
-    expect(authClient.loginRequest).toHaveBeenCalledWith({
+    expect(authClient.loginRequest).toHaveBeenLastCalledWith({
       type: 'm.login.password',
       identifier: {
         type: 'm.id.user',
-        user: 'alice'
+        user: 'alice',
       },
       password: 'secret',
-      device_id: 'DEVICE123'
+      device_id: 'DEVICE123',
     })
   })
 
@@ -226,35 +174,19 @@ describe('useMatrixClient session', () => {
     localStorage.setItem('decentra.matrix.device.v1', JSON.stringify({
       baseUrl: 'https://matrix.example.org',
       userId: '@alice:example.org',
-      deviceId: 'DEVICE123'
+      deviceId: 'DEVICE123',
     }))
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 'new-token',
-        user_id: '@alice:example.org',
-        device_id: 'DEVICE123'
-      }))
-    }
-    const matrixClient = {
-      initRustCrypto: vi.fn(async () => undefined),
-      startClient: vi.fn()
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
+    const { clientApi, authClient } = await loginAndImport(createClient)
+    await clientApi.login('https://matrix.example.org', 'alice', 'secret')
 
-    const { useMatrixClient } = await import('~/composables/useMatrixClient')
-    const { login } = useMatrixClient()
-    await login('https://matrix.example.org', 'alice', 'secret')
-
-    expect(authClient.loginRequest).toHaveBeenCalledWith({
+    expect(authClient.loginRequest).toHaveBeenLastCalledWith({
       type: 'm.login.password',
       identifier: {
         type: 'm.id.user',
-        user: 'alice'
+        user: 'alice',
       },
       password: 'secret',
-      device_id: 'DEVICE123'
+      device_id: 'DEVICE123',
     })
   })
 
@@ -263,35 +195,31 @@ describe('useMatrixClient session', () => {
       baseUrl: 'https://matrix.example.org',
       accessToken: 'old-token',
       userId: '@alice:example.org',
-      deviceId: 'DEVICE123'
+      deviceId: 'DEVICE123',
     }))
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 'new-token',
-        user_id: '@bob:example.org',
-        device_id: 'DEVICE999'
-      }))
-    }
-    const matrixClient = {
-      initRustCrypto: vi.fn(async () => undefined),
-      startClient: vi.fn()
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
-
+    const { authClient } = installLoginFlow(
+      createClient,
+      {},
+      {
+        loginRequest: vi.fn(async () => ({
+          access_token: 'new-token',
+          user_id: '@bob:example.org',
+          device_id: 'DEVICE999',
+        })),
+      },
+    )
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login } = useMatrixClient()
     await login('https://matrix.example.org', 'bob', 'secret')
 
-    expect(authClient.loginRequest).toHaveBeenCalledWith({
+    expect(authClient.loginRequest).toHaveBeenLastCalledWith({
       type: 'm.login.password',
       identifier: {
         type: 'm.id.user',
-        user: 'bob'
+        user: 'bob',
       },
       password: 'secret',
-      device_id: undefined
+      device_id: undefined,
     })
   })
 
@@ -300,36 +228,31 @@ describe('useMatrixClient session', () => {
       baseUrl: 'https://matrix.example.org',
       accessToken: 'old-token',
       userId: '@alice:example.org',
-      deviceId: 'DEVICE123'
+      deviceId: 'DEVICE123',
     }))
-    const authClient = {
-      loginRequest: vi.fn(async () => ({
-        access_token: 'new-token',
-        user_id: '@alice:other.org',
-        device_id: 'DEVICE999'
-      }))
-    }
-    const matrixClient = {
-      initRustCrypto: vi.fn(async () => undefined),
-      startClient: vi.fn()
-    }
-    createClient
-      .mockReturnValueOnce(authClient)
-      .mockReturnValueOnce(matrixClient)
-
+    const { authClient } = installLoginFlow(
+      createClient,
+      {},
+      {
+        loginRequest: vi.fn(async () => ({
+          access_token: 'new-token',
+          user_id: '@alice:other.org',
+          device_id: 'DEVICE999',
+        })),
+      },
+    )
     const { useMatrixClient } = await import('~/composables/useMatrixClient')
     const { login } = useMatrixClient()
     await login('https://other.example.org', 'alice', 'secret')
 
-    expect(authClient.loginRequest).toHaveBeenCalledWith({
+    expect(authClient.loginRequest).toHaveBeenLastCalledWith({
       type: 'm.login.password',
       identifier: {
         type: 'm.id.user',
-        user: 'alice'
+        user: 'alice',
       },
       password: 'secret',
-      device_id: undefined
+      device_id: undefined,
     })
   })
-
 })

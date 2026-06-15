@@ -76,6 +76,9 @@ npm run test:e2e:smoke
 # E2E with visible browser
 npm run test:e2e:headed
 
+# E2E login only (Synapse + seed + one @login scenario) — debug auth first
+npm run test:e2e:login
+
 # Coverage (currently from unit Vitest config)
 npm run test:coverage
 
@@ -88,6 +91,25 @@ npm run test:ci:full
 # Install Playwright browser (one-time)
 npm run prepare:e2e
 ```
+
+### Test layers (current state)
+
+| Layer | Location | Role today |
+|-------|----------|------------|
+| Unit | `tests/unit/` | Main safety net (~438 tests); composables, utils, components |
+| Integration | `tests/integration/` | Small module-level checks (3 files, 9 tests); not full Nuxt/Matrix wiring |
+| E2E | `tests/e2e/` | Cucumber + Playwright against Docker Synapse |
+
+**Coverage:** `npm run test:coverage` reports **~50% lines** overall
+(`vitest.config.ts` thresholds are intentionally low at 10–20% so CI
+passes while pages/plugins stay mostly untested). A **~90%** target is
+reasonable for critical modules (Matrix client, timeline, auth) but is **not**
+the current baseline — raise thresholds incrementally per epic/issue.
+
+**Integration gap:** Issue templates mention integration tests; most features
+today rely on unit + E2E. Expanding `tests/integration/` (e.g. composable
+chains, i18n + component mount, timeline with mocked Matrix room) is backlog
+work, not part of the CI lane fix.
 
 ### E2E Credentials
 
@@ -104,17 +126,28 @@ The local file stays untracked.
 
 This repo uses `.github/workflows/ci.yml` with two lanes:
 
-- **Fast lane:** runs on push + pull request (`test:ci:fast`).
-- **Full lane:** runs nightly and optionally manual
-  (`test:ci:full`).
+- **Fast lane:** runs on push to non-`master` branches (feature branches,
+  `develop`); runs `test:ci:fast` (unit + integration + E2E smoke).
+- **Full lane:** runs on every pull request (targets `develop` or
+  `master`), push to `master`, nightly schedule, and manual dispatch with
+  `run_full: true`; runs `test:ci:full` (integration + coverage + full
+  Synapse E2E via Docker).
 
-### Required repository secrets (for full lane)
+### E2E credentials (full lane)
 
-Set these in GitHub under **Settings > Secrets and variables > Actions**:
+The full lane starts a local Synapse stack in Docker and writes
+`tests/e2e/.env.e2e.generated` during seeding — **no GitHub secrets are
+required** for the default CI full-lane path.
+
+For optional scenarios against an external homeserver (e.g. matrix.org),
+set repository secrets under **Settings > Secrets and variables > Actions**:
 
 - `E2E_MATRIX_HOMESERVER` (optional, defaults to `https://matrix.org`)
 - `E2E_MATRIX_USERNAME`
 - `E2E_MATRIX_PASSWORD`
+
+For local credential-based runs, copy `tests/e2e/.env.e2e.example` to
+`tests/e2e/.env.e2e.local` and fill in username/password (see above).
 
 ### How to run manually
 

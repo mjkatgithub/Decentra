@@ -12,7 +12,7 @@ Feature: Login
     And I log in with "invalid" and "wrong"
     Then an error message should appear
 
-  @auth
+  @auth @login
   Scenario: Login with configured credentials
     Given valid e2e credentials are configured
     When I open the login page

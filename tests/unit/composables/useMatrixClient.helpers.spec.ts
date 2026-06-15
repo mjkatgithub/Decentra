@@ -1,32 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { buildMatrixSdkMock } from './matrixClientSdkMock'
-import {
-  setupFreshMatrixClientGlobals,
-  setupMatrixClientTestGlobals,
-} from './matrixClientTestSetup'
+import { beforeEach, describe, expect, it } from 'vitest'
+import './matrixClientSpecMocks'
+import { prepareMatrixClientSpecFile } from './matrixClientTestSetup'
 
-const matrixMocks = vi.hoisted(() => ({
-  createClient: vi.fn(),
-  initCryptoWasm: vi.fn(async () => undefined),
-}))
-
-vi.mock('matrix-js-sdk', () => buildMatrixSdkMock(matrixMocks.createClient))
-vi.mock('@matrix-org/matrix-sdk-crypto-wasm', () => ({
-  initAsync: matrixMocks.initCryptoWasm,
-}))
-vi.mock('~/utils/videoMetadata', () => ({
-  readVideoMetadata: vi.fn(async () => ({
-    durationMs: 5000,
-    w: 640,
-    h: 360,
-  })),
-  captureVideoThumbnail: vi.fn(async () => (
-    new Blob(['thumb'], { type: 'image/jpeg' })
-  )),
-}))
-
-const createClient = matrixMocks.createClient
-const initCryptoWasm = matrixMocks.initCryptoWasm
+beforeEach(() => {
+  prepareMatrixClientSpecFile()
+})
 
 describe('resolveHomeserverBaseUrlForClient', () => {
   it('upgrades http to https for public hostnames', async () => {

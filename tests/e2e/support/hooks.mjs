@@ -42,9 +42,11 @@ function validateSynapseEnv() {
     'E2E_MATRIX_USERNAME',
     'E2E_MATRIX_PASSWORD',
     'E2E_SECOND_MATRIX_USERNAME',
-    'E2E_SECOND_MATRIX_PASSWORD'
+    'E2E_SECOND_MATRIX_PASSWORD',
   ]
-  const missingKeys = requiredKeys.filter((requiredKey) => !process.env[requiredKey])
+  const missingKeys = requiredKeys.filter(
+    (requiredKey) => !process.env[requiredKey],
+  )
   if (missingKeys.length === 0) {
     return
   }

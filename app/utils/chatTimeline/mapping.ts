@@ -6,8 +6,10 @@ import {
   buildUndecryptableMessageText,
   getMessageBody,
   getRedactedEventIds,
+  isDecryptableChatMessageEvent,
   isRedactedMessageEvent,
   isUndecryptableEvent,
+  readChatMessageContent,
 } from './reactionsAndMedia'
 import {
   buildMessageRelationIndex,
@@ -85,7 +87,7 @@ export function mapTimelineEventsToMessages({
   const visibleMessageEvents = timelineEvents.filter(
     (timelineEvent: Record<string, any>) => {
       return (
-        (timelineEvent.getType?.() ?? '') === 'm.room.message' &&
+        isDecryptableChatMessageEvent(timelineEvent) &&
         !isUndecryptableEvent(timelineEvent)
       )
     },
@@ -129,12 +131,11 @@ export function mapTimelineEventsToMessages({
           timelineEvent,
           redactedEventIds,
         )
+        const isChatMessage = isDecryptableChatMessageEvent(timelineEvent)
         const undecryptableMessage =
           !redactedMessage && isUndecryptableEvent(timelineEvent)
         const isMessageEvent =
-          eventType === 'm.room.message' ||
-          undecryptableMessage ||
-          redactedMessage
+          isChatMessage || undecryptableMessage || redactedMessage
         const body = isMessageEvent
           ? getMessageBody(timelineEvent, senderName, undecryptableMessage, {
               redactedMessage,
@@ -143,7 +144,7 @@ export function mapTimelineEventsToMessages({
           : buildNoticeText(timelineEvent, room)
 
         const readBy =
-          eventType === 'm.room.message' &&
+          isChatMessage &&
           !undecryptableMessage &&
           !redactedMessage &&
           currentEventId
@@ -175,18 +176,17 @@ export function mapTimelineEventsToMessages({
                 }))
             : []
 
-        const content = timelineEvent.getContent() ?? {}
-        const relationSnapshot =
-          eventType === 'm.room.message'
-            ? readMessageRelationSnapshot(timelineEvent)
-            : undefined
+        const content = readChatMessageContent(timelineEvent)
+        const relationSnapshot = isChatMessage
+          ? readMessageRelationSnapshot(timelineEvent)
+          : undefined
         const reactions =
-          eventType === 'm.room.message' && currentEventId
+          isChatMessage && currentEventId
             ? (reactionSummaryByEventId.get(currentEventId) ?? [])
             : []
         let media: ChatTimelineMedia | undefined
         const replyTo =
-          eventType === 'm.room.message' && !undecryptableMessage
+          isChatMessage && !undecryptableMessage
             ? buildReplyMetadata(
                 content,
                 room,
@@ -198,7 +198,7 @@ export function mapTimelineEventsToMessages({
               )
             : undefined
 
-        if (eventType === 'm.room.message') {
+        if (isChatMessage) {
           media = buildTimelineMediaFromContent({
             content,
             body,
@@ -207,7 +207,7 @@ export function mapTimelineEventsToMessages({
         }
 
         const messageKind: ChatTimelineMessage['kind'] =
-          eventType === 'm.room.message' &&
+          isChatMessage &&
           !undecryptableMessage &&
           !redactedMessage
             ? 'message'
@@ -230,7 +230,7 @@ export function mapTimelineEventsToMessages({
           readBy,
           isEdited: relationSnapshot?.isReplacement === true,
           editTargetEventId:
-            eventType === 'm.room.message' &&
+            isChatMessage &&
             !undecryptableMessage &&
             !redactedMessage
               ? (relationSnapshot?.replaceTargetId ?? currentEventId)

@@ -1,6 +1,7 @@
 import { readMessageRelationSnapshot } from '~/utils/matrixThreadRelations'
 import {
   getMessageBody,
+  isDecryptableChatMessageEvent,
   isRedactedMessageEvent,
   isUndecryptableEvent,
   getRedactedEventIds,
@@ -90,8 +91,7 @@ export function collectMessageTimelineEvents(
   rawEvents: TimelineEventRecord[],
 ): TimelineEventRecord[] {
   return rawEvents.filter((timelineEvent) => {
-    const eventType = timelineEvent.getType?.() ?? ''
-    return eventType === 'm.room.message' && !isUndecryptableEvent(timelineEvent)
+    return isDecryptableChatMessageEvent(timelineEvent)
   })
 }
 
@@ -221,7 +221,7 @@ function shouldIncludeMessageInMainTimeline(
   relationIndex: MessageRelationIndex,
 ): boolean {
   const eventType = timelineEvent.getType?.() ?? ''
-  if (eventType !== 'm.room.message') {
+  if (eventType !== 'm.room.message' && !isDecryptableChatMessageEvent(timelineEvent)) {
     return true
   }
   if (isUndecryptableEvent(timelineEvent)) {

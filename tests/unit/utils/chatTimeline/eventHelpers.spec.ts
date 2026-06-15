@@ -16,6 +16,15 @@ describe('chatTimeline event helpers', () => {
     undecryptable.should.equal(true)
   })
 
+  it('treats decrypted m.room.encrypted as readable', () => {
+    const undecryptable = isUndecryptableEvent({
+      getType: () => 'm.room.encrypted',
+      getClearContent: () => ({ body: 'hello', msgtype: 'm.text' }),
+      isDecryptionFailure: () => false,
+    })
+    undecryptable.should.equal(false)
+  })
+
   it('treats decrypted m.room.message as readable', () => {
     const undecryptable = isUndecryptableEvent({
       getType: () => 'm.room.message',

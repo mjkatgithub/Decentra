@@ -1,6 +1,10 @@
 import { Given, When, Then } from '@cucumber/cucumber'
 import { expect } from '@playwright/test'
-import { passwordField } from '../support/password-field.mjs'
+import { passwordField, fillPasswordField } from '../support/password-field.mjs'
+import {
+  resolveE2ELoginUsername,
+  resolveE2ESecondaryLoginUsername,
+} from '../support/e2e-credentials.mjs'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 
@@ -12,13 +16,72 @@ function requireEnv(variableName) {
   return variableValue
 }
 
-async function submitLogin(page, homeserverValue, usernameValue, passwordValue) {
-  await page.goto(`${BASE_URL}/login`)
+async function assertLoginError(page) {
+  const errorPattern =
+    /invalid|fehlgeschlagen|failed|password|username|forbidden|403|M_/i
+  const alerts = page.getByRole('alert')
+  const alertCount = await alerts.count()
+  for (let index = 0; index < alertCount; index += 1) {
+    const alert = alerts.nth(index)
+    if (!(await alert.isVisible().catch(() => false))) {
+      continue
+    }
+    const alertText = (await alert.textContent())?.trim() ?? ''
+    if (alertText && errorPattern.test(alertText)) {
+      return alertText
+    }
+  }
+  return ''
+}
+
+async function fillLoginForm(
+  page,
+  homeserverValue,
+  usernameValue,
+  passwordValue,
+  loginUsernameOverride,
+) {
+  const loginUsername =
+    loginUsernameOverride ||
+    resolveE2ELoginUsername() ||
+    usernameValue
   await page.getByLabel(/Homeserver|Homeserver-URL/i).fill(homeserverValue)
-  await page.getByLabel(/Username|Benutzername/i).fill(usernameValue)
-  await passwordField(page).fill(passwordValue)
+  await page.getByLabel(/Username|Benutzername/i).fill(loginUsername)
+  await fillPasswordField(page, passwordValue)
+}
+
+async function waitForChatRedirect(page, homeserverValue, timeoutMs = 45000) {
+  try {
+    await expect(page).toHaveURL(/\/chat/, { timeout: timeoutMs })
+  } catch (error) {
+    const loginError = await assertLoginError(page)
+    const detail = loginError
+      ? `Login error on page: ${loginError}`
+      : 'No error alert shown on login page.'
+    throw new Error(`${detail} (homeserver: ${homeserverValue})`, {
+      cause: error,
+    })
+  }
+}
+
+async function submitLogin(
+  page,
+  homeserverValue,
+  usernameValue,
+  passwordValue,
+  redirectTimeoutMs = 45000,
+  loginUsernameOverride,
+) {
+  await page.goto(`${BASE_URL}/login`)
+  await fillLoginForm(
+    page,
+    homeserverValue,
+    usernameValue,
+    passwordValue,
+    loginUsernameOverride,
+  )
   await page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
-  await expect(page).toHaveURL(/\/chat/, { timeout: 45000 })
+  await waitForChatRedirect(page, homeserverValue, redirectTimeoutMs)
 }
 
 When('I open the login page', async function () {
@@ -42,34 +105,44 @@ When(
   'I log in with {string} and {string}',
   async function (username, password) {
     await this.page.getByLabel(/Username|Benutzername/i).fill(username)
-    await passwordField(this.page).fill(password)
+    await fillPasswordField(this.page, password)
     await this.page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
   }
 )
 
 Given('valid e2e credentials are configured', async function () {
   const requiredKeys = [
+    'E2E_MATRIX_HOMESERVER',
     'E2E_MATRIX_USERNAME',
-    'E2E_MATRIX_PASSWORD'
+    'E2E_MATRIX_PASSWORD',
   ]
   const missingKeys = requiredKeys.filter((key) => !process.env[key])
 
   if (missingKeys.length > 0) {
+    const dockerHint =
+      'Run `npm run test:e2e` to seed Synapse and write '
+      + 'tests/e2e/.env.e2e.generated.'
+    const localHint =
+      'Create tests/e2e/.env.e2e.local from tests/e2e/.env.e2e.example.'
+    const hint = process.env.E2E_USE_LOCAL_SYNAPSE === 'true'
+      ? dockerHint
+      : localHint
     throw new Error(
-      `Missing E2E credentials: ${missingKeys.join(', ')}. `
-      + 'Create tests/e2e/.env.e2e.local from tests/e2e/.env.e2e.example.'
+      `Missing E2E credentials: ${missingKeys.join(', ')}. ${hint}`
     )
   }
 })
 
 When('I log in with configured credentials', async function () {
-  const homeserverValue = process.env.E2E_MATRIX_HOMESERVER || 'https://matrix.org'
-  const usernameValue = process.env.E2E_MATRIX_USERNAME || ''
-  const passwordValue = process.env.E2E_MATRIX_PASSWORD || ''
-
-  await this.page.getByLabel(/Homeserver|Homeserver-URL/i).fill(homeserverValue)
-  await this.page.getByLabel(/Username|Benutzername/i).fill(usernameValue)
-  await passwordField(this.page).fill(passwordValue)
+  const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
+  const usernameValue = requireEnv('E2E_MATRIX_USERNAME')
+  const passwordValue = requireEnv('E2E_MATRIX_PASSWORD')
+  await fillLoginForm(
+    this.page,
+    homeserverValue,
+    usernameValue,
+    passwordValue,
+  )
   await this.page.getByRole('button', { name: /Sign in|Anmelden/i }).click()
 })
 
@@ -84,7 +157,14 @@ When('I sign in with secondary configured credentials', async function () {
   const homeserverValue = requireEnv('E2E_MATRIX_HOMESERVER')
   const usernameValue = requireEnv('E2E_SECOND_MATRIX_USERNAME')
   const passwordValue = requireEnv('E2E_SECOND_MATRIX_PASSWORD')
-  await submitLogin(this.page, homeserverValue, usernameValue, passwordValue)
+  await submitLogin(
+    this.page,
+    homeserverValue,
+    usernameValue,
+    passwordValue,
+    90_000,
+    resolveE2ESecondaryLoginUsername() || usernameValue,
+  )
 })
 
 Then('I should see the login form', async function () {
@@ -98,7 +178,9 @@ Then('an error message should appear', async function () {
 })
 
 Then('I should be redirected to the chat page', async function () {
-  await expect(this.page).toHaveURL(/\/chat/)
+  const homeserverValue =
+    process.env.E2E_MATRIX_HOMESERVER || '(unknown homeserver)'
+  await waitForChatRedirect(this.page, homeserverValue)
 })
 
 Then('I should see the signup form', async function () {

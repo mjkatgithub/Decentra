@@ -3,6 +3,7 @@ import * as sdk from 'matrix-js-sdk'
 import { matrixRoomHasJoinedMembership } from '~/utils/matrixRoomChannelPermissions'
 import {
   HOMESERVER_CONNECTION_HINT_ERROR,
+  extractUserLocalpart,
   isSameHomeserver,
   isTransportFailureWithoutMatrixBody,
   readMatrixErrorMessage,
@@ -10,6 +11,7 @@ import {
 } from './matrix/matrixClientShared'
 export {
   HOMESERVER_CONNECTION_HINT_ERROR,
+  extractUserLocalpart,
   isSameHomeserver,
   resolveHomeserverBaseUrlForClient,
 } from './matrix/matrixClientShared'
@@ -299,11 +301,12 @@ export function useMatrixClient() {
       const preferredDeviceId = shouldReuseDeviceId
         ? storedSession?.deviceId || storedDevice?.deviceId
         : undefined
+      const loginLocalpart = extractUserLocalpart(username)
       const authData = await authClient.loginRequest({
         type: 'm.login.password',
         identifier: {
           type: 'm.id.user',
-          user: username,
+          user: loginLocalpart,
         },
         password,
         device_id: preferredDeviceId,

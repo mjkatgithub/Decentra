@@ -1,6 +1,6 @@
 import { Given, When, Then } from '@cucumber/cucumber'
 import { expect } from '@playwright/test'
-import { passwordField } from '../support/password-field.mjs'
+import { passwordField, fillPasswordField } from '../support/password-field.mjs'
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000'
 const E2E_HS = process.env.E2E_LOCAL_HOMESERVER || 'http://127.0.0.1:8008'
@@ -23,7 +23,7 @@ When('I submit signup against captcha-enabled synapse', async function () {
     .fill(E2E_HS)
   await this.page.getByLabel(/Username|Benutzername/i).first()
     .fill(this.signupLocalpart)
-  await passwordField(this.page).fill(E2E_PASSWORD)
+  await fillPasswordField(this.page, E2E_PASSWORD)
   await this.page.getByRole('button', { name: /Sign up|Registrieren/i })
     .last()
     .click()

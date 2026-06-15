@@ -13,7 +13,7 @@ function runCommand(binary, args) {
     const commandProcess = spawn(binary, args, {
       cwd: workspaceRoot,
       stdio: 'inherit',
-      shell: process.platform === 'win32'
+      shell: process.platform === 'win32',
     })
     commandProcess.on('error', (error) => rejectPromise(error))
     commandProcess.on('close', (exitCode) => {
@@ -29,36 +29,9 @@ function runCommand(binary, args) {
 async function main() {
   let testFailed = false
   await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'up'])
-  await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'wait'])
-
-  try {
-    await runCommand('node', ['tests/e2e/scripts/runtime-seed-synapse.mjs'])
-  } catch (seedError) {
-    console.error(
-      '[e2e] Synapse seed process failed:',
-      seedError instanceof Error ? seedError.message : String(seedError),
-    )
-    try {
-      await runCommand(
-        'node',
-        ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'logs'],
-      )
-    } catch {
-      // Ignore log failures during seed cleanup.
-    }
-    await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'down'])
-    process.exit(1)
-  }
-
+  await runCommand('node', ['tests/e2e/scripts/runtime-seed-synapse.mjs'])
   loadE2EEnv(workspaceRoot)
-  const generatedEnvExists = existsSync(generatedEnvPath)
-  const matrixUsername = process.env.E2E_MATRIX_USERNAME
-  if (!generatedEnvExists || !matrixUsername) {
-    console.error(
-      `[e2e] generated env path: ${generatedEnvPath} `
-      + `(exists=${generatedEnvExists}); `
-      + `E2E_MATRIX_USERNAME=${matrixUsername || '(unset)'}`,
-    )
+  if (!existsSync(generatedEnvPath) || !process.env.E2E_MATRIX_USERNAME) {
     throw new Error(
       'Synapse seed did not write E2E credentials to '
       + 'tests/e2e/.env.e2e.generated'
@@ -66,19 +39,23 @@ async function main() {
   }
 
   try {
-    await runCommand('npm', ['run', 'test:e2e:run'])
+    await runCommand('npm', ['run', 'test:e2e:run:login'])
   } catch (error) {
     testFailed = true
-    console.error(
-      error instanceof Error ? error.message : String(error)
-    )
+    console.error(error instanceof Error ? error.message : String(error))
   } finally {
     try {
       if (testFailed) {
-        await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'logs'])
+        await runCommand('node', [
+          'tests/e2e/scripts/runtime-manage-synapse.mjs',
+          'logs',
+        ])
       }
     } finally {
-      await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'down'])
+      await runCommand('node', [
+        'tests/e2e/scripts/runtime-manage-synapse.mjs',
+        'down',
+      ])
     }
   }
 
@@ -90,12 +67,18 @@ async function main() {
 void main().catch(async (error) => {
   console.error(error instanceof Error ? error.message : String(error))
   try {
-    await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'logs'])
+    await runCommand('node', [
+      'tests/e2e/scripts/runtime-manage-synapse.mjs',
+      'logs',
+    ])
   } catch {
     // Ignore log failures during fallback cleanup.
   }
   try {
-    await runCommand('node', ['tests/e2e/scripts/runtime-manage-synapse.mjs', 'down'])
+    await runCommand('node', [
+      'tests/e2e/scripts/runtime-manage-synapse.mjs',
+      'down',
+    ])
   } catch {
     // Ignore cleanup failures here.
   }

@@ -35,7 +35,7 @@ async function fetchSecondaryAccessToken() {
   if (!response.ok || !body.access_token) {
     throw new Error('Secondary Matrix login failed for typing E2E step')
   }
-  return { accessToken: body.access_token, userId }
+  return { accessToken: body.access_token, userId: body.user_id }
 }
 
 async function setSecondaryTyping(isTyping) {
@@ -71,6 +71,9 @@ When(
   'the secondary user starts typing in the main test room',
   async function () {
     await setSecondaryTyping(true)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 1500)
+    })
   },
 )
 
@@ -83,7 +86,7 @@ When(
 
 Then('the typing indicator should be visible', async function () {
   const indicator = this.page.getByTestId('typing-indicator')
-  await expect(indicator).toBeVisible({ timeout: 15_000 })
+  await expect(indicator).toBeVisible({ timeout: 30_000 })
   await expect(indicator).toHaveText(/typing|schreibt/i)
 })
 

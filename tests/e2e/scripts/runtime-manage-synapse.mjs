@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { loadE2EEnv, parseBoolean } from './runtime-e2e-env.mjs'
+import { fetchWithTimeout } from './runtime-fetch.mjs'
 
 const command = process.argv[2]
 const currentFilePath = fileURLToPath(import.meta.url)
@@ -139,31 +140,121 @@ function ensureSynapseConfigOverrides() {
   }
 }
 
+const SYNAPSE_BASE_URL = 'http://127.0.0.1:8008'
+
+function sleep(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+}
+
+/**
+ * /versions can return 200 before registration routes are ready on CI.
+ * Also probe the shared-secret register nonce endpoint used by the seed.
+ */
+async function isSynapseReadyForSeed() {
+  try {
+    const versionsResponse = await fetchWithTimeout(
+      `${SYNAPSE_BASE_URL}/_matrix/client/versions`,
+      {},
+      10000,
+    )
+    if (!versionsResponse.ok) {
+      return false
+    }
+
+    const registerResponse = await fetchWithTimeout(
+      `${SYNAPSE_BASE_URL}/_synapse/admin/v1/register`,
+      { method: 'GET' },
+      10000,
+    )
+    if (!registerResponse.ok) {
+      return false
+    }
+
+    const registerBodyText = await registerResponse.text()
+    let registerBody = {}
+    try {
+      registerBody = registerBodyText ? JSON.parse(registerBodyText) : {}
+    } catch {
+      return false
+    }
+    return typeof registerBody.nonce === 'string'
+      && registerBody.nonce.length > 0
+  } catch {
+    return false
+  }
+}
+
 async function waitForSynapse() {
-  const endpoint = 'http://127.0.0.1:8008/_matrix/client/versions'
   const timeoutMs = 120000
   const pollMs = 2000
   const startedAt = Date.now()
 
   while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(endpoint)
-      if (response.ok) {
-        console.log('Synapse is ready at http://127.0.0.1:8008')
-        return
-      }
-    } catch {
-      // Keep polling.
+    if (await isSynapseReadyForSeed()) {
+      console.log(
+        'Synapse is ready for E2E seed at http://127.0.0.1:8008',
+      )
+      return
     }
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, pollMs))
+    await sleep(pollMs)
   }
-  throw new Error('Synapse startup timed out after 120 seconds')
+  throw new Error(
+    'Synapse startup timed out after 120 seconds '
+    + '(versions + registration API not ready)',
+  )
+}
+
+/** matrixdotorg/synapse image runs as UID/GID 991. */
+const SYNAPSE_CONTAINER_UID = 991
+const SYNAPSE_CONTAINER_GID = 991
+
+/**
+ * Synapse `generate` writes /data as UID 991. On Linux CI the checkout user
+ * must own files briefly to patch homeserver.yaml, then ownership returns to
+ * 991 so the Synapse container can read signing keys.
+ */
+async function chownDataDir(ownerUid, ownerGid) {
+  if (process.platform === 'win32') {
+    return
+  }
+  await runCommand('docker', [
+    'run',
+    '--rm',
+    '-v',
+    `${dataDir}:/data`,
+    '--user',
+    'root',
+    'alpine:3',
+    'chown',
+    '-R',
+    `${ownerUid}:${ownerGid}`,
+    '/data',
+  ])
+}
+
+async function chownDataDirToHostUser() {
+  const uid = process.getuid?.()
+  const gid = process.getgid?.()
+  if (uid === undefined || gid === undefined) {
+    return
+  }
+  await chownDataDir(uid, gid)
+}
+
+async function chownDataDirToSynapseUser() {
+  await chownDataDir(SYNAPSE_CONTAINER_UID, SYNAPSE_CONTAINER_GID)
+}
+
+async function patchSynapseConfigOverrides() {
+  await chownDataDirToHostUser()
+  ensureSynapseConfigOverrides()
+  await chownDataDirToSynapseUser()
 }
 
 async function ensureConfigGenerated() {
   ensureDirectory(dataDir)
   if (existsSync(homeserverConfigPath)) {
-    ensureSynapseConfigOverrides()
+    await patchSynapseConfigOverrides()
     return
   }
 
@@ -177,9 +268,9 @@ async function ensureConfigGenerated() {
     '-v',
     `${dataDir}:/data`,
     'matrixdotorg/synapse:latest',
-    'generate'
+    'generate',
   ])
-  ensureSynapseConfigOverrides()
+  await patchSynapseConfigOverrides()
 }
 
 async function main() {

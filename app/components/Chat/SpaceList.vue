@@ -206,6 +206,7 @@ function spaceNavAriaLabel(space: SpaceItem): string {
         icon="i-lucide-plus"
         class="w-full justify-center"
         :class="expanded ? 'rounded-xl' : 'h-11 rounded-2xl'"
+        data-testid="create-space-button"
         @click="emit('createSpace')"
       >
         <span v-if="expanded">{{ translateText('layout.createSpace') }}</span>

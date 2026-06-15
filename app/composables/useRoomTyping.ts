@@ -1,4 +1,4 @@
-import { RoomMemberEvent } from 'matrix-js-sdk'
+import { ClientEvent, RoomMemberEvent } from 'matrix-js-sdk'
 import type { MatrixClient } from 'matrix-js-sdk'
 import { useAppI18n } from '~/composables/useAppI18n'
 import {
@@ -59,9 +59,15 @@ export function useRoomTyping(options: {
         }
       }
 
+      const syncHandler = (): void => {
+        refreshTyping()
+      }
+
       matrixClient.on(RoomMemberEvent.Typing, typingHandler)
+      matrixClient.on(ClientEvent.Sync, syncHandler)
       onCleanup(() => {
         matrixClient.off(RoomMemberEvent.Typing, typingHandler)
+        matrixClient.off(ClientEvent.Sync, syncHandler)
       })
     },
     { immediate: true },

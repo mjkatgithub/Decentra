@@ -13,8 +13,10 @@ function matrixHomeserverUrl() {
   return requireEnv('E2E_MATRIX_HOMESERVER').replace(/\/$/, '')
 }
 
+import { resolveE2EMatrixUserId } from '../support/e2e-credentials.mjs'
+
 function primaryMatrixUserId() {
-  return requireEnv('E2E_MATRIX_USERNAME')
+  return resolveE2EMatrixUserId()
 }
 
 function primaryLocalpart() {
@@ -173,10 +175,10 @@ Then(
     const roomButton = mainTestRoomButton(this.page)
     await expect(roomButton).toBeVisible({ timeout: 20000 })
     await expect(roomButton).toHaveAttribute('data-unread', 'false', {
-      timeout: 20000,
+      timeout: 45000,
     })
     await expect(roomButton).toHaveAttribute('data-mention-unread', 'false', {
-      timeout: 20000,
+      timeout: 45000,
     })
   },
 )

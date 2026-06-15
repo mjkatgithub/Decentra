@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadE2EEnv } from './runtime-e2e-env.mjs'
+import { fetchWithTimeout } from './runtime-fetch.mjs'
 
 const currentFilePath = fileURLToPath(import.meta.url)
 const workspaceRoot = resolve(dirname(currentFilePath), '..', '..', '..')
@@ -23,14 +24,83 @@ function apiUrl(path) {
   return `${homeserver}${path}`
 }
 
+function logStep(message) {
+  console.log(`[seed] ${message}`)
+}
+
+function sleep(ms) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, ms))
+}
+
+function isRetryableSeedError(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (
+    message.includes('fetch failed')
+    || message.includes('ECONNREFUSED')
+    || message.includes('ECONNRESET')
+    || message.includes('ETIMEDOUT')
+    || message.includes('Request timed out after')
+    || message.includes('Unexpected token')
+    || message.includes('is not valid JSON')
+  ) {
+    return true
+  }
+  if (
+    /\bMatrix request failed \((502|503|504|500|429)\):/.test(message)
+    || message.includes('M_LIMIT_EXCEEDED')
+    || message.includes('M_UNKNOWN')
+  ) {
+    return true
+  }
+  return false
+}
+
+function parseResponseBody(bodyText) {
+  if (!bodyText) {
+    return {}
+  }
+  try {
+    return JSON.parse(bodyText)
+  } catch {
+    throw new Error(
+      `Matrix response was not JSON (${bodyText.slice(0, 120)}…)`,
+    )
+  }
+}
+
 async function requestJson(path, init) {
-  const response = await fetch(apiUrl(path), init)
+  const response = await fetchWithTimeout(apiUrl(path), init, 15000)
   const bodyText = await response.text()
-  const body = bodyText ? JSON.parse(bodyText) : {}
+  const body = parseResponseBody(bodyText)
   if (!response.ok) {
     throw new Error(`Matrix request failed (${body?.errcode || response.status}): ${path}`)
   }
   return body
+}
+
+async function requestJsonWithRetry(path, init, options = {}) {
+  const maxAttempts = options.maxAttempts ?? 3
+  const delayMs = options.delayMs ?? 1000
+  let lastError
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await requestJson(path, init)
+    } catch (error) {
+      lastError = error
+      const canRetry = isRetryableSeedError(error) && attempt < maxAttempts
+      if (!canRetry) {
+        throw error
+      }
+      logStep(
+        `retry ${attempt}/${maxAttempts - 1} for ${path}: `
+        + (error instanceof Error ? error.message : String(error)),
+      )
+      await sleep(delayMs)
+    }
+  }
+
+  throw lastError
 }
 
 async function login(localpart, password) {
@@ -47,34 +117,95 @@ async function login(localpart, password) {
 
 async function registerViaSecret(localpart, password) {
   const endpoint = '/_synapse/admin/v1/register'
-  const nonceResponse = await requestJson(endpoint, { method: 'GET' })
+  const nonceResponse = await requestJsonWithRetry(
+    endpoint,
+    { method: 'GET' },
+    { maxAttempts: 5, delayMs: 1500 },
+  )
   const nonce = nonceResponse.nonce
   const macInput = `${nonce}\u0000${localpart}\u0000${password}\u0000notadmin`
   const mac = createHmac('sha1', registrationSecret).update(macInput).digest('hex')
-  return requestJson(endpoint, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ nonce, username: localpart, password, admin: false, mac })
-  })
+  return requestJsonWithRetry(
+    endpoint,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        nonce,
+        username: localpart,
+        password,
+        admin: false,
+        mac,
+      }),
+    },
+    { maxAttempts: 5, delayMs: 1500 },
+  )
 }
 
-async function ensureUser(localpart, password) {
-  try {
-    return await requestJson('/_matrix/client/v3/register', {
+function isExistingUserError(error) {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('M_USER_IN_USE')
+    || message.includes('M_EXCLUSIVE')
+    || message.includes('User ID already taken')
+}
+
+async function registerViaDummy(localpart, password) {
+  return requestJsonWithRetry(
+    '/_matrix/client/v3/register',
+    {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         username: localpart,
         password,
-        auth: { type: 'm.login.dummy' }
-      })
-    })
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    if (errorMessage.includes('M_USER_IN_USE')) {
-      return login(localpart, password)
+        auth: { type: 'm.login.dummy' },
+      }),
+    },
+    { maxAttempts: 5, delayMs: 1500 },
+  )
+}
+
+async function ensureUser(localpart, password) {
+  try {
+    const session = await registerViaSecret(localpart, password)
+    logStep(`ensureUser ${localpart}: registered via shared secret`)
+    return session
+  } catch (secretError) {
+    if (isExistingUserError(secretError)) {
+      logStep(`ensureUser ${localpart}: exists, logging in`)
+      return requestJsonWithRetry(
+        '/_matrix/client/v3/login',
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            type: 'm.login.password',
+            identifier: { type: 'm.id.user', user: localpart },
+            password,
+          }),
+        },
+        { maxAttempts: 5, delayMs: 1500 },
+      )
     }
-    return registerViaSecret(localpart, password)
+
+    const secretMessage = secretError instanceof Error
+      ? secretError.message
+      : String(secretError)
+    logStep(
+      `ensureUser ${localpart}: shared-secret failed (${secretMessage}); `
+      + 'falling back to dummy register',
+    )
+    try {
+      const session = await registerViaDummy(localpart, password)
+      logStep(`ensureUser ${localpart}: registered via dummy`)
+      return session
+    } catch (dummyError) {
+      if (isExistingUserError(dummyError)) {
+        logStep(`ensureUser ${localpart}: exists, logging in`)
+        return login(localpart, password)
+      }
+      throw dummyError
+    }
   }
 }
 
@@ -82,7 +213,7 @@ async function withAuth(accessToken, path, init = {}) {
   const headers = {
     'content-type': 'application/json',
     ...(init.headers || {}),
-    authorization: `Bearer ${accessToken}`
+    authorization: `Bearer ${accessToken}`,
   }
   return requestJson(path, { ...init, headers })
 }
@@ -165,8 +296,10 @@ async function uploadAudio(accessToken) {
 }
 
 async function main() {
+  logStep(`starting seed against ${homeserver}`)
   const primarySession = await ensureUser(primaryLocalpart, primaryPassword)
   const secondarySession = await ensureUser(secondaryLocalpart, secondaryPassword)
+  logStep('users ready')
   const roomResponse = await withAuth(primarySession.access_token, '/_matrix/client/v3/createRoom', {
     method: 'POST',
     body: JSON.stringify({
@@ -190,6 +323,7 @@ async function main() {
     },
   )
   const sideRoomId = sideRoomResponse.room_id
+  logStep('main + side rooms created')
 
   const spaceName = process.env.E2E_TEST_SPACE_NAME || 'Decentra E2E Space'
   const spaceChannelName =
@@ -233,6 +367,7 @@ async function main() {
       body: JSON.stringify({ via }),
     },
   )
+  logStep('space + channel created and linked')
 
   await withAuth(
     secondarySession.access_token,
@@ -246,9 +381,24 @@ async function main() {
   )
   await withAuth(
     primarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceChannelId)}/invite`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ user_id: secondarySession.user_id }),
+    },
+  )
+  await withAuth(
+    secondarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceChannelId)}/join`,
+    { method: 'POST', body: '{}' },
+  )
+  logStep('secondary user joined main/side/space rooms')
+  await withAuth(
+    primarySession.access_token,
     `/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/state/m.room.encryption`,
     { method: 'PUT', body: JSON.stringify({ algorithm: 'm.megolm.v1.aes-sha2' }) }
   )
+  logStep('encryption enabled on main room')
 
   const baseEvent = await sendMessage(primarySession.access_token, roomId, 'seed-text-1', {
     msgtype: 'm.text',
@@ -312,6 +462,7 @@ async function main() {
     msgtype: 'm.text',
     body: 'E2E_POST_UNDECRYPTABLE_MESSAGE'
   })
+  logStep('seed messages + media sent')
 
   const leaveDmRoomResponse = await withAuth(
     primarySession.access_token,
@@ -348,15 +499,20 @@ async function main() {
     { msgtype: 'm.text', body: 'E2E_LEAVE_DM_SEED' },
   )
 
+  logStep('leave DM room seeded')
+
   const generatedEnvPath = resolve(workspaceRoot, 'tests/e2e/.env.e2e.generated')
   mkdirSync(dirname(generatedEnvPath), { recursive: true })
   const generatedEnv = [
     'E2E_USE_LOCAL_SYNAPSE=true',
     `E2E_LOCAL_HOMESERVER=${homeserver}`,
     `E2E_MATRIX_HOMESERVER=${homeserver}`,
-    `E2E_MATRIX_USERNAME=${primarySession.user_id}`,
+    `E2E_MATRIX_USER_ID=${primarySession.user_id}`,
+    `E2E_MATRIX_USERNAME=${primaryLocalpart}`,
+    `E2E_MATRIX_LOGIN_USERNAME=${primaryLocalpart}`,
     `E2E_MATRIX_PASSWORD=${primaryPassword}`,
-    `E2E_SECOND_MATRIX_USERNAME=${secondarySession.user_id}`,
+    `E2E_SECOND_MATRIX_USER_ID=${secondarySession.user_id}`,
+    `E2E_SECOND_MATRIX_USERNAME=${secondaryLocalpart}`,
     `E2E_SECOND_MATRIX_PASSWORD=${secondaryPassword}`,
     `E2E_TEST_ROOM_NAME=${roomName}`,
     `E2E_TEST_ROOM_ID=${roomId}`,
@@ -369,10 +525,16 @@ async function main() {
     `E2E_LEAVE_DM_ROOM_ID=${leaveDmRoomId}`,
   ].join('\n')
   writeFileSync(generatedEnvPath, `${generatedEnv}\n`, 'utf8')
+  logStep(`wrote credentials to ${generatedEnvPath}`)
   console.log('Synapse E2E seeding completed')
 }
 
-void main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error))
+try {
+  await main()
+} catch (error) {
+  console.error(
+    '[seed] fatal:',
+    error instanceof Error ? error.stack || error.message : String(error),
+  )
   process.exit(1)
-})
+}
