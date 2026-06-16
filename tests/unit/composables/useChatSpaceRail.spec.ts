@@ -146,4 +146,46 @@ describe('useChatSpaceRail room selection', () => {
 
     expect(selectedRoomId.value).to.equal(channelId)
   })
+
+  it('keeps lobby channel selected before sidebar filter catches up', async () => {
+    const spaceId = '!space:example.org'
+    const channelId = '!channel:example.org'
+    const selectedSpaceId = ref<string | null>(spaceId)
+    const selectedRoomId = ref<string | null>(null)
+    const spaceLobbyRoomIds = ref<ReadonlySet<string>>(
+      new Set([channelId]),
+    )
+    const matrixRooms = ref([
+      createMatrixRoom(spaceId, {
+        name: 'Team',
+        type: 'm.space',
+      }),
+      createMatrixRoom(channelId, {
+        name: 'General',
+      }),
+    ] as never[])
+
+    const spaceRail = useChatSpaceRail({
+      client: ref(null),
+      matrixRooms,
+      selectedSpaceId,
+      selectedRoomId,
+      pendingRootSpaceId: ref(null),
+      translateText: (key) => key,
+      getSpaceAvatarUrl: () => undefined,
+      matrixSyncPrepared: ref(true),
+      spaceUnreadById: ref({}),
+      allMessages: ref([]),
+      messages: ref([]),
+      spaceLobbyRoomIds,
+    })
+
+    spaceRail.setupSpaceRailWatchers()
+    await nextTick()
+
+    selectedRoomId.value = channelId
+    await nextTick()
+
+    expect(selectedRoomId.value).to.equal(channelId)
+  })
 })
