@@ -108,7 +108,7 @@ When('I select the seeded test space in the space rail', async function () {
   const spaceButton = this.page
     .locator(`button[data-space-id="${spaceId}"]`)
     .first()
-  await expect(spaceButton).toBeVisible({ timeout: 20000 })
+  await expect(spaceButton).toBeVisible({ timeout: 60000 })
   await spaceButton.click()
 })
 

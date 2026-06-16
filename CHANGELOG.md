@@ -294,6 +294,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Space home panel: include `m.space.child`-linked channels in
+  `visibleRooms` so lobby channel selection keeps `selectedRoomId` and
+  hides the panel; re-enable cluster C E2E (`@space_home`, space leave)
+  ([#136](https://github.com/mjkatgithub/Decentra/issues/136))
+
 - E2E mobile reply: scope Playwright `hasTouch` to `@mobile` browser
   contexts only so tap-to-reply works without breaking desktop hover
   actions; re-enable `Reply via tap on mobile viewport` scenario

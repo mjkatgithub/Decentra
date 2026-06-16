@@ -10,15 +10,31 @@ function createMatrixRoom(
     type?: string
     parentSpaceIds?: string[]
     membership?: string
+    childRoomIds?: string[]
   } = {},
 ) {
+  const parentSpaceIds = options.parentSpaceIds ?? []
+  const childRoomIds = options.childRoomIds ?? []
   return {
     roomId,
     name: options.name ?? roomId,
     getType: () => options.type,
     getMyMembership: () => options.membership ?? 'join',
     currentState: {
-      getStateEvents: () => undefined,
+      getStateEvents: (eventType?: string) => {
+        if (eventType === 'm.space.parent' && parentSpaceIds.length > 0) {
+          return parentSpaceIds.map((spaceId) => ({
+            getStateKey: () => spaceId,
+          }))
+        }
+        if (eventType === 'm.space.child' && childRoomIds.length > 0) {
+          return childRoomIds.map((childRoomId) => ({
+            getStateKey: () => childRoomId,
+            getContent: () => ({}),
+          }))
+        }
+        return undefined
+      },
     },
   }
 }
@@ -90,5 +106,44 @@ describe('useChatSpaceRail room selection', () => {
 
     expect(selectedRoomId.value).toBeNull()
     expect(selectedRoomId.value).not.to.equal(otherRoomId)
+  })
+
+  it('keeps room selected when channel is linked via m.space.child only', async () => {
+    const spaceId = '!space:example.org'
+    const channelId = '!channel:example.org'
+    const selectedSpaceId = ref<string | null>(spaceId)
+    const selectedRoomId = ref<string | null>(null)
+    const matrixRooms = ref([
+      createMatrixRoom(spaceId, {
+        name: 'Team',
+        type: 'm.space',
+        childRoomIds: [channelId],
+      }),
+      createMatrixRoom(channelId, {
+        name: 'General',
+      }),
+    ] as never[])
+
+    const spaceRail = useChatSpaceRail({
+      client: ref(null),
+      matrixRooms,
+      selectedSpaceId,
+      selectedRoomId,
+      pendingRootSpaceId: ref(null),
+      translateText: (key) => key,
+      getSpaceAvatarUrl: () => undefined,
+      matrixSyncPrepared: ref(true),
+      spaceUnreadById: ref({}),
+      allMessages: ref([]),
+      messages: ref([]),
+    })
+
+    spaceRail.setupSpaceRailWatchers()
+    await nextTick()
+
+    selectedRoomId.value = channelId
+    await nextTick()
+
+    expect(selectedRoomId.value).to.equal(channelId)
   })
 })
