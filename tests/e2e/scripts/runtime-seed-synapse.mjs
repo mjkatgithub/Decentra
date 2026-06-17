@@ -295,6 +295,26 @@ async function uploadAudio(accessToken) {
   return body.content_uri
 }
 
+async function createSpaceChannel(accessToken, spaceId, channelName, via, order) {
+  const channelResponse = await withAuth(
+    accessToken,
+    '/_matrix/client/v3/createRoom',
+    { method: 'POST', body: JSON.stringify({ name: channelName }) },
+  )
+  const channelId = channelResponse.room_id
+  await withAuth(
+    accessToken,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceId)}/state/m.space.child/${encodeURIComponent(channelId)}`,
+    { method: 'PUT', body: JSON.stringify({ via, order }) },
+  )
+  await withAuth(
+    accessToken,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(channelId)}/state/m.space.parent/${encodeURIComponent(spaceId)}`,
+    { method: 'PUT', body: JSON.stringify({ via }) },
+  )
+  return channelId
+}
+
 async function main() {
   logStep(`starting seed against ${homeserver}`)
   const primarySession = await ensureUser(primaryLocalpart, primaryPassword)
@@ -328,6 +348,8 @@ async function main() {
   const spaceName = process.env.E2E_TEST_SPACE_NAME || 'Decentra E2E Space'
   const spaceChannelName =
     process.env.E2E_TEST_SPACE_CHANNEL_NAME || 'E2E Space General'
+  const spaceHomeChannelName =
+    process.env.E2E_SPACE_HOME_CHANNEL_NAME || 'E2E Space Home Channel'
   const spaceResponse = await withAuth(
     primarySession.access_token,
     '/_matrix/client/v3/createRoom',
@@ -340,34 +362,23 @@ async function main() {
     },
   )
   const spaceId = spaceResponse.room_id
-  const spaceChannelResponse = await withAuth(
-    primarySession.access_token,
-    '/_matrix/client/v3/createRoom',
-    {
-      method: 'POST',
-      body: JSON.stringify({ name: spaceChannelName }),
-    },
-  )
-  const spaceChannelId = spaceChannelResponse.room_id
   const serverName = new URL(homeserver).hostname
   const via = [serverName]
-  await withAuth(
+  const spaceChannelId = await createSpaceChannel(
     primarySession.access_token,
-    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceId)}/state/m.space.child/${encodeURIComponent(spaceChannelId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ via, order: 'general' }),
-    },
+    spaceId,
+    spaceChannelName,
+    via,
+    'general',
   )
-  await withAuth(
+  const spaceHomeChannelId = await createSpaceChannel(
     primarySession.access_token,
-    `/_matrix/client/v3/rooms/${encodeURIComponent(spaceChannelId)}/state/m.space.parent/${encodeURIComponent(spaceId)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify({ via }),
-    },
+    spaceId,
+    spaceHomeChannelName,
+    via,
+    'home',
   )
-  logStep('space + channel created and linked')
+  logStep('space + channels created and linked')
 
   await withAuth(
     secondarySession.access_token,
@@ -522,6 +533,8 @@ async function main() {
     `E2E_TEST_SPACE_ID=${spaceId}`,
     `E2E_TEST_SPACE_CHANNEL_NAME=${spaceChannelName}`,
     `E2E_TEST_SPACE_CHANNEL_ID=${spaceChannelId}`,
+    `E2E_SPACE_HOME_CHANNEL_NAME=${spaceHomeChannelName}`,
+    `E2E_SPACE_HOME_CHANNEL_ID=${spaceHomeChannelId}`,
     `E2E_LEAVE_DM_ROOM_ID=${leaveDmRoomId}`,
   ].join('\n')
   writeFileSync(generatedEnvPath, `${generatedEnv}\n`, 'utf8')

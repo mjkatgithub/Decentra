@@ -296,7 +296,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Space home panel: include `m.space.child`-linked channels in
   `visibleRooms`; keep lobby channel selection when sidebar filter lags;
-  scope space-home E2E click to the panel; re-enable cluster C E2E
+  scope space-home E2E click to the panel; isolate `@space_home` with a
+  dedicated seeded space channel so the leave-channel scenario no longer
+  empties the shared channel; re-enable cluster C E2E
   ([#136](https://github.com/mjkatgithub/Decentra/issues/136))
 
 - E2E mobile reply: scope Playwright `hasTouch` to `@mobile` browser

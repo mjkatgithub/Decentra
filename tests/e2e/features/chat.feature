@@ -358,7 +358,7 @@ Feature: Chat
     And I sign in with configured credentials
     And I select the seeded test space in the space rail
     Then I should see the space home panel
-    When I open the seeded test space channel
+    When I open the seeded space home channel
     Then I should not see the space home panel
 
   @leave_room @wip
