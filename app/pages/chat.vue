@@ -76,6 +76,7 @@ const selectedSpaceId = useState<string | null>(
 );
 const pendingRootSpaceId = ref<string | null>(null);
 const suppressAutoRoomSelect = ref(false);
+const lobbyRoomIdsForActiveSpace = ref<ReadonlySet<string>>(new Set());
 const lobbyJoiningRoomId = ref<string | null>(null);
 const matrixRooms = ref<Array<Record<string, any>>>([]);
 const spaceUnreadForRail = shallowRef<
@@ -164,6 +165,7 @@ const spaceRail = useChatSpaceRail({
   allMessages,
   messages,
   suppressAutoRoomSelect,
+  spaceLobbyRoomIds: lobbyRoomIdsForActiveSpace,
 });
 
 const {
@@ -491,6 +493,16 @@ const spaceLobbyCategories = computed<RoomCategoryGroup[]>(() => {
     return lobbyHierarchyCategories.value;
   }
   return buildSpaceLobbySections();
+});
+
+watchEffect(() => {
+  const lobbyRoomIds = new Set<string>();
+  for (const category of spaceLobbyCategories.value) {
+    for (const room of category.rooms) {
+      lobbyRoomIds.add(room.roomId);
+    }
+  }
+  lobbyRoomIdsForActiveSpace.value = lobbyRoomIds;
 });
 
 const roomCategoryStructure = computed<RoomCategoryGroup[]>(() => {

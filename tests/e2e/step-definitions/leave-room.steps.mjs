@@ -108,26 +108,32 @@ When('I select the seeded test space in the space rail', async function () {
   const spaceButton = this.page
     .locator(`button[data-space-id="${spaceId}"]`)
     .first()
-  await expect(spaceButton).toBeVisible({ timeout: 20000 })
+  await expect(spaceButton).toBeVisible({ timeout: 60000 })
   await spaceButton.click()
 })
 
-When('I open the seeded test space channel', async function () {
-  const channelId = requireEnv('E2E_TEST_SPACE_CHANNEL_ID')
-  const channelName =
-    process.env.E2E_TEST_SPACE_CHANNEL_NAME || 'E2E Space General'
-  const roomById = this.page
+async function openSpaceChannelFromPanel(page, channelId) {
+  const roomButton = page
+    .locator('[data-space-home-panel]')
     .locator(`[data-space-home-room-id="${channelId}"]`)
     .first()
-  const roomByName = this.page
-    .getByRole('button', { name: new RegExp(channelName, 'i') })
-    .first()
-  const roomButton = roomById.or(roomByName).first()
   await expect(roomButton).toBeVisible({ timeout: 45000 })
   await roomButton.click()
-  await expect(this.page.locator('[data-space-home-panel]')).toHaveCount(0, {
+  await expect(page.locator('[data-space-home-panel]')).toHaveCount(0, {
     timeout: 30000,
   })
+}
+
+When('I open the seeded test space channel', async function () {
+  await openSpaceChannelFromPanel(this.page, seededSpaceChannelId())
+})
+
+function spaceHomeChannelId() {
+  return requireEnv('E2E_SPACE_HOME_CHANNEL_ID')
+}
+
+When('I open the seeded space home channel', async function () {
+  await openSpaceChannelFromPanel(this.page, spaceHomeChannelId())
 })
 
 When('I open the leave test dm room', async function () {

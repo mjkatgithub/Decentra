@@ -340,7 +340,7 @@ Feature: Chat
     When I reload the current page
     Then the side seeded test room should not appear in the sidebar
 
-  @leave_room @wip
+  @leave_room
   Scenario: Leave seeded space channel from sidebar
     When I open the login page
     And I sign in with configured credentials
@@ -352,13 +352,13 @@ Feature: Chat
     Then I should see the space home panel
     And the seeded test space channel should not appear in the sidebar
 
-  @space_home @wip
+  @space_home
   Scenario: Select space from rail shows overview and opens channel from list
     When I open the login page
     And I sign in with configured credentials
     And I select the seeded test space in the space rail
     Then I should see the space home panel
-    When I open the seeded test space channel
+    When I open the seeded space home channel
     Then I should not see the space home panel
 
   @leave_room @wip
