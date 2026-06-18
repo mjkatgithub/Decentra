@@ -294,6 +294,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- E2E leave sidebar (cluster D): dedicated `E2E_LEAVE_GROUP_ROOM_ID`
+  seed isolates the group-leave scenario from the unread side room;
+  scoped Home-sidebar locators and sync waits in leave-room steps;
+  re-enable both `@leave_room` Home scenarios (34/34 green lane)
+  ([#137](https://github.com/mjkatgithub/Decentra/issues/137))
+
 - Space home panel: include `m.space.child`-linked channels in
   `visibleRooms`; keep lobby channel selection when sidebar filter lags;
   scope space-home E2E click to the panel; isolate `@space_home` with a

@@ -9,8 +9,8 @@ function requireEnv(variableName) {
   return variableValue
 }
 
-function sideTestRoomId() {
-  return requireEnv('E2E_SIDE_TEST_ROOM_ID')
+function leaveGroupRoomId() {
+  return requireEnv('E2E_LEAVE_GROUP_ROOM_ID')
 }
 
 function seededSpaceChannelId() {
@@ -21,17 +21,45 @@ function leaveDmRoomId() {
   return requireEnv('E2E_LEAVE_DM_ROOM_ID')
 }
 
-function roomButtonById(page, roomId) {
-  return page.locator(`button[data-room-id="${roomId}"]`).first()
+function homeSidebar(page) {
+  return page.locator('.decentra-shell > aside').first()
+}
+
+function homeSidebarRoomButton(page, roomId) {
+  return homeSidebar(page)
+    .locator(`button[data-room-id="${roomId}"]`)
+    .first()
+}
+
+function homeSidebarRoomActionsButton(page, roomId) {
+  return homeSidebar(page)
+    .locator(`button[data-room-actions="${roomId}"]`)
+    .first()
+}
+
+async function waitForHomeSidebarReady(page) {
+  const sidebarRooms = homeSidebar(page).locator('button[data-room-id]')
+  await expect(sidebarRooms.first()).toBeVisible({ timeout: 60000 })
+}
+
+async function openHomeSidebarRoom(page, roomId, nameFallbackPattern) {
+  await waitForHomeSidebarReady(page)
+  let roomButton = homeSidebarRoomButton(page, roomId)
+  if ((await roomButton.count()) === 0 && nameFallbackPattern) {
+    roomButton = homeSidebar(page)
+      .getByRole('button', { name: nameFallbackPattern })
+      .first()
+  }
+  await expect(roomButton).toBeVisible({ timeout: 60000 })
+  await roomButton.scrollIntoViewIfNeeded()
+  await roomButton.click({ force: true })
 }
 
 async function openChannelOptionsMenu(page, roomId) {
-  const roomButton = roomButtonById(page, roomId)
+  const roomButton = homeSidebarRoomButton(page, roomId)
   await expect(roomButton).toBeVisible({ timeout: 20000 })
   await roomButton.hover()
-  const actionsButton = page
-    .locator(`button[data-room-actions="${roomId}"]`)
-    .first()
+  const actionsButton = homeSidebarRoomActionsButton(page, roomId)
   await expect(actionsButton).toBeVisible({ timeout: 10000 })
   await actionsButton.click()
 }
@@ -78,29 +106,30 @@ async function assertSpaceHomePanel(page) {
   })
 }
 
-async function assertRoomAbsentFromSidebar(page, roomId) {
-  await expect(roomButtonById(page, roomId)).toHaveCount(0, {
+async function assertRoomAbsentFromHomeSidebar(page, roomId) {
+  await expect(homeSidebarRoomButton(page, roomId)).toHaveCount(0, {
     timeout: 20000,
   })
 }
 
-When('I open the side seeded test room for leave', async function () {
-  const roomId = requireEnv('E2E_SIDE_TEST_ROOM_ID')
+When('I open the leave test group room', async function () {
+  const roomId = leaveGroupRoomId()
   const roomName =
-    process.env.E2E_SIDE_TEST_ROOM_NAME || 'Decentra E2E Side Room'
-  const roomButton = roomButtonById(this.page, roomId)
-    .or(this.page.getByRole('button', { name: new RegExp(roomName, 'i') }))
-    .first()
-  await expect(roomButton).toBeVisible({ timeout: 60000 })
-  await roomButton.click()
+    process.env.E2E_LEAVE_GROUP_ROOM_NAME || 'Decentra E2E Leave Group Room'
+  await openHomeSidebarRoom(
+    this.page,
+    roomId,
+    new RegExp(roomName, 'i'),
+  )
 })
 
 When('I select Home in the space rail', async function () {
   const homeButton = this.page
     .locator('button[data-space-id="__home__"]')
     .first()
-  await expect(homeButton).toBeVisible({ timeout: 20000 })
+  await expect(homeButton).toBeVisible({ timeout: 60000 })
   await homeButton.click()
+  await waitForHomeSidebarReady(this.page)
 })
 
 When('I select the seeded test space in the space rail', async function () {
@@ -141,17 +170,17 @@ When('I open the leave test dm room', async function () {
   const peerName = requireEnv('E2E_SECOND_MATRIX_USERNAME')
     .split(':')[0]
     .replace('@', '')
-  const roomButton = roomButtonById(this.page, roomId)
-    .or(this.page.getByRole('button', { name: new RegExp(peerName, 'i') }))
-    .first()
-  await expect(roomButton).toBeVisible({ timeout: 60000 })
-  await roomButton.click()
+  await openHomeSidebarRoom(
+    this.page,
+    roomId,
+    new RegExp(peerName, 'i'),
+  )
 })
 
 When(
-  'I open the channel options menu for the side seeded test room',
+  'I open the channel options menu for the leave test group room',
   async function () {
-    await openChannelOptionsMenu(this.page, sideTestRoomId())
+    await openChannelOptionsMenu(this.page, leaveGroupRoomId())
   },
 )
 
@@ -191,23 +220,26 @@ Then('I should not see the space home panel', async function () {
 })
 
 Then(
-  'the side seeded test room should not appear in the sidebar',
+  'the leave test group room should not appear in the sidebar',
   async function () {
-    await assertRoomAbsentFromSidebar(this.page, sideTestRoomId())
+    await assertRoomAbsentFromHomeSidebar(this.page, leaveGroupRoomId())
   },
 )
 
 Then(
   'the seeded test space channel should not appear in the sidebar',
   async function () {
-    await assertRoomAbsentFromSidebar(this.page, seededSpaceChannelId())
+    await assertRoomAbsentFromHomeSidebar(
+      this.page,
+      seededSpaceChannelId(),
+    )
   },
 )
 
 Then(
   'the leave test dm room should not appear in the sidebar',
   async function () {
-    await assertRoomAbsentFromSidebar(this.page, leaveDmRoomId())
+    await assertRoomAbsentFromHomeSidebar(this.page, leaveDmRoomId())
   },
 )
 

@@ -13,6 +13,8 @@ const homeserver = process.env.E2E_LOCAL_HOMESERVER || 'http://127.0.0.1:8008'
 const roomName = process.env.E2E_TEST_ROOM_NAME || 'Decentra E2E Room'
 const sideRoomName =
   process.env.E2E_SIDE_TEST_ROOM_NAME || 'Decentra E2E Side Room'
+const leaveGroupRoomName =
+  process.env.E2E_LEAVE_GROUP_ROOM_NAME || 'Decentra E2E Leave Group Room'
 const primaryLocalpart = process.env.E2E_PRIMARY_LOCALPART || 'e2e-alice'
 const primaryPassword = process.env.E2E_PRIMARY_PASSWORD || 'e2e-alice-pass'
 const secondaryLocalpart = process.env.E2E_SECONDARY_LOCALPART || 'e2e-bob'
@@ -343,7 +345,21 @@ async function main() {
     },
   )
   const sideRoomId = sideRoomResponse.room_id
-  logStep('main + side rooms created')
+
+  const leaveGroupRoomResponse = await withAuth(
+    primarySession.access_token,
+    '/_matrix/client/v3/createRoom',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        name: leaveGroupRoomName,
+        invite: [secondarySession.user_id],
+        preset: 'private_chat',
+      }),
+    },
+  )
+  const leaveGroupRoomId = leaveGroupRoomResponse.room_id
+  logStep('main + side + leave group rooms created')
 
   const spaceName = process.env.E2E_TEST_SPACE_NAME || 'Decentra E2E Space'
   const spaceChannelName =
@@ -388,6 +404,11 @@ async function main() {
   await withAuth(
     secondarySession.access_token,
     `/_matrix/client/v3/rooms/${encodeURIComponent(sideRoomId)}/join`,
+    { method: 'POST', body: '{}' },
+  )
+  await withAuth(
+    secondarySession.access_token,
+    `/_matrix/client/v3/rooms/${encodeURIComponent(leaveGroupRoomId)}/join`,
     { method: 'POST', body: '{}' },
   )
   await withAuth(
@@ -529,6 +550,8 @@ async function main() {
     `E2E_TEST_ROOM_ID=${roomId}`,
     `E2E_SIDE_TEST_ROOM_NAME=${sideRoomName}`,
     `E2E_SIDE_TEST_ROOM_ID=${sideRoomId}`,
+    `E2E_LEAVE_GROUP_ROOM_NAME=${leaveGroupRoomName}`,
+    `E2E_LEAVE_GROUP_ROOM_ID=${leaveGroupRoomId}`,
     `E2E_TEST_SPACE_NAME=${spaceName}`,
     `E2E_TEST_SPACE_ID=${spaceId}`,
     `E2E_TEST_SPACE_CHANNEL_NAME=${spaceChannelName}`,

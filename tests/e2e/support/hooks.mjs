@@ -15,6 +15,7 @@ loadE2EEnv(resolve(process.cwd()))
 const SYNAPSE_E2E_STEP_MARKERS = [
   'I open the seeded test room',
   'I open the side seeded test room',
+  'leave test group room',
   'leave test dm room',
   'seeded test space channel',
   'seeded space home channel',
