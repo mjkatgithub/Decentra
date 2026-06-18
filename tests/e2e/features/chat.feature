@@ -325,20 +325,20 @@ Feature: Chat
       | away     |
       | offline  |
 
-  @leave_room @wip
-  Scenario: Leave side seeded group room from sidebar
+  @leave_room
+  Scenario: Leave seeded group room from sidebar
     When I open the login page
     And I sign in with configured credentials
     And I select Home in the space rail
-    And I open the side seeded test room for leave
-    And I open the channel options menu for the side seeded test room
+    And I open the leave test group room
+    And I open the channel options menu for the leave test group room
     And I choose leave channel from the menu
     And I confirm leaving the channel
     Then I should see the chat home onboarding panel
     And I should not be able to send messages in chat
-    And the side seeded test room should not appear in the sidebar
+    And the leave test group room should not appear in the sidebar
     When I reload the current page
-    Then the side seeded test room should not appear in the sidebar
+    Then the leave test group room should not appear in the sidebar
 
   @leave_room
   Scenario: Leave seeded space channel from sidebar
@@ -361,7 +361,7 @@ Feature: Chat
     When I open the seeded space home channel
     Then I should not see the space home panel
 
-  @leave_room @wip
+  @leave_room
   Scenario: Leave seeded direct message room from sidebar
     When I open the login page
     And I sign in with configured credentials
