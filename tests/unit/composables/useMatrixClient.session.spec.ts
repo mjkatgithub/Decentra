@@ -10,6 +10,11 @@ import {
   setupMatrixClientTestGlobals,
 } from './matrixClientTestSetup'
 
+const MATRIX_START_CLIENT_OPTS = {
+  initialSyncLimit: 50,
+  disablePresence: true,
+} as const
+
 describe('useMatrixClient session', () => {
   beforeEach(() => {
     prepareMatrixClientSpecFile()
@@ -81,8 +86,11 @@ describe('useMatrixClient session', () => {
       device_id: undefined,
     })
     expect(matrixClient.initRustCrypto).toHaveBeenCalledTimes(1)
-    expect(matrixClient.startClient).toHaveBeenCalledWith({
-      initialSyncLimit: 50,
+    expect(matrixClient.startClient).toHaveBeenCalledWith(
+      MATRIX_START_CLIENT_OPTS,
+    )
+    expect(matrixClient.setPresence).toHaveBeenCalledWith({
+      presence: 'online',
     })
     expect(callOrder).toEqual(['initRustCrypto', 'startClient'])
     expect(createClient).toHaveBeenNthCalledWith(2, {
@@ -120,8 +128,11 @@ describe('useMatrixClient session', () => {
       }),
     })
 
-    expect(matrixClient.startClient).toHaveBeenCalledWith({
-      initialSyncLimit: 50,
+    expect(matrixClient.startClient).toHaveBeenCalledWith(
+      MATRIX_START_CLIENT_OPTS,
+    )
+    expect(matrixClient.setPresence).toHaveBeenCalledWith({
+      presence: 'online',
     })
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1)
     consoleErrorSpy.mockRestore()
@@ -142,8 +153,11 @@ describe('useMatrixClient session', () => {
     )
 
     expect(matrixClient.initRustCrypto).not.toHaveBeenCalled()
-    expect(matrixClient.startClient).toHaveBeenCalledWith({
-      initialSyncLimit: 50,
+    expect(matrixClient.startClient).toHaveBeenCalledWith(
+      MATRIX_START_CLIENT_OPTS,
+    )
+    expect(matrixClient.setPresence).toHaveBeenCalledWith({
+      presence: 'online',
     })
     expect(consoleWarnSpy).toHaveBeenCalledTimes(1)
     consoleWarnSpy.mockRestore()

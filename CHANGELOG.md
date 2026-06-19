@@ -294,6 +294,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Member presence away/offline in chat sidebar: stop `startClient` from
+  advertising online on session restore (`disablePresence`); persist
+  presence preference in localStorage for UI resolution; set online only
+  on fresh login; reactive member-list refresh and shared presence
+  resolution; settings apply reads selected value from the DOM; re-enable
+  presence E2E ([#138](https://github.com/mjkatgithub/Decentra/issues/138))
+
 - E2E leave sidebar (cluster D): dedicated `E2E_LEAVE_GROUP_ROOM_ID`
   seed isolates the group-leave scenario from the unread side room;
   scoped Home-sidebar locators and sync waits in leave-room steps;

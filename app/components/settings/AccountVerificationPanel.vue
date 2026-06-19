@@ -5,7 +5,6 @@ import {
 } from '~/composables/matrix/recoveryKeyBootstrap'
 import { useAppI18n } from '~/composables/useAppI18n'
 import { useMatrixClient } from '~/composables/useMatrixClient'
-import { logOptionalRemote } from '~/composables/debug/optionalRemoteLogger'
 
 /**
  * matrix-js-sdk `VerificationPhase` values (avoid importing sdk subpaths:
@@ -223,37 +222,8 @@ async function refreshVerificationState() {
     verificationStatusText.value = ownDeviceVerified
       ? translateText('settings.verificationVerified')
       : translateText('settings.verificationNotVerified')
-    // #region agent log
-    logOptionalRemote({
-      sessionId: '4f7064',
-      hypothesisId: 'H1,H2,H3',
-      location: 'AccountVerificationPanel.vue:refreshVerificationState',
-      message: 'refresh result',
-      data: {
-        ownCrossSigningReady: ownCrossSigningReady.value,
-        ownDeviceVerified,
-        openRequestCount: openRequests.length,
-        pending: pendingVerificationRequest.value,
-        deviceId: matrixDeviceId
-      },
-      timestamp: Date.now()
-    })
-    // #endregion
-  } catch (thrownError) {
+  } catch {
     verificationStatusText.value = translateText('settings.verificationFailed')
-    // #region agent log
-    logOptionalRemote({
-      sessionId: '4f7064',
-      hypothesisId: 'H2',
-      location: 'AccountVerificationPanel.vue:refreshVerificationState:catch',
-      message: 'refresh threw',
-      data: {
-        errorMessage:
-          thrownError instanceof Error ? thrownError.message : String(thrownError)
-      },
-      timestamp: Date.now()
-    })
-    // #endregion
   }
 }
 
@@ -318,20 +288,6 @@ function resolveVerificationThrownMessage(thrownError: unknown): string {
 }
 
 async function startDeviceVerification() {
-  // #region agent log
-  logOptionalRemote({
-    sessionId: '4f7064',
-    hypothesisId: 'H4,H6',
-    location: 'AccountVerificationPanel.vue:startDeviceVerification:entry',
-    message: 'function entered',
-    data: {
-      hasClient: Boolean(client.value),
-      pendingNow: pendingVerificationRequest.value,
-      verificationBusy: verificationBusy.value
-    },
-    timestamp: Date.now()
-  })
-  // #endregion
   verificationBusy.value = true
   verificationErrorText.value = ''
   clearVerificationUi()
@@ -339,16 +295,6 @@ async function startDeviceVerification() {
     const matrixClient = client.value
     const matrixUserId = matrixClient?.getUserId?.()
     if (!matrixClient || !matrixUserId) {
-      // #region agent log
-      logOptionalRemote({
-        sessionId: '4f7064',
-        hypothesisId: 'H6',
-        location: 'AccountVerificationPanel.vue:startDeviceVerification:earlyExit',
-        message: 'no client/userId',
-        data: { hasClient: Boolean(matrixClient), hasUserId: Boolean(matrixUserId) },
-        timestamp: Date.now()
-      })
-      // #endregion
       verificationStatusText.value = translateText(
         'settings.verificationUnavailable'
       )
@@ -361,16 +307,6 @@ async function startDeviceVerification() {
       'Crypto initialization timeout'
     )
     if (!cryptoReady) {
-      // #region agent log
-      logOptionalRemote({
-        sessionId: '4f7064',
-        hypothesisId: 'H6',
-        location: 'AccountVerificationPanel.vue:startDeviceVerification:cryptoNotReady',
-        message: 'cryptoReady=false',
-        data: {},
-        timestamp: Date.now()
-      })
-      // #endregion
       verificationStatusText.value = translateText(
         'settings.verificationUnavailable'
       )
@@ -395,19 +331,6 @@ async function startDeviceVerification() {
       cryptoApi,
       matrixUserId
     )
-    // #region agent log
-    logOptionalRemote({
-      sessionId: '4f7064',
-      hypothesisId: 'H4,H6',
-      location: 'AccountVerificationPanel.vue:startDeviceVerification:existingCheck',
-      message: 'existing request lookup',
-      data: {
-        hasExisting: Boolean(existingIncomingRequest),
-        phase: existingIncomingRequest?.phase ?? null
-      },
-      timestamp: Date.now()
-    })
-    // #endregion
 
     const verificationRequest = (
       existingIncomingRequest ??
@@ -421,25 +344,6 @@ async function startDeviceVerification() {
     verificationStatusText.value = translateText(
       'settings.verificationRequestSent'
     )
-    // #region agent log
-    logOptionalRemote({
-      sessionId: '4f7064',
-      hypothesisId: 'H4',
-      location: 'AccountVerificationPanel.vue:startDeviceVerification:requestObtained',
-      message: 'have verificationRequest',
-      data: {
-        usedExisting: Boolean(existingIncomingRequest),
-        phase: verificationRequest.phase,
-        initiatedByMe: verificationRequest.initiatedByMe,
-        isSelfVerification: verificationRequest.isSelfVerification,
-        accepting: verificationRequest.accepting,
-        pending: verificationRequest.pending,
-        methods: (verificationRequest as unknown as { methods?: unknown }).methods ?? null,
-        otherDeviceId: (verificationRequest as unknown as { otherDeviceId?: unknown }).otherDeviceId ?? null
-      },
-      timestamp: Date.now()
-    })
-    // #endregion
 
     const responderShouldSendReady =
       existingIncomingRequest !== undefined ||
@@ -457,20 +361,6 @@ async function startDeviceVerification() {
       verificationRequest,
       90_000
     )
-    // #region agent log
-    logOptionalRemote({
-      sessionId: '4f7064',
-      hypothesisId: 'H4',
-      location: 'AccountVerificationPanel.vue:startDeviceVerification:waitOutcome',
-      message: 'wait outcome',
-      data: {
-        waitOutcome,
-        phase: verificationRequest.phase,
-        methods: (verificationRequest as unknown as { methods?: unknown }).methods ?? null
-      },
-      timestamp: Date.now()
-    })
-    // #endregion
     if (waitOutcome === 'timeout') {
       verificationErrorText.value = translateText(
         'settings.verificationReadyTimeout'
@@ -543,19 +433,6 @@ async function startDeviceVerification() {
     verificationBusy.value = false
   } catch (thrownError: unknown) {
     const message = resolveVerificationThrownMessage(thrownError)
-    // #region agent log
-    logOptionalRemote({
-      sessionId: '4f7064',
-      hypothesisId: 'H4,H6',
-      location: 'AccountVerificationPanel.vue:startDeviceVerification:catch',
-      message: 'outer catch',
-      data: {
-        errorMessage: message,
-        errorName: thrownError instanceof Error ? thrownError.name : '(non-error)'
-      },
-      timestamp: Date.now()
-    })
-    // #endregion
     if (message.includes('no existing cross-signing key')) {
       verificationErrorText.value = translateText(
         'settings.verificationNeedCrossSigning'
@@ -624,16 +501,6 @@ async function submitRecoveryKey() {
       recoveryKeyInput.value,
       ensureCryptoReady
     )
-    // #region agent log
-    logOptionalRemote({
-      sessionId: '4f7064',
-      hypothesisId: 'H1,H2,H5',
-      location: 'AccountVerificationPanel.vue:submitRecoveryKey',
-      message: 'bootstrap returned',
-      data: { outcome },
-      timestamp: Date.now()
-    })
-    // #endregion
     if (outcome.success) {
       recoveryKeyMessageText.value = translateText(
         'settings.verificationRecoverySuccess'

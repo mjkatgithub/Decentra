@@ -1,6 +1,10 @@
 import { useMatrixClient } from '~/composables/useMatrixClient'
 import { useChatMedia } from '~/composables/useChatMedia'
 import {
+  normalizePresence,
+  resolveRawMemberPresence,
+} from '~/composables/chat/chatPageRoomHelpers'
+import {
   createFounderRole,
   FOUNDER_ROLE_ID,
   sortRolesByPositionDesc,
@@ -24,24 +28,10 @@ export interface SpaceMemberGroup {
   members: SpaceMemberEntry[]
 }
 
-function memberPresence(
-  membership: string | undefined,
-): SpaceMemberEntry['status'] {
-  if (membership === 'online') {
-    return 'online'
-  }
-  if (membership === 'unavailable') {
-    return 'away'
-  }
-  if (membership === 'offline') {
-    return 'offline'
-  }
-  return 'unknown'
-}
-
 export function useSpaceMembers(
   spaceId: Ref<string | null>,
   childRoomIds: Ref<string[]>,
+  memberPresenceVersion: Ref<number>,
 ) {
   const { client } = useMatrixClient()
   const { getMemberAvatarUrl } = useChatMedia(client)
@@ -51,6 +41,7 @@ export function useSpaceMembers(
   }
 
   const memberGroups = computed<SpaceMemberGroup[]>(() => {
+    memberPresenceVersion.value
     const matrixClient = client.value
     const rootSpaceId = spaceId.value
     if (!matrixClient || !rootSpaceId) {
@@ -103,7 +94,9 @@ export function useSpaceMembers(
           displayName:
             member.name || member.rawDisplayName || memberUserId,
           avatarUrl: getMemberAvatarUrl(member),
-          status: memberPresence(member.user?.presence),
+          status: normalizePresence(
+            resolveRawMemberPresence(member, matrixClient),
+          ),
         })
         membersByRoleId.set(role.id, list)
       }

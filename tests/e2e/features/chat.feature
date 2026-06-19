@@ -318,10 +318,6 @@ Feature: Chat
     Examples:
       | presence |
       | online   |
-
-    @wip
-    Examples:
-      | presence |
       | away     |
       | offline  |
 

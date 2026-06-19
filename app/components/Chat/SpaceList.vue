@@ -19,7 +19,6 @@ defineProps<{
 
 const emit = defineEmits<{
   selectSpace: [spaceId: string]
-  createSpace: []
   toggleExpanded: []
 }>()
 
@@ -207,7 +206,7 @@ function spaceNavAriaLabel(space: SpaceItem): string {
         class="w-full justify-center"
         :class="expanded ? 'rounded-xl' : 'h-11 rounded-2xl'"
         data-testid="create-space-button"
-        @click="emit('createSpace')"
+        to="/spaces/new"
       >
         <span v-if="expanded">{{ translateText('layout.createSpace') }}</span>
       </UButton>

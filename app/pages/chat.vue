@@ -22,6 +22,7 @@ import { canUserSendRoomMessage } from "~/utils/matrixRoomMessagePermissions";
 import { canUserPinEvents } from "~/utils/matrixRoomPinnedEventsPermissions";
 import { canPerformSpaceRoleAction } from "~/utils/decentraSpaceRolesPermissions";
 import { useSpaceMembers } from "~/composables/useSpaceMembers";
+import { useMemberPresenceVersion } from "~/composables/useMemberPresenceVersion";
 import {
   getParentSpaceIds,
   getRoomType,
@@ -446,9 +447,12 @@ watchEffect(() => {
   spaceUnreadForRail.value = spaceUnreadById.value;
 });
 
+const { memberPresenceVersion } = useMemberPresenceVersion(client);
+
 const { memberGroups: spaceMemberGroups } = useSpaceMembers(
   selectedSpaceIdRef,
   spaceMemberRoomIds,
+  memberPresenceVersion,
 );
 
 const spaceMemberCountLabel = computed(() => {
@@ -522,9 +526,18 @@ const roomCategories = computed<RoomCategoryGroup[]>(() => {
   ) as RoomCategoryGroup[];
 });
 
-const memberItems = computed(() =>
-  buildSortedMemberItems(selectedRoom.value, getMemberAvatarUrl),
-);
+const memberItems = computed(() => {
+  memberPresenceVersion.value;
+  matrixSyncPrepared.value;
+  if (!matrixSyncPrepared.value) {
+    return [];
+  }
+  return buildSortedMemberItems(
+    selectedRoom.value,
+    getMemberAvatarUrl,
+    client.value,
+  );
+});
 
 const canSendMessagesInActiveRoom = computed(() => {
   const matrixClient = client.value;
@@ -654,10 +667,6 @@ function openSpaceSettings() {
   navigateTo(`/settings/space/${selectedSpaceId.value}`);
 }
 
-function openCreateSpace() {
-  navigateTo("/spaces/new");
-}
-
 const pageShell = useChatPageShell({
   client,
   matrixRooms,
@@ -778,7 +787,6 @@ setupMatrixEventWatchers();
           :expanded="spaceRailExpanded"
           @select-space="selectSpace"
           @toggle-expanded="toggleSpaceRail"
-          @create-space="openCreateSpace"
         />
         <ChatRoomCategoryList
           :selected-space-name="selectedSpaceName"

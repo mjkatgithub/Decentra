@@ -5,6 +5,7 @@ import {
   isPersonalChatFromCounts,
 } from "~/utils/homeRoomCategories";
 import { getRoomNameFromState } from "~/utils/matrixRoomMetadata";
+import { readStoredMatrixPresence } from "~/utils/matrixPresencePreference";
 import type {
   MemberItem,
   PresenceStatus,
@@ -215,9 +216,46 @@ export function normalizePresence(
   return "unknown";
 }
 
+export function resolveRawMemberPresence(
+  member: {
+    userId?: string;
+    user?: { presence?: string };
+    presence?: string;
+  },
+  matrixClient: {
+    getUserId?: () => string | null;
+    getUser?: (userId: string) => { presence?: string } | null;
+  } | null,
+): string | undefined {
+  const ownUserId = matrixClient?.getUserId?.() ?? null;
+  const memberUserId =
+    typeof member.userId === "string" ? member.userId : null;
+  if (ownUserId && memberUserId === ownUserId) {
+    const storedPresence = readStoredMatrixPresence();
+    if (typeof storedPresence === "string") {
+      return storedPresence;
+    }
+    const ownPresence = matrixClient?.getUser?.(ownUserId)?.presence;
+    if (typeof ownPresence === "string") {
+      return ownPresence;
+    }
+  }
+  if (typeof member.user?.presence === "string") {
+    return member.user.presence;
+  }
+  if (typeof member.presence === "string") {
+    return member.presence;
+  }
+  return undefined;
+}
+
 export function buildSortedMemberItems(
   room: Record<string, any> | null | undefined,
   getMemberAvatarUrl: (member: Record<string, any>) => string | undefined,
+  matrixClient: {
+    getUserId?: () => string | null;
+    getUser?: (userId: string) => { presence?: string } | null;
+  } | null,
 ): MemberItem[] {
   if (!room) {
     return [];
@@ -236,11 +274,7 @@ export function buildSortedMemberItems(
       displayName: String(member.name || member.userId || ""),
       avatarUrl: getMemberAvatarUrl(member),
       status: normalizePresence(
-        typeof member.user?.presence === 'string'
-          ? member.user.presence
-          : typeof member.presence === 'string'
-            ? member.presence
-            : undefined,
+        resolveRawMemberPresence(member, matrixClient),
       ),
     }))
     .sort((memberA: MemberItem, memberB: MemberItem) => {

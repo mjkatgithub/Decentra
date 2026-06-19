@@ -75,6 +75,11 @@ export {
 }
 export type { SignupPendingStateV1 } from './matrix/matrixRegistrationUia'
 export type { SignupTermsPolicyItem } from './matrix/matrixRegistrationUia'
+
+const MATRIX_START_CLIENT_OPTS = {
+  initialSyncLimit: 50,
+  disablePresence: true,
+} as const
 export {
   buildRecaptchaAuthPayload,
   buildRegistrationTokenAuthPayload,
@@ -166,6 +171,10 @@ import {
   writeStoredDevice,
   writeStoredSession,
 } from './matrix/sessionCrypto'
+import {
+  setMatrixPresenceWithRetry,
+  writeStoredMatrixPresence,
+} from '~/utils/matrixPresencePreference'
 import * as matrixMessages from './matrix/messages'
 import * as matrixRooms from './matrix/roomsOrDirectory'
 import { MATRIX_TO_BASE } from './matrix/matrixClientHelpers'
@@ -239,7 +248,7 @@ export function useMatrixClient() {
     if (session.deviceId) {
       await initRustCryptoWithRecovery(restoredClient, 'for restored session')
     }
-    restoredClient.startClient({ initialSyncLimit: 50 })
+    restoredClient.startClient(MATRIX_START_CLIENT_OPTS)
     client.value = restoredClient
     syncMatrixIncomingVerificationRelay(restoredClient)
   }
@@ -328,8 +337,10 @@ export function useMatrixClient() {
         await initRustCryptoWithRecovery(newClient, 'during login')
       }
 
-      newClient.startClient({ initialSyncLimit: 50 })
+      newClient.startClient(MATRIX_START_CLIENT_OPTS)
       client.value = newClient
+      writeStoredMatrixPresence('online')
+      void setMatrixPresenceWithRetry(newClient, 'online').catch(() => {})
       syncMatrixIncomingVerificationRelay(newClient)
       writeStoredSession({
         baseUrl: resolvedBaseUrl,
@@ -439,7 +450,9 @@ export function useMatrixClient() {
       delegatedClient,
       'during delegated OIDC',
     )
-    delegatedClient.startClient({ initialSyncLimit: 50 })
+    delegatedClient.startClient(MATRIX_START_CLIENT_OPTS)
+    writeStoredMatrixPresence('online')
+    void setMatrixPresenceWithRetry(delegatedClient, 'online').catch(() => {})
     if (client.value) {
       client.value.stopClient()
     }
