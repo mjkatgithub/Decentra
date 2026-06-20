@@ -64,21 +64,6 @@
   `Docs: N/A — …` (e.g. bugfix in place, i18n-only, tests-only).
 - Optional checklist for new issues:
   [docs/issue-documentation-checklist.md](docs/issue-documentation-checklist.md).
-
-## Debug logging (agent runtime traces)
-
-- Cursor debug-mode runtime log files are written into `.cursor/`
-  (e.g. `.cursor/debug-<session>.log`), not the workspace root.
-- When instrumenting in debug mode, read the session log from
-  `.cursor/debug-<session>.log` (clear only your own session's file).
-- The debug-log ingest server is configured to persist payloads under
-  `.cursor/`; adjust that logger configuration there if the target
-  directory changes.
-- App-side optional remote logging is wired through
-  `app/composables/debug/optionalRemoteLogger.ts` and configured via the
-  `NUXT_PUBLIC_DEBUG_LOG_*` env vars (see `README.md` and `.env.example`).
-- `.cursor/*.log` stays untracked via the global `*.log` gitignore rule.
-
 - Size vs. Estimate (solo):
   - Size (XS/S/M/L/XL): a coarse category for how much surface area the issue
     touches. Set when planning. XL = epic-scale or cross-cutting; prefer
@@ -96,3 +81,21 @@
     - 2 SP: about half a day.
     - 3 SP: about one day.
     - 5 SP: about two or more days — strong signal to split.
+    
+## Debug logging (agent runtime traces)
+
+- Cursor debug-mode runtime log files are written into `.cursor/`
+  (e.g. `.cursor/debug-<session>.log`), not the workspace root.
+- When instrumenting in debug mode, read the session log from
+  `.cursor/debug-<session>.log` (clear only your own session's file).
+- The debug-log ingest server is configured to persist payloads under
+  `.cursor/`; adjust that logger configuration there if the target
+  directory changes.
+- App-side optional remote logging is wired through
+  `app/composables/debug/optionalRemoteLogger.ts` and configured via the
+  `NUXT_PUBLIC_DEBUG_LOG_*` env vars (see `README.md` and `.env.example`).
+- `.cursor/*.log` stays untracked via the global `*.log` gitignore rule.
+
+- E2E single-scenario debug (not CI): `npm run test:e2e:cucumber:debug -- …`
+  or `npm run test:e2e:run:debug -- …`; see `README.md` — *Debug: single
+  Cucumber scenarios*.

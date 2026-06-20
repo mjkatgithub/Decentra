@@ -79,6 +79,12 @@ npm run test:e2e:headed
 # E2E login only (Synapse + seed + one @login scenario) — debug auth first
 npm run test:e2e:login
 
+# E2E: run one or more Cucumber scenarios in isolation (local debug, not CI)
+# Requires Synapse seeded + preview on :3000 (run:debug builds and starts preview)
+npm run test:e2e:run:debug -- --name "Create space from rail appears in navigation"
+npm run test:e2e:cucumber:debug -- --feature tests/e2e/features/chat.feature:18
+npm run test:e2e:cucumber:debug -- --help
+
 # Coverage (currently from unit Vitest config)
 npm run test:coverage
 
@@ -121,6 +127,29 @@ cp tests/e2e/.env.e2e.example tests/e2e/.env.e2e.local
 
 Then fill `E2E_MATRIX_USERNAME` and `E2E_MATRIX_PASSWORD`.
 The local file stays untracked.
+
+### Debug: single Cucumber scenarios
+
+The full E2E lane runs many scenarios and takes several minutes. To debug
+one scenario locally, use `tests/e2e/scripts/run-cucumber-debug-scenario.mjs`
+(not invoked by CI):
+
+| Option | Purpose |
+| --- | --- |
+| `--name "Scenario title"` | Match scenario name (repeat for OR) |
+| `--feature path/to/file.feature:line` | Run scenarios from a feature file or line |
+| `--tags "expression"` | Cucumber tag filter (e.g. `not @wip`) |
+| `--help` | Show usage |
+
+**Prerequisites:** Synapse up and seeded (same as full E2E), app on port 3000.
+
+```bash
+# Build + preview + one scenario
+npm run test:e2e:run:debug -- --name "Create space from rail appears in navigation"
+
+# Preview already running; Synapse + seed done
+npm run test:e2e:cucumber:debug -- --feature tests/e2e/features/chat.feature:18
+```
 
 ## GitHub Actions CI
 
