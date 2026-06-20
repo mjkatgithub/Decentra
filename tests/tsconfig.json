@@ -1,0 +1,15 @@
+{
+  "extends": "../.nuxt/tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "vitest/globals",
+      "chai"
+    ]
+  },
+  "include": [
+    "./**/*.ts",
+    "./**/*.tsx",
+    "./**/*.mts",
+    "./**/*.cts"
+  ]
+}

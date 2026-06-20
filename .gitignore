@@ -17,8 +17,13 @@ logs
 .DS_Store
 .fleet
 .idea
+coverage
+coverage/
+tests/e2e/reports
+tests/e2e/reports/
 
 # Local env files
 .env
 .env.*
 !.env.example
+!tests/e2e/.env.e2e.example

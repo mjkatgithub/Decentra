@@ -24,12 +24,12 @@ function selectRoom(roomId: string) {
            dark:border-gray-700"
   >
     <div class="border-b border-gray-200 p-3 dark:border-gray-700">
-      <h2 class="font-semibold">Räume</h2>
+      <h2 class="font-semibold">Channels</h2>
     </div>
     <div class="flex-1 overflow-y-auto p-2">
       <template v-if="rooms.length === 0">
         <p class="p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-          Keine Räume
+          No rooms
         </p>
       </template>
       <template v-else>

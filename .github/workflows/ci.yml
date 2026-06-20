@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+      - master
+      - feature/**
+  pull_request:
+    branches:
+      - develop
+      - master
+  workflow_dispatch:
+    inputs:
+      run_full:
+        description: Run full pipeline (coverage + full E2E)
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: '0 2 * * *'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Fast lane (unit + integration + e2e smoke)
+    runs-on: ubuntu-latest
+    if: >
+      (github.event_name == 'push' && github.ref != 'refs/heads/master') ||
+      (github.event_name == 'workflow_dispatch' && inputs.run_full != true)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser and system deps
+        run: npx playwright install --with-deps chromium
+
+      - name: Run fast CI lane
+        run: npm run test:ci:fast
+
+  full:
+    name: Full lane (coverage + full e2e)
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+      inputs.run_full == true)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser and system deps
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify Docker availability
+        run: docker --version
+
+      - name: Run full CI lane
+        run: npm run test:ci:full

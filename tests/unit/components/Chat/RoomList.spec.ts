@@ -7,7 +7,7 @@ describe('RoomList', () => {
     const wrapper = mount(ChatRoomList, {
       props: { rooms: [], selectedRoomId: null }
     })
-    wrapper.text().should.include('Keine Räume')
+    wrapper.text().should.include('No rooms')
   })
 
   it('should list rooms when provided', () => {

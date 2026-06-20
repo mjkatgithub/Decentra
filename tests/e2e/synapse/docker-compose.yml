@@ -1,0 +1,20 @@
+services:
+  mailhog:
+    image: mailhog/mailhog
+    container_name: decentra-e2e-mailhog
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+
+  synapse:
+    image: matrixdotorg/synapse:latest
+    container_name: decentra-e2e-synapse
+    restart: unless-stopped
+    depends_on:
+      - mailhog
+    environment:
+      SYNAPSE_CONFIG_PATH: /data/homeserver.yaml
+    ports:
+      - "8008:8008"
+    volumes:
+      - ./data:/data
