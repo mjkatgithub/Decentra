@@ -236,6 +236,7 @@ Settings components: `app/components/settings/` (e.g.
 | Unit | `tests/unit/` — mirrors `composables/`, `utils/`, `components/Chat/`, `pages/` | `npm run test:unit` |
 | Integration | `tests/integration/` — `useMatrixClient`, `chatTimeline`, i18n | `npm run test:integration` |
 | E2E | `tests/e2e/features/*.feature`, `step-definitions/`, `support/` | `npm run test:e2e` |
+| E2E debug (one scenario) | `tests/e2e/scripts/run-cucumber-debug-scenario.mjs` | `npm run test:e2e:run:debug -- --name "…"` |
 
 Matrix client unit tests are split:
 `useMatrixClient.session.spec.ts`, `.messages.spec.ts`, `.rooms.spec.ts`,

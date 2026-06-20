@@ -10,6 +10,11 @@ export type AuthClientStub = {
 export type LoggedInClientStub = {
   initRustCrypto: ReturnType<typeof vi.fn>
   startClient: ReturnType<typeof vi.fn>
+  setPresence: ReturnType<typeof vi.fn>
+  getSyncState: ReturnType<typeof vi.fn>
+  isInitialSyncComplete: ReturnType<typeof vi.fn>
+  on: ReturnType<typeof vi.fn>
+  off: ReturnType<typeof vi.fn>
   sendEvent: ReturnType<typeof vi.fn>
   uploadContent: ReturnType<typeof vi.fn>
   getRoom: ReturnType<typeof vi.fn>
@@ -69,7 +74,12 @@ export function buildLoggedInClient(
 
   return {
     initRustCrypto: vi.fn(async () => undefined),
-    startClient: vi.fn(),
+    startClient: vi.fn(async () => undefined),
+    setPresence: vi.fn(async () => undefined),
+    getSyncState: vi.fn(() => 'PREPARED'),
+    isInitialSyncComplete: vi.fn(() => true),
+    on: vi.fn(),
+    off: vi.fn(),
     sendEvent: vi.fn(async () => ({ event_id: '$evt-1' })),
     uploadContent: vi.fn(async () => ({
       content_uri: 'mxc://example.org/media123',

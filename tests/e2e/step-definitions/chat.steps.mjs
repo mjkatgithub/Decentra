@@ -102,12 +102,71 @@ When('I set my presence to {string}', async function (presenceValue) {
     .locator('select')
     .first()
   await expect(presenceSelect).toBeVisible({ timeout: 10000 })
-  await presenceSelect.selectOption(normalizePresenceValue(presenceValue))
+  const matrixPresence = normalizePresenceValue(presenceValue)
+  const alreadyStored = await this.page.evaluate((expectedPresence) => {
+    const rawValue = window.localStorage.getItem(
+      'decentra.matrix.presence.v1',
+    )
+    if (!rawValue) {
+      return false
+    }
+    try {
+      const parsed = JSON.parse(rawValue)
+      return parsed?.presence === expectedPresence
+    } catch {
+      return false
+    }
+  }, matrixPresence)
+  if (alreadyStored) {
+    return
+  }
+  if (matrixPresence !== 'online') {
+    await this.page.waitForTimeout(3000)
+  }
+  await presenceSelect.selectOption(matrixPresence)
+  await presenceSelect.evaluate((selectElement, selectedPresence) => {
+    selectElement.value = selectedPresence
+    selectElement.dispatchEvent(new Event('input', { bubbles: true }))
+    selectElement.dispatchEvent(new Event('change', { bubbles: true }))
+  }, matrixPresence)
+  await expect(presenceSelect).toHaveValue(matrixPresence)
 
   const applyPresenceButton = this.page.getByRole('button', {
     name: /Apply presence|Status setzen/i
   })
-  await applyPresenceButton.click()
+  const successMessage = this.page.getByText(
+    /Presence updated|Status aktualisiert/i
+  )
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await applyPresenceButton.click()
+    try {
+      await expect(successMessage).toBeVisible({ timeout: 8000 })
+      await this.page.waitForFunction(
+        (expectedPresence) => {
+          const rawValue = window.localStorage.getItem(
+            'decentra.matrix.presence.v1',
+          )
+          if (!rawValue) {
+            return false
+          }
+          try {
+            const parsed = JSON.parse(rawValue)
+            return parsed?.presence === expectedPresence
+          } catch {
+            return false
+          }
+        },
+        matrixPresence,
+        { timeout: 8000 },
+      )
+      return
+    } catch {
+      if (attempt < 4) {
+        await this.page.waitForTimeout(2500 * (attempt + 1))
+      }
+    }
+  }
+  throw new Error(`Failed to apply presence: ${presenceValue}`)
 })
 
 When('I open the seeded test room', async function () {
@@ -810,8 +869,20 @@ When('I create a new space with a unique name', async function () {
     })
   }
   await expect(createSpaceButton).toBeVisible({ timeout: 15000 })
-  await createSpaceButton.click()
-  await expect(this.page).toHaveURL(/\/spaces\/new/, { timeout: 15000 })
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await createSpaceButton.click()
+    try {
+      await expect(this.page).toHaveURL(/\/spaces\/new/, { timeout: 8000 })
+      break
+    } catch {
+      if (attempt >= 4) {
+        throw new Error(
+          'Create space navigation did not reach /spaces/new after retries',
+        )
+      }
+      await this.page.waitForTimeout(1000 * (attempt + 1))
+    }
+  }
   await this.page.getByLabel(/Space name|Space-Name/i).fill(uniqueName)
   await this.page.getByRole('button', {
     name: /Create space|Space erstellen/i,

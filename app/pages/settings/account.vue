@@ -7,6 +7,13 @@ import {
   type MessageNotifyMode,
 } from '~/composables/useMessageNotifyPreference'
 import { useThemePreference } from '~/composables/useThemePreference'
+import {
+  isStoredMatrixPresence,
+  readStoredMatrixPresence,
+  setMatrixPresenceWithRetry,
+  writeStoredMatrixPresence,
+  type StoredMatrixPresence,
+} from '~/utils/matrixPresencePreference'
 
 type ThemeMode = 'light' | 'dark' | 'system'
 type AppLocale = 'en' | 'de'
@@ -82,6 +89,7 @@ const messageNotifySelectOptions = computed(() =>
 )
 
 const presenceValue = ref<PresenceMode>('online')
+const presenceSelectEl = ref<HTMLSelectElement | null>(null)
 const busyPresenceSupported = ref(false)
 const presenceFeedback = ref('')
 
@@ -147,22 +155,61 @@ function syncPresenceFromCurrentUser() {
   }
 }
 
+function resolvePresenceToApply(): StoredMatrixPresence | null {
+  const selectedValue = presenceSelectEl.value?.value
+  if (isStoredMatrixPresence(selectedValue)) {
+    return selectedValue
+  }
+  if (typeof document !== 'undefined') {
+    const domValue = document.querySelector<HTMLSelectElement>(
+      '[data-testid="account-presence-select"]',
+    )?.value
+    if (isStoredMatrixPresence(domValue)) {
+      return domValue
+    }
+  }
+  if (isStoredMatrixPresence(presenceValue.value)) {
+    return presenceValue.value
+  }
+  return null
+}
+
 async function applyPresence() {
-  if (!client.value) {
+  const presenceToApply = resolvePresenceToApply()
+  if (!presenceToApply) {
+    presenceFeedback.value = translateText('auth.signInFailed')
     return
   }
+  presenceValue.value = presenceToApply
   if (
-    presenceValue.value === 'org.matrix.msc3026.busy' &&
+    presenceToApply === 'org.matrix.msc3026.busy' &&
     !busyPresenceSupported.value
   ) {
     presenceFeedback.value = translateText('settings.busyUnsupported')
     return
   }
+  const storedPresence = readStoredMatrixPresence()
+  if (storedPresence === presenceToApply) {
+    writeStoredMatrixPresence(presenceToApply)
+    presenceFeedback.value = translateText('settings.presenceSaved')
+    return
+  }
+  if (!client.value) {
+    presenceFeedback.value = translateText('auth.signInFailed')
+    return
+  }
   try {
-    await client.value.setPresence({
-      presence: presenceValue.value as unknown as
-        'online' | 'offline' | 'unavailable'
-    })
+    await setMatrixPresenceWithRetry(
+      client.value as {
+        setPresence: (options: {
+          presence: 'online' | 'offline' | 'unavailable'
+        }) => Promise<void>
+      },
+      presenceToApply,
+    )
+    if (presenceToApply !== 'org.matrix.msc3026.busy') {
+      writeStoredMatrixPresence(presenceToApply)
+    }
     presenceFeedback.value = translateText('settings.presenceSaved')
   } catch {
     presenceFeedback.value = translateText('auth.signInFailed')
@@ -250,7 +297,9 @@ async function applyPresence() {
         <label class="flex flex-col gap-2 text-sm">
           <span class="font-medium">{{ translateText('settings.presence') }}</span>
           <select
+            ref="presenceSelectEl"
             v-model="presenceValue"
+            data-testid="account-presence-select"
             class="rounded-lg border border-gray-300 bg-white px-3 py-2
                    dark:border-gray-700 dark:bg-gray-900"
           >

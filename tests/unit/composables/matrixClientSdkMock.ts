@@ -14,7 +14,15 @@ export function buildMatrixSdkMock(createClient: ReturnType<typeof import('vites
       Audio: 'm.audio',
       Video: 'm.video',
     },
-    ClientEvent: {},
+    ClientEvent: {
+      Sync: 'sync',
+    },
+    UserEvent: {
+      Presence: 'User.presence',
+    },
+    SyncState: {
+      Prepared: 'PREPARED',
+    },
     Preset: { PrivateChat: 'private_chat', PublicChat: 'public_chat' },
     JoinRule: { Invite: 'invite', Public: 'public' },
     Visibility: { Private: 'private', Public: 'public' },
